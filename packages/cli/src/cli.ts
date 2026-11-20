@@ -90,7 +90,8 @@ const VERBS: readonly Verb[] = [
 	{
 		name: "config",
 		alias: "cfg",
-		summary: "Show a composition's config and where each value came from",
+		summary:
+			"Show a composition's or a concert's config and where each value came from",
 		load: async () => (await import("./compose")).config,
 	},
 	{

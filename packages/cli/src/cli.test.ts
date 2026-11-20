@@ -363,6 +363,248 @@ describe("compose and config", () => {
 		expect(await timesOf()).toBe(5);
 	});
 
+	// Seams: config's table and JSON, concert resolution and usage exits at the CLI.
+	test("config shows a concert's recorded values, sources, params and invocation from any folder", async () => {
+		const w = await world();
+		const config = join(w.cwd, ".maestro/config.yaml");
+		const preset = join(w.cwd, ".maestro/presets/a.yaml");
+		await Bun.write(config, `packs: [${w.pack}]\nconcurrency: 2\n`);
+		await Bun.write(preset, "concurrency: 4\n");
+		await Bun.write(
+			join(w.cwd, ".maestro/presets/b.yaml"),
+			"workspace: rehearsal\n",
+		);
+		const flags = [
+			"--preset",
+			"a",
+			"--preset",
+			"b",
+			"-c",
+			"limits.tokens=10000",
+			"-c",
+			"limits.timeout=2h",
+		];
+		const performed = await w.call(["perform", ...GREET, ...flags], {
+			hosts: [hostOf()],
+		});
+		expect(performed.code).toBe(0);
+		const id = idOf(performed);
+		await Bun.write(config, "[broken YAML");
+		await Bun.write(preset, "[broken YAML");
+		await Bun.write(
+			join(w.env.XDG_CONFIG_HOME, "maestro/config.yaml"),
+			"[broken YAML",
+		);
+		const outside = { cwd: await scratch(), hosts: [hostOf()] };
+		const shown = await w.call(["config", id, "--json"], outside);
+		expect(shown.code).toBe(0);
+		const document = json(shown);
+		expect(document).toMatchObject({
+			presets: ["a", "b"],
+			flags: ["limits.tokens=10000", "limits.timeout=2h"],
+			limits: { tokens: 10000, timeout: 7200000 },
+		});
+		expect(document.values).toContainEqual(
+			expect.objectContaining({
+				key: "packs",
+				value: [w.pack],
+				layer: "workspace",
+				file: config,
+				line: 1,
+			}),
+		);
+		expect(document.values).toContainEqual(
+			expect.objectContaining({
+				key: "concurrency",
+				value: 4,
+				layer: "preset",
+				file: preset,
+				line: 1,
+			}),
+		);
+		expect(document.values).toContainEqual(
+			expect.objectContaining({
+				key: "limits.tokens",
+				value: 10000,
+				layer: "flag",
+				flag: "-c limits.tokens=10000",
+			}),
+		);
+		expect(document.values).toContainEqual(
+			expect.objectContaining({
+				key: "demo.greet.name",
+				value: "x",
+				layer: "flag",
+			}),
+		);
+		const table = await w.call(["config", id], outside);
+		expect(table.code).toBe(0);
+		expect(table.out).toMatch(
+			new RegExp(`^concurrency +preset a +4 +${RegExp.escape(preset)}:1$`, "m"),
+		);
+		expect(table.out).toMatch(
+			/^limits\.tokens +flag +10000 +-c limits\.tokens=10000$/m,
+		);
+		expect(table.out).toMatch(/^demo\.greet\.name +flag +"x"$/m);
+	});
+
+	test("config resolves concert ids and prefixes as ls does", async () => {
+		const w = await world();
+		const a = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const b = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const shared = [...a].findIndex((c, i) => c !== b[i]);
+		const prefix = a.slice(0, shared + 1);
+		const full = await w.call(["config", a, "--json"]);
+		expect(full.code).toBe(0);
+		for (const name of [prefix, shortId(a)]) {
+			const abbreviated = await w.call(["config", name, "--json"]);
+			expect(abbreviated.code).toBe(0);
+			expect(json(abbreviated)).toEqual(json(full));
+		}
+		const ambiguous = a.slice(0, shared);
+		const ls = await w.call(["ls", ambiguous]);
+		const refused = await w.call(["config", ambiguous]);
+		expect(ls.code).toBe(2);
+		expect(refused.code).toBe(2);
+		expect(refused.out).toBe("");
+		expect(refused.err).not.toBe("");
+	});
+
+	test("config refuses presets and overrides for a concert", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		for (const flags of [
+			["--preset", "fast"],
+			["-c", "concurrency=2"],
+			["--config", "concurrency=2"],
+		]) {
+			for (const args of [
+				["config", id, ...flags],
+				[...flags, "config", id],
+			]) {
+				const refused = await w.call(args);
+				expect(refused.code).toBe(2);
+				expect(refused.out).toBe("");
+			}
+		}
+	});
+
+	test("config shows no presets, flags or limits for a concert performed without them", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const document = json(await w.call(["config", id, "--json"]));
+		expect(document.presets).toEqual([]);
+		expect(document.flags).toEqual([]);
+		expect(document).not.toHaveProperty("limits");
+	});
+
+	test("config shows the workspace value of a concert performed from a bare file named workspace", async () => {
+		const w = await world();
+		const file = join(FIXTURES, "workspace.ts");
+		const performed = await w.call(["perform", file, "--name", "x"], {
+			hosts: [hostOf()],
+		});
+		expect(performed.code).toBe(0);
+		const rows = json(
+			await w.call(["config", idOf(performed), "--json"]),
+		).values;
+		expect(
+			rows.find((r: { key: string }) => r.key === "workspace"),
+		).toBeDefined();
+		expect(rows).not.toContainEqual(
+			expect.objectContaining({ key: "workspace.named.name" }),
+		);
+	});
+
+	test("config keeps the layer of a param that config gave and adds no row for a param no flag gave", async () => {
+		const w = await world();
+		const config = join(w.cwd, ".maestro/config.yaml");
+		await Bun.write(
+			config,
+			`packs: [${w.pack}]\ndemo:\n  greet:\n    name: fromfile\n`,
+		);
+		const performed = await w.call(["perform", "demo.greet"], {
+			hosts: [hostOf()],
+		});
+		expect(performed.code).toBe(0);
+		const rows = json(
+			await w.call(["config", idOf(performed), "--json"]),
+		).values;
+		const named = rows.filter(
+			(r: { key: string }) => r.key === "demo.greet.name",
+		);
+		expect(named).toHaveLength(1);
+		expect(named[0]).toMatchObject({
+			value: "fromfile",
+			layer: "workspace",
+			file: config,
+			line: 4,
+		});
+	});
+
+	test("config refuses a second argument after a concert", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const refused = await w.call(["config", id, "extra"]);
+		expect(refused.code).toBe(2);
+		expect(refused.out).toBe("");
+		expect(refused.err).toContain("extra");
+	});
+
+	test("config --help for a concert lists no --preset or -c, and for a composition lists them", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const concert = await w.call(["config", id, "--help"]);
+		const composition = await w.call(["config", "demo.greet", "--help"]);
+		const common = (text: string) => text.split("Common flags:")[1] ?? "";
+		expect(common(concert.out)).not.toContain("--preset");
+		expect(common(concert.out)).not.toContain("-c/--config");
+		expect(common(composition.out)).toContain("--preset");
+		expect(common(composition.out)).toContain("-c/--config");
+	});
+
+	test("config refuses a concert whose snapshot no longer composes and names the key", async () => {
+		const w = await world();
+		const former: Host = {
+			...hostOf(),
+			config: { retired: { type: "object" } },
+			deferred: [["retired"]],
+		};
+		await Bun.write(
+			join(w.cwd, ".maestro/config.yaml"),
+			`packs: [${w.pack}]\nretired:\n  missing: !delete\n`,
+		);
+		const performed = await w.call(["perform", ...GREET], { hosts: [former] });
+		expect(performed.code).toBe(0);
+		const id = idOf(performed);
+		await Bun.write(
+			join(w.cwd, ".maestro/config.yaml"),
+			`packs: [${w.pack}]\n`,
+		);
+		const broken = await w.call(["config", id], { hosts: [hostOf()] });
+		expect(broken.code).toBe(1);
+		expect(broken.out).toBe("");
+		expect(broken.err.split(/[\s'"`,:;()]+/)).toContain("retired.missing");
+	});
+
+	test("config refuses a concert with a missing or unreadable snapshot", async () => {
+		const w = await world();
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
+		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+		const cases: [string | null, RegExp][] = [
+			[null, /predates config snapshots/],
+			["[", /not one this maestro reads/],
+		];
+		for (const [snapshot, why] of cases) {
+			db.run("UPDATE concerts SET snapshot = ? WHERE id = ?", [snapshot, id]);
+			const refused = await w.call(["config", id]);
+			expect(refused.code).toBe(1);
+			expect(refused.out).toBe("");
+			expect(refused.err).toMatch(why);
+		}
+		db.close();
+	});
+
 	test("config lists every value with the layer and the file and line, or the -c, it came from", async () => {
 		const w = await world();
 		const SET = ["-c", "concurrency=3"];

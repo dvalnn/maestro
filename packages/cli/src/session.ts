@@ -7,11 +7,10 @@ import { hostSetup } from "@maestro/core/host";
 import {
 	type ConcertRecord,
 	concertDirs,
-	diskUseOf,
 	openRecord,
 	type Records,
 } from "@maestro/core/perform";
-import { indexGraph, messageOf } from "@maestro/ir";
+import { indexGraph } from "@maestro/ir";
 import {
 	inGraphOrder,
 	seen,
@@ -25,7 +24,6 @@ import {
 	parse,
 	textsOf,
 	type Values,
-	warn,
 } from "./command";
 import {
 	type LoadedConfig,
@@ -139,6 +137,10 @@ type Unread = {
 /** The error for a snapshot that cannot be read, `problem` then `fix` on a line each. */
 export const unreadError = ({ problem, fix }: Unread) =>
 	new CliError(`${problem}\n${fix}`);
+
+/** The problem line of concert `label`'s snapshot failing to compose, naming each diagnostic. */
+export const composeProblem = (label: string, error: ConfigError) =>
+	`concert ${label}'s config snapshot no longer composes: ${error.diagnostics.map((d) => d.message).join("; ")}`;
 
 /** Concert `row` of `store` as its config snapshot records it, or why the snapshot cannot be read. */
 function recordedOf(store: Records, row: ConcertRecord): Recorded | Unread {

@@ -213,8 +213,8 @@ In the `--json` documents:
   limits as `limits`, `timeout` in milliseconds.
 - `ls <concert> --json` shows the values the [config snapshot](../../docs/architecture.md#config-snapshot) composes to
   as `snapshot`, left out when it cannot be read or no longer composes.
-- `ls`, `wait`, `watch`, `kill`, `tour`, `prune` and `artifact` read no config file, and take no `--preset` or `-c`.
-  `prune` measures a concert's disk use and releases what its hosts hold under its snapshot.
+- `ls`, `wait`, `watch`, `kill`, `tour`, `prune`, `artifact` and `config <concert>` read no config file, and take no
+  `--preset` or `-c`. `prune` measures a concert's disk use and releases what its hosts hold under its snapshot.
 
 ### Watching
 
@@ -393,6 +393,15 @@ pre-flight, so it exits 0. Presets combine without a merged file: `--preset high
 `classics.panel.skeptics` reaches the panel of any root. A `-c` key under a composition the concert does not use is
 refused (`CFG.unreached`); the same key in a file or preset is ignored, its value still checked against the param's
 schema.
+
+`maestro config <concert>` takes a concert id or unique prefix, as `ls` does. It shows the config the concert was
+performed under: its recorded snapshot composed as above, with the params it was given for a pack's composition. Each
+shows the layer that set it. A bare file's params are left out. It runs from any folder, reads no config file and takes
+no `--preset` or `-c`. Its `--json` is the document of `config <composition> --json`, plus three fields.
+
+`presets` holds each `--preset` as typed, in order. `flags` holds each `-c` as typed, in order. `limits` holds the
+concert's limits, `timeout` in milliseconds, left out when it had none. A concert whose snapshot is missing, unreadable
+or no longer composes exits 1 and says why.
 
 A preset is `<name>.yaml` in the workspace's `.maestro/presets/`, else in `$XDG_CONFIG_HOME/maestro/presets/`; the
 workspace's file wins the name whole. A compose or perform error that a missing setting raised, such as a profile with

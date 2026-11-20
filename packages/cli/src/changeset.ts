@@ -42,6 +42,7 @@ import {
 } from "./output";
 import {
 	artifactsOf,
+	composeProblem,
 	concertOf,
 	openRecorded,
 	openSession,
@@ -307,7 +308,7 @@ async function recordedCheckout(
 	const opened = openRecorded(session, store, row);
 	if (opened.kind === "does-not-compose")
 		throw new CliError(
-			`concert ${label}'s config snapshot no longer composes: ${opened.error.diagnostics.map((d) => d.message).join("; ")}\nPass -C <repo> to name its checkout`,
+			`${composeProblem(label, opened.error)}\nPass -C <repo> to name its checkout`,
 		);
 	if (opened.kind === "predates" || opened.kind === "unreadable")
 		throw new CliError(

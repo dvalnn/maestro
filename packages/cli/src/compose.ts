@@ -1,6 +1,12 @@
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { recordedPlan } from "@maestro/core/compose";
-import { type Composed, valueAt } from "@maestro/core/config";
+import {
+	type Composed,
+	type ConcertLimits,
+	layered,
+	valueAt,
+	valuesLayer,
+} from "@maestro/core/config";
 import type { Roots } from "@maestro/core/host";
 import type { ConcertRecord } from "@maestro/core/perform";
 import { canonicalJson, type Diagnostic, type Plan } from "@maestro/ir";
@@ -14,15 +20,18 @@ import {
 	isSet,
 	parse,
 	peek,
+	RECORDED,
+	splitFirst,
 	textOf,
 	type Values,
 	without,
 } from "./command";
-import { shownRoots } from "./config";
+import { deferredKeys, shownRoots } from "./config";
 import { agentLines, agentsOf } from "./hosts";
 import { bundled } from "./loader";
 import {
 	ArgumentError,
+	CliError,
 	Diagnosed,
 	diagnosedExit,
 	EXIT,
@@ -43,6 +52,7 @@ import {
 	type Saving,
 } from "./prepare";
 import {
+	composeProblem,
 	concertOf,
 	openRecorded,
 	openSession,
@@ -276,13 +286,109 @@ const layerOf = ({ layer, file }: { layer: string; file?: string }) =>
 		? `preset ${basename(file, extname(file))}`
 		: layer;
 
+/** Whether `target` names a concert, not a composition: a composition is a file or `<pack>.<composition>`. */
+const isConcertName = (target: string | undefined): target is string =>
+	target !== undefined && /^[\w-]+$/.test(target);
+
+/** The first argument of `config`, which picks its form. */
+const configTarget = (args: readonly string[]) =>
+	splitFirst(COMMON, args).first;
+
+/** What `config <concert> --json` adds to its `values`: the invocation the concert was performed with. */
+type Invocation = {
+	presets: readonly string[];
+	flags: readonly string[];
+	limits?: ConcertLimits;
+};
+
+/** Prints `rows` as a table, or with `--json` as `values` beside `extra`. */
+function printConfig(
+	deps: Deps,
+	json: boolean,
+	rows: readonly ConfigRow[],
+	invocation: Invocation | undefined,
+): number {
+	if (json) {
+		deps.stdout(jsonOf({ values: rows, ...invocation }));
+		return EXIT.ok;
+	}
+	deps.stdout(
+		table(
+			rows.map((r) => [
+				r.key,
+				layerOf(r),
+				r.layer === "unset" ? "unset" : JSON.stringify(r.value),
+				r.file ? `${r.file}:${r.line}` : (r.flag ?? ""),
+			]),
+		),
+	);
+	return EXIT.ok;
+}
+
+/** `composed` with the params of concert `row`, as given, over it as a flag layer under its composition's key; a bare file's are left out. */
+function withParams(
+	composed: Composed,
+	{ pack, composition, params = {}, file }: ConcertRecord,
+	deps: Deps,
+): Composed {
+	// A bare file's params are not shown by `config <file>` either, and its pack key could shadow a config key.
+	if (file !== undefined || !Object.keys(params).length) return composed;
+	const given = valuesLayer(
+		{ [pack]: { [composition]: params } },
+		{ layer: "flag" },
+	);
+	return layered([...composed.layers, given], deferredKeys(deps.hosts));
+}
+
+/**
+ * Shows the config concert `prefix` was performed under, from its recorded snapshot alone (ADR 0019).
+ * @throws CliError, a usage error, for a flag `config <concert>` does not take, or no such concert.
+ * @throws CliError when its snapshot is missing, cannot be read or no longer composes.
+ */
+async function configOfConcert(
+	args: readonly string[],
+	prefix: string,
+	deps: Deps,
+): Promise<number> {
+	const { values, positionals } = parse(
+		RECORDED,
+		args,
+		"See 'maestro config --help'; a concert's config is the one it was performed under",
+	);
+	if (positionals.length > 1)
+		throw new ArgumentError(
+			`config takes one concert, got '${positionals.slice(1).join(" ")}'`,
+			"See 'maestro config --help'",
+		);
+	return withLocated(deps, async (located, store) => {
+		const row = concertOf(store, prefix);
+		const opened = openRecorded(located, store, row);
+		if (opened.kind === "predates" || opened.kind === "unreadable")
+			throw unreadError(opened);
+		if (opened.kind === "does-not-compose")
+			throw new CliError(
+				`${composeProblem(shortIds(store.ids()).label(row.id, false), opened.error)}\nPerform its composition anew with 'maestro perform'`,
+			);
+		const composed = withParams(opened.composed, row, deps);
+		return printConfig(deps, isSet(values, "json"), rowsOf(composed), {
+			presets: row.presets ?? [],
+			flags: row.config ?? [],
+			limits: row.limits,
+		});
+	});
+}
+
 export const config: Command = {
 	pages: true,
-	usage: "config <composition> [flags]  (alias: cfg)",
+	usage: "config <composition|concert> [flags]  (alias: cfg)",
 	arguments: [
 		[
 			"<composition>",
 			"A .ts, .js or .json file, or <pack>.<composition> as 'maestro repertoire' lists it",
+		],
+		[
+			"<concert>",
+			"A concert id or unique prefix, as 'maestro ls' lists it: the config it was performed under, read from its record alone, so no --preset or -c. Each value shows its layer, and its file and line or its -c flag, as for a composition. The params it was given for a pack's composition show as values too, with the layer that set them; a bare file's are left out. --json is {values}, plus presets and flags, each as typed in order, and limits with timeout in milliseconds, left out when the concert had none. A snapshot that is missing, unreadable or no longer composes exits 1",
 		],
 	],
 	examples: [
@@ -294,9 +400,17 @@ export const config: Command = {
 			"See a -c override take the top layer",
 			'maestro config classics.build_then_repair --request "Add a --verbose flag" -c target.repo=../app',
 		],
+		[
+			"The config a concert was performed under, with its presets, flags and limits",
+			"maestro config 7f3c2a --json",
+		],
 	],
 	options: COMMON,
+	formOptions: (args) =>
+		isConcertName(configTarget(args)) ? RECORDED : COMMON,
 	async execute(args, deps) {
+		const target = configTarget(args);
+		if (isConcertName(target)) return configOfConcert(args, target, deps);
 		const early = peek(COMMON, args);
 		const session = await openSession(deps, overridesOf(early));
 		const { config: composed, unset } = await configured(
@@ -304,25 +418,10 @@ export const config: Command = {
 			{ verb: "config", options: COMMON, examples: false },
 			args,
 		);
-		const json = isSet(early, "json");
 		const rows: ConfigRow[] = [
 			...rowsOf(composed),
 			...unset.map((key) => ({ key, value: null, layer: "unset" })),
 		];
-		if (json) {
-			deps.stdout(jsonOf({ values: rows }));
-			return EXIT.ok;
-		}
-		deps.stdout(
-			table(
-				rows.map((r) => [
-					r.key,
-					layerOf(r),
-					r.layer === "unset" ? "unset" : JSON.stringify(r.value),
-					r.file ? `${r.file}:${r.line}` : (r.flag ?? ""),
-				]),
-			),
-		);
-		return EXIT.ok;
+		return printConfig(deps, isSet(early, "json"), rows, undefined);
 	},
 };
