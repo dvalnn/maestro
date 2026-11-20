@@ -818,7 +818,7 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 		if (refused) throw refused;
 		db.exec(
 			`UPDATE concerts SET ir = ?, pid = ?, status = 'running', settled_at = NULL, result_node = NULL,
-			result_expansion = NULL, reason = NULL, limits = ? WHERE id = ?`,
+			result_expansion = NULL, reason = NULL, disk_use = NULL, limits = ? WHERE id = ?`,
 			[JSON.stringify(ir), process.pid, limitsColumn(limits), id],
 		);
 		db.exec("UPDATE instances SET stale = 1 WHERE concert = ?", [id]);

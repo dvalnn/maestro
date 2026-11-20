@@ -178,8 +178,8 @@ concert that matches the filters, with no hint, and refuses `--limit` beside it.
   instance's `tokens_*` metrics but `tokens_reasoning`, which output tokens already count. A running agent shows them
   from the `agent` progress event it emits when it starts, then its latest note.
 - **Concert list.** A `time` column after `status`, and a `tokens` column with the concert's total, `-` when it has
-  none. The `disk` column, and the size `prune` frees, come from the record, measured as the concert settled; a running
-  concert, or one the record holds no size for, is measured as `ls` runs, and the size kept once it settled.
+  none. The `disk` column shows the size the record holds, measured as the concert settled, and `-` for a running
+  concert or one the record holds no size for. `prune` measures one the record holds no size for, and keeps it.
 - **Notes.** `ls` marks a concert whose instances have notes with `•` after its status, and its `--json` gives each
   concert's `notes` as a count by heading. Under its table, `ls <concert>` lists the notes its hosts give the current
   instances, such as an agent's `Obstacles` and `Lessons`, one `<instance>  <entry>` line each under its heading. On a
@@ -202,16 +202,19 @@ In the `--json` documents:
   `maestro ls <concert> --json | jq .outputs`. They are an agent's reply fields and a code node's values, without
   artifacts, the report and the host's bookkeeping ports (an agent's `session` and `lane`); an instance with none is
   left out. `instances[].outputs` keeps every output as recorded.
-- `ls` (each row), `ls <concert>`, `wait`, `watch` and `perform` carry `metrics`, each metric name's total over the
-  concert, and `tokens`, the concert's total as the `tokens` column counts it. `ls` rows and `ls <concert>` also carry
-  `elapsedMs`, `settledAt - startedAt`, or the time since `startedAt` while the concert runs.
+- `ls --json` rows hold what places a concert and tells how it fared. They are `id`, `short`, `status`, `pack`,
+  `composition`, `workspace`, `tour`, `title`, `encoreOf`, `startedAt`, `settledAt`, `elapsedMs`, `tokens`, `diskUse`
+  and `notes`. The rest of the record is `ls <concert> --json`, which a poller reads once per concert it has not seen. A
+  row composes no snapshot, so a concert whose snapshot is unreadable is still listed.
+- `ls <concert>`, `wait`, `watch` and `perform` carry `metrics`, each metric name's total over the concert, and
+  `tokens`, the concert's total as the `tokens` column counts it. `ls <concert>` also carries `elapsedMs`,
+  `settledAt - startedAt`, or the time since `startedAt` while the concert runs.
 - `ls <concert> --json` shows the recorded `--preset` list and `-c` flags as `presets` and `config`, and the concert's
   limits as `limits`, `timeout` in milliseconds.
-- `ls --json` rows and `ls <concert> --json` show the values the
-  [config snapshot](../../docs/architecture.md#config-snapshot) composes to as `snapshot`. A row leaves it out when it
-  cannot be read or no longer composes, and every other concert is still listed.
+- `ls <concert> --json` shows the values the [config snapshot](../../docs/architecture.md#config-snapshot) composes to
+  as `snapshot`, left out when it cannot be read or no longer composes.
 - `ls`, `wait`, `watch`, `kill`, `tour`, `prune` and `artifact` read no config file, and take no `--preset` or `-c`.
-  `ls` measures a concert's disk use under its snapshot, and `prune` releases what its hosts hold under it.
+  `prune` measures a concert's disk use and releases what its hosts hold under its snapshot.
 
 ### Watching
 

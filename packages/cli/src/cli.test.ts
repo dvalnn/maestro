@@ -36,7 +36,26 @@ const LOUD = join(FIXTURES, "loud.ts");
 const USES_ECHO = join(FIXTURES, "uses_echo.ts");
 const ESC = "\u001b";
 
-/** Forgets the disk use the record keeps for `ids`, as a store from before it kept any, so the next read measures it. */
+/** The keys of an `ls --json` listing row, the whole of it. */
+const LIST_ROW = [
+	"id",
+	"short",
+	"status",
+	"pack",
+	"composition",
+	"workspace",
+	"tour",
+	"title",
+	"encoreOf",
+	"startedAt",
+	"settledAt",
+	"elapsedMs",
+	"tokens",
+	"diskUse",
+	"notes",
+];
+
+/** Forgets the disk use the record keeps for `ids`, as a store from before it kept any: `ls` then shows none and `prune` measures it. */
 function unmeasured(w: Awaited<ReturnType<typeof world>>, ...ids: string[]) {
 	const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
 	for (const id of ids)
@@ -189,12 +208,6 @@ describe("compose and config", () => {
 		expect(rows.map((row: { id: string }) => row.id).sort()).toEqual(
 			[healthy, pending].sort(),
 		);
-		expect(
-			rows.find((row: { id: string }) => row.id === pending),
-		).not.toHaveProperty("snapshot");
-		expect(
-			rows.find((row: { id: string }) => row.id === healthy),
-		).toMatchObject({ status: "ok", snapshot });
 		const single = async (id: string) => {
 			const shown = await w.call(["ls", id, "--json"], outside);
 			expect(shown.code).toBe(0);
@@ -1614,8 +1627,8 @@ describe("the record", () => {
 		}
 	});
 
-	// Seam: ls exit codes, table rows and JSON when the stored snapshot cannot be read.
-	test("ls keeps every concert and omits an unreadable snapshot", async () => {
+	// Seam: ls exit codes, table rows and JSON when the stored snapshot cannot be read, and what a listing row leaves to `ls <concert> --json`.
+	test("ls lists every concert without the record's weight, and omits an unreadable snapshot", async () => {
 		const w = await world();
 		const perform = async () => {
 			const result = await w.call(["perform", ...GREET], {
@@ -1637,14 +1650,13 @@ describe("the record", () => {
 		expect(rows.map((row: { id: string }) => row.id).sort()).toEqual(
 			[before, unreadable, after].sort(),
 		);
-		for (const id of [before, after])
-			expect(rows.find((row: { id: string }) => row.id === id)).toMatchObject({
-				status: "ok",
-				snapshot: { workspace: "ws" },
-			});
-		expect(
-			rows.find((row: { id: string }) => row.id === unreadable),
-		).not.toHaveProperty("snapshot");
+		for (const row of rows) {
+			expect(row).toMatchObject({ status: "ok" });
+			for (const key of Object.keys(row)) expect(LIST_ROW).toContain(key);
+		}
+		expect(json(await w.call(["ls", before, "--json"], outside))).toMatchObject(
+			{ snapshot: { workspace: "ws" }, moduleDir: expect.any(String) },
+		);
 		const single = await w.call(["ls", unreadable, "--json"], outside);
 		expect(single.code).toBe(0);
 		expect(json(single)).toMatchObject({ id: unreadable, status: "ok" });
@@ -1985,7 +1997,7 @@ describe("the record", () => {
 		expect(group).not.toHaveProperty("inputs");
 	});
 
-	test("ls shows the disk a concert holds as it settled: its directory and what its hosts report", async () => {
+	test("ls shows the disk a concert held as it settled, and none for one the record holds no size for", async () => {
 		const w = await world();
 		let usage = 2048;
 		const host = hostOf(ECHO, { usage: () => usage });
@@ -2004,28 +2016,26 @@ describe("the record", () => {
 		usage = 0;
 		expect(await diskUse()).toBe(settled);
 		unmeasured(w, id);
-		usage = 2048;
-		expect(await diskUse()).toBe(settled + 100);
-		usage = 0;
-		expect(await diskUse()).toBe(settled + 100);
+		expect(await diskUse()).toBeUndefined();
+		expect((await w.call(["ls"], { hosts: [host] })).out).toMatch(
+			/ok\s.*\s-\s+-$/m,
+		);
 	});
 
-	test("a host that cannot measure a concert leaves ls and prune working, and ls says why", async () => {
+	test("a host that cannot measure a concert leaves ls and prune working, and prune says why", async () => {
 		const w = await world();
 		const host = hostOf(ECHO, {
 			usage: () => Promise.reject(new Error("record '/x' is malformed")),
 		});
 		const id = idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
 		const listed = await w.call(["ls"], { hosts: [host] });
-		expect(listed).toMatchObject({ code: 0 });
+		expect(listed).toMatchObject({ code: 0, err: "" });
 		expect(listed.out).toContain(shortOf(id));
-		expect(listed.err).toBe(
+		const pruned = await w.call(["prune", id, "--yes"], { hosts: [host] });
+		expect(pruned).toMatchObject({ code: 0 });
+		expect(pruned.err).toContain(
 			`warning: host 'fake' cannot measure concert ${id}: record '/x' is malformed`,
 		);
-		expect((await w.call(["ls", "--json"], { hosts: [host] })).err).toBe("");
-		expect(
-			await w.call(["prune", id, "--yes"], { hosts: [host] }),
-		).toMatchObject({ code: 0 });
 	});
 
 	test("wait exits with the concert's outcome and prints its result's outputs, and 0 for one that is already settled", async () => {
@@ -2121,7 +2131,7 @@ describe("the record", () => {
 		const row = json(await w.call(["ls", "--json"])).find(
 			(r: { id: string }) => r.id === id,
 		);
-		expect(row).toMatchObject({ metrics, tokens: 15_500 });
+		expect(row).toMatchObject({ tokens: 15_500 });
 		expect(row.elapsedMs).toBe(row.settledAt - row.startedAt);
 		const single = json(await w.call(["ls", id, "--json"]));
 		expect(single).toMatchObject({ metrics, tokens: 15_500 });
@@ -2685,8 +2695,8 @@ describe("prune --dry-run", () => {
 		expect(after.map((row) => row.id)).toEqual([b, a]);
 	});
 
-	// Seam: independently measured ls diskUse and prune wouldFree under a recorded config.
-	test("prune and ls measure the same disk use outside the recorded workspace", async () => {
+	// Seam: prune's measured wouldFree and freed under a recorded config.
+	test("prune measures the disk use under the recorded config outside the recorded workspace", async () => {
 		const w = await world();
 		const host: Host = {
 			...hostOf(ECHO, {
@@ -2710,10 +2720,6 @@ describe("prune --dry-run", () => {
 		const cwd = await scratch();
 		await Bun.write(join(cwd, ".maestro/config.yaml"), "mode: { bytes: 37 }\n");
 		const outside = { cwd, hosts: [host] };
-		unmeasured(w, id);
-		const listed = await w.call(["ls", "--json"], outside);
-		expect(listed.code).toBe(0);
-		expect(json(listed)).toMatchObject([{ id, diskUse: 10007 }]);
 		unmeasured(w, id);
 		const dry = await w.call(["prune", id, "--dry-run", "--json"], outside);
 		expect(dry.code).toBe(0);

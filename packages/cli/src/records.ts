@@ -1,4 +1,3 @@
-import type { Metrics } from "@maestro/core/host";
 import {
 	type ConcertFilter,
 	type ConcertRecord,
@@ -37,6 +36,7 @@ import {
 	CliError,
 	concertDoc,
 	EXIT,
+	elapsedOf,
 	exitOf,
 	formatBytes,
 	jsonOf,
@@ -57,7 +57,6 @@ import {
 	artifactsOf,
 	concertOf,
 	concertsOf,
-	diskOf,
 	instancesInOrder,
 	isMaestro,
 	type Located,
@@ -96,14 +95,45 @@ const concertColumns = ({ session, store }: Stored, concert: ConcertRecord) => {
 	return {
 		...row,
 		...(opened.kind === "composes" && { snapshot: opened.composed.values }),
-		elapsedMs: (row.settledAt ?? Date.now()) - row.startedAt,
+		elapsedMs: elapsedOf(concert),
 	};
 };
 
-const tokenCell = (metrics: Metrics) => {
-	const tokens = tokensOf(metrics);
-	return tokens > 0 ? compact(tokens) : "-";
+/**
+ * What a listing row holds of a concert's record: what places it and tells how it fared, and `elapsedMs`, its run time,
+ * up to now while it runs. The rest is `ls <concert> --json`, so a listing composes no snapshot.
+ */
+const rowColumns = (concert: ConcertRecord) => {
+	const {
+		id,
+		pack,
+		composition,
+		status,
+		workspace,
+		tour,
+		title,
+		encoreOf,
+		startedAt,
+		settledAt,
+		diskUse,
+	} = concert;
+	return {
+		id,
+		pack,
+		composition,
+		status,
+		workspace,
+		tour,
+		title,
+		encoreOf,
+		startedAt,
+		settledAt,
+		diskUse,
+		elapsedMs: elapsedOf(concert),
+	};
 };
+
+const tokenCell = (tokens: number) => (tokens > 0 ? compact(tokens) : "-");
 
 const dash = (text: string | undefined) => text || "-";
 
@@ -288,7 +318,7 @@ function none({ session: { deps }, json }: Stored, filtered: boolean) {
 	return EXIT.ok;
 }
 
-async function listed(stored: Stored, query: ConcertFilter) {
+function listed(stored: Stored, query: ConcertFilter) {
 	const { session, store, values, json } = stored;
 	const color = colorOf(session.deps, values).out;
 	// `query.limit` is undefined under `--all`, which fetches every match and cuts none.
@@ -308,15 +338,12 @@ async function listed(stored: Stored, query: ConcertFilter) {
 	}
 	const short = shortIds(store.ids());
 	const counts = noteCounts(stored, concerts);
-	const rows = await Promise.all(
-		concerts.map(async (c) => ({
-			...concertColumns(stored, c),
-			short: short.label(c.id, false),
-			...spendOf(store, c.id),
-			diskUse: await diskOf(stored, c),
-			notes: counts.get(c.id) ?? {},
-		})),
-	);
+	const rows = concerts.map((c) => ({
+		...rowColumns(c),
+		short: short.label(c.id, false),
+		tokens: tokensOf(store.metrics(c.id)),
+		notes: counts.get(c.id) ?? {},
+	}));
 	const text = table(
 		[
 			[
@@ -340,8 +367,8 @@ async function listed(stored: Stored, query: ConcertFilter) {
 				dash(r.tour),
 				dash(r.workspace),
 				`${r.pack}.${r.composition}`,
-				tokenCell(r.metrics),
-				formatBytes(r.diskUse),
+				tokenCell(r.tokens),
+				r.diskUse === undefined ? "-" : formatBytes(r.diskUse),
 			]),
 		],
 		color,

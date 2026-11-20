@@ -12,7 +12,7 @@ How to read what a concert left: its instances, their outputs and artifacts, and
   item `risk`.
 - `stale` marks a row an earlier attempt of a resumed concert left, neither reused nor replaced.
 - The reason of the instance the closing block's `at` names is the concert's root cause.
-- `--json` gives the concert's row and `instances`, each with `status`, `reason`, `outputs`, `metrics`, `artifacts`,
+- `--json` gives the concert's record and `instances`, each with `status`, `reason`, `outputs`, `metrics`, `artifacts`,
   `stale` and `inputs`: the values a leaf was fed on its wired ports. Literal ports are in the IR, never in `inputs`.
 - `--json` also gives `reports`, each agent's report, and `outputs`, each instance's typed values (an agent's reply
   fields, a code node's values), both by instance name: `maestro ls <id> --json | jq .outputs`. An agent's reply fields

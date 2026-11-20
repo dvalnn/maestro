@@ -339,31 +339,3 @@ export async function setupsOf(
 	const roots = await shownRoots(composed, session.deps.env, workspace);
 	return (host) => hostSetup(host, composed, roots);
 }
-
-/**
- * The bytes `concert` holds: its directory under the data root, and what each host reports holding for it under its
- * config as `openRecorded` opens it. A settled concert's comes from the record, measured once and kept there when the
- * record holds none. A host that cannot measure its share counts none, why goes to stderr, and nothing is kept.
- */
-export async function diskOf(
-	{ session, store, values }: Stored,
-	concert: ConcertRecord,
-): Promise<number> {
-	const { id, status, diskUse } = concert;
-	if (status !== "running" && diskUse !== undefined) return diskUse;
-	const { bytes, failures } = await diskUseOf(
-		session.files.concerts,
-		id,
-		session.deps.hosts,
-		await setupsOf(session, openRecorded(session, store, concert)),
-	);
-	for (const { host, error } of failures)
-		warn(
-			session.deps,
-			values,
-			`host '${host}' cannot measure concert ${id}: ${messageOf(error)}`,
-		);
-	if (status !== "running" && failures.length === 0)
-		store.setDiskUse(id, bytes);
-	return bytes;
-}

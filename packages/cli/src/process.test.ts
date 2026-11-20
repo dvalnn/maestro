@@ -604,15 +604,17 @@ describe("encore", () => {
 	test("measures again the disk of the concert it encores, whose sessions it continues", async () => {
 		const w = await world();
 		let grown = 0;
+		let first = "";
 		const host = hostOf(ECHO, {
 			usage: (id: string) => (id === first ? grown : 0),
 		});
-		const first = idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
+		first = idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
 		const diskOf = async () =>
 			json(await w.call(["ls", "--json"], { hosts: [host] })).find(
 				(r: { id: string }) => r.id === first,
 			).diskUse;
 		const settled = await diskOf();
+		expect(settled).toBeGreaterThanOrEqual(0);
 		grown = 500;
 		expect(await diskOf()).toBe(settled);
 		await w.call(["encore", first, "--name", "y"], { hosts: [host] });

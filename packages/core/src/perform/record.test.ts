@@ -321,6 +321,22 @@ test("a reader settles a concert whose process exited failed, with its running i
 	reader.close();
 });
 
+test("a resumed concert holds no disk use until it settles again", async () => {
+	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+	const path = join(dir, "record.db");
+	const record = openWriter(path);
+	const reader = openRecord(path);
+	const ir = await fixtureIr();
+	record.begin({ id: "c", ir, startedAt: 1 });
+	record.finish("c", { outcome: "failed", reason: "x" }, 2);
+	record.setDiskUse("c", 100);
+	expect(reader.find("c")).toMatchObject({ diskUse: 100 });
+	record.resume({ id: "c", ir });
+	expect(reader.find("c")).not.toHaveProperty("diskUse");
+	record.close();
+	reader.close();
+});
+
 test("finishing a concert settles its running instances, and a settled instance or concert takes no more writes", async () => {
 	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
 	const path = join(dir, "record.db");

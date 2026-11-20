@@ -350,7 +350,7 @@ async function conduct(
 
 /**
  * Keeps in the record the disk each of `concerts` holds: the concert settling, and the concert it encores, whose
- * sessions it continued. One a host cannot measure, or that is gone, keeps none, so a reader measures it instead.
+ * sessions it continued. One a host cannot measure, or that is gone, keeps none, so `prune` measures it instead.
  */
 async function keepDiskUse(
 	options: Opened,

@@ -166,25 +166,25 @@ host's types or rules: it calls the hooks below and records what they return. AD
 The exports, from `@maestro/core/host`, `@maestro/core/node` and `@maestro/ir`, are listed in the `Host` TSDoc. Required
 members sit flat on the host; a `?` marks an optional one.
 
-| Member                | Called by                                                              | Gives                                 |
-| --------------------- | ---------------------------------------------------------------------- | ------------------------------------- |
-| `name`                | Core, always: it namespaces kinds, types, facts.                       |                                       |
-| `kinds`, `types`      | Core, at compose and perform start.                                    |                                       |
-| `config`              | Core, at config compose: a schema per namespace.                       |                                       |
-| `paths?`, `deferred?` | CLI, for config paths and late bases.                                  | Key paths.                            |
-| `needs?(graph)`       | CLI, for `rep`, from the example set.                                  | Config entries its nodes read.        |
-| `kind.name`           | Core, at compose.                                                      |                                       |
-| `kind.config`         | Core, at compose.                                                      | `HOST.config` diagnostics.            |
-| `kind.ports(node)`    | Core, at compose, per node.                                            | The node's `in` and `out`.            |
-| `kind.execute(...)`   | Core, per instance, when its inputs are ready.                         | `HostNodeResult`.                     |
-| `kind.cancel(i)`      | Core, on cancel or halt: releases resources, killing the process tree. | Nothing; `execute` then settles.      |
-| `validate(graph, s)`  | Core, at compose, once per graph, after core's checks.[^validate]      | `HOST.`-prefixed diagnostics.         |
-| `bounds(node)`        | Core, at compose, per node of the host's kinds.                        | Named counts per instance.            |
-| `environment(s)`      | Core, at perform start, once per concert.                              | Facts for code nodes' `env`.          |
-| `param?(type, text)`  | CLI: reads a param of one of the host's `types`.                       | A value, or diagnostics.              |
-| `resources?.release`  | CLI, for `prune`, on a settled concert.                                | Nothing.                              |
-| `resources?.usage`    | Core, as a concert settles, and its encore's; CLI, for `ls` otherwise. | Bytes on disk.                        |
-| `text?.*`             | CLI, for `watch`, `ls`, `ls --json`, `ls --help`.                      | Progress words, actor, notes, report. |
+| Member                | Called by                                                               | Gives                                 |
+| --------------------- | ----------------------------------------------------------------------- | ------------------------------------- |
+| `name`                | Core, always: it namespaces kinds, types, facts.                        |                                       |
+| `kinds`, `types`      | Core, at compose and perform start.                                     |                                       |
+| `config`              | Core, at config compose: a schema per namespace.                        |                                       |
+| `paths?`, `deferred?` | CLI, for config paths and late bases.                                   | Key paths.                            |
+| `needs?(graph)`       | CLI, for `rep`, from the example set.                                   | Config entries its nodes read.        |
+| `kind.name`           | Core, at compose.                                                       |                                       |
+| `kind.config`         | Core, at compose.                                                       | `HOST.config` diagnostics.            |
+| `kind.ports(node)`    | Core, at compose, per node.                                             | The node's `in` and `out`.            |
+| `kind.execute(...)`   | Core, per instance, when its inputs are ready.                          | `HostNodeResult`.                     |
+| `kind.cancel(i)`      | Core, on cancel or halt: releases resources, killing the process tree.  | Nothing; `execute` then settles.      |
+| `validate(graph, s)`  | Core, at compose, once per graph, after core's checks.[^validate]       | `HOST.`-prefixed diagnostics.         |
+| `bounds(node)`        | Core, at compose, per node of the host's kinds.                         | Named counts per instance.            |
+| `environment(s)`      | Core, at perform start, once per concert.                               | Facts for code nodes' `env`.          |
+| `param?(type, text)`  | CLI: reads a param of one of the host's `types`.                        | A value, or diagnostics.              |
+| `resources?.release`  | CLI, for `prune`, on a settled concert.                                 | Nothing.                              |
+| `resources?.usage`    | Core, as a concert settles, and its encore's; CLI, for `prune` if none. | Bytes on disk.                        |
+| `text?.*`             | CLI, for `watch`, `ls`, `ls --json`, `ls --help`.                       | Progress words, actor, notes, report. |
 
 [^validate]:
     It sees the whole graph, where host rules live: the lane extension rule, the profile and checks a node names, bind

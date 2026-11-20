@@ -1,6 +1,10 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import type { ConcertFilter, ConcertRecord } from "@maestro/core/perform";
+import {
+	type ConcertFilter,
+	type ConcertRecord,
+	diskUseOf,
+} from "@maestro/core/perform";
 import { DURATION_EXAMPLE, messageOf } from "@maestro/ir";
 import { duration } from "@maestro/render-text/live";
 import {
@@ -12,9 +16,11 @@ import {
 	RECORDED,
 	textOf,
 	type Values,
+	warn,
 } from "./command";
 import {
 	EXIT,
+	elapsedOf,
 	formatBytes,
 	jsonOf,
 	parseDuration,
@@ -25,7 +31,6 @@ import {
 } from "./output";
 import {
 	concertsOf,
-	diskOf,
 	type Located,
 	openRecorded,
 	type Stored,
@@ -152,6 +157,33 @@ function selected({ store }: Stored, selection: Selection): ConcertRecord[] {
 	return store
 		.concerts(filter)
 		.filter((c) => c.settledAt !== undefined && c.settledAt < cutoff);
+}
+
+/**
+ * The bytes `concert` holds: its directory under the data root, and what each host reports holding for it under its
+ * config as `openRecorded` opens it. The record's size, else measured once and kept there. A host that cannot measure
+ * its share counts none, why goes to stderr, and nothing is kept.
+ */
+async function diskOf(
+	{ session, store, values }: Stored,
+	concert: ConcertRecord,
+): Promise<number> {
+	const { id, diskUse } = concert;
+	if (diskUse !== undefined) return diskUse;
+	const { bytes, failures } = await diskUseOf(
+		session.files.concerts,
+		id,
+		session.deps.hosts,
+		await setupsOf(session, openRecorded(session, store, concert)),
+	);
+	for (const { host, error } of failures)
+		warn(
+			session.deps,
+			values,
+			`host '${host}' cannot measure concert ${id}: ${messageOf(error)}`,
+		);
+	if (failures.length === 0) store.setDiskUse(id, bytes);
+	return bytes;
 }
 
 /** What a concert that prune refuses is told to do instead. */
@@ -284,7 +316,7 @@ function rehearsed(
 					targets.map((c, i) => [
 						c.id,
 						c.status,
-						duration((c.settledAt ?? Date.now()) - c.startedAt),
+						duration(elapsedOf(c)),
 						formatBytes(sizes[i] ?? 0),
 					]),
 				),
