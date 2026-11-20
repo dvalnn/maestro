@@ -203,9 +203,15 @@ In the `--json` documents:
   artifacts, the report and the host's bookkeeping ports (an agent's `session` and `lane`); an instance with none is
   left out. `instances[].outputs` keeps every output as recorded.
 - `ls --json` rows hold what places a concert and tells how it fared. They are `id`, `short`, `status`, `pack`,
-  `composition`, `workspace`, `tour`, `title`, `encoreOf`, `startedAt`, `settledAt`, `elapsedMs`, `tokens`, `diskUse`
-  and `notes`. The rest of the record is `ls <concert> --json`, which a poller reads once per concert it has not seen. A
-  row composes no snapshot, so a concert whose snapshot is unreadable is still listed.
+  `composition`, `workspace`, `tour`, `title`, `encoreOf`, `startedAt`, `settledAt`, `elapsedMs`, `tokens`, `diskUse`,
+  `facts` and `notes`. The rest of the record is `ls <concert> --json`, which a poller reads once per concert it has not
+  seen. A row composes no snapshot, so a concert whose snapshot is unreadable is still listed.
+- `facts` is on `ls --json` rows and in `ls <concert> --json`. It holds what each host gave the concert's latest attempt
+  at its start, by host name. A new concert has it from its first row. A resumed concert has none until its hosts give
+  the new attempt's, so a poller never reads the earlier attempt's. It is also left out for a concert recorded before
+  facts were kept, and for an attempt whose hosts could not give them. The repo host's `target` is the checkout's
+  absolute path:
+  `"facts": {"repo": {"target": "/abs/path", "base": "main", "sparse": null, "revision": "<sha>", "profiles": "<digest>"}}`.
 - `ls <concert>`, `wait`, `watch` and `perform` carry `metrics`, each metric name's total over the concert, and
   `tokens`, the concert's total as the `tokens` column counts it. `ls <concert>` also carries `elapsedMs`,
   `settledAt - startedAt`, or the time since `startedAt` while the concert runs.

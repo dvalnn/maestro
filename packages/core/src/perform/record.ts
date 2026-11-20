@@ -4,6 +4,7 @@ import type {
 	ConcertEvent,
 	Enrichment,
 	EventBody,
+	Facts,
 	Ir,
 	NodeInstance,
 	Outcome,
@@ -27,6 +28,7 @@ const UPGRADE_STEPS = [
 	"ALTER TABLE concerts ADD COLUMN limits TEXT",
 	"ALTER TABLE concerts ADD COLUMN disk_use INTEGER",
 	"ALTER TABLE concerts ADD COLUMN snapshot TEXT",
+	"ALTER TABLE concerts ADD COLUMN facts TEXT",
 ];
 /** The version of the schema below, kept in SQLite's `user_version`. */
 const SCHEMA_VERSION = OLDEST_UPGRADABLE_VERSION + UPGRADE_STEPS.length;
@@ -68,7 +70,8 @@ export const CONCERT_FINISHED = "the concert finished before it settled";
 // encore of, `fingerprint` the digest `begin` was given, and `limits` the ceiling of its latest attempt (JSON), NULL
 // when it had none. `disk_use` is the bytes the concert holds on disk, measured when it settles, NULL until then.
 // `snapshot` is its config snapshot (JSON): each layer's text and how it was read, NULL in a row written before
-// snapshots were kept (ADR 0019).
+// snapshots were kept (ADR 0019). `facts` is each host's facts (JSON, by host name) of its latest attempt, NULL in a row
+// written before they were kept.
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -94,7 +97,8 @@ CREATE TABLE concerts (
 	fingerprint TEXT,
 	limits TEXT,
 	disk_use INTEGER,
-	snapshot TEXT
+	snapshot TEXT,
+	facts TEXT
 ) STRICT;
 CREATE TABLE instances (
 	concert TEXT NOT NULL,
@@ -195,6 +199,8 @@ export type ConcertRecord = ConcertOrigin & {
 	 * the row holds one this version cannot read.
 	 */
 	snapshot?: ConfigSnapshot | "unreadable";
+	/** Each host's facts, by host name, its latest attempt was performed under; left out before they were kept. */
+	facts?: Record<string, Facts>;
 };
 
 /**
@@ -323,12 +329,14 @@ export interface RecordWriter {
 				fingerprint: string;
 				limits: ConcertLimits;
 				snapshot: ConfigSnapshot;
+				facts: Record<string, Facts>;
 			}
 		>,
 	): void;
 	/**
 	 * Restarts a concert that failed or was rejected as `running`, performed by this process, with `ir` as its stored IR
-	 * and `limits` as its ceiling. Its instance records and events stay. `reuse`, `start` and `settle` take over each
+	 * and `limits` as its ceiling. Its facts are cleared, until `setFacts`
+	 * keeps the attempt's own. Its instance records and events stay. `reuse`, `start` and `settle` take over each
 	 * instance record from before.
 	 * @returns the concert, and its instance records from before.
 	 * @throws Unresumable when the concert is running, as its process is alive, or settled `ok`.
@@ -381,6 +389,8 @@ export interface RecordWriter {
 	finish(concert: string, result: ConcertResult, at: number): void;
 	/** Keeps `bytes` as the disk the concert holds, as `Records.setDiskUse` does. */
 	setDiskUse(concert: string, bytes: number): void;
+	/** Keeps `facts` as those the concert's resumed attempt is performed under. */
+	setFacts(concert: string, facts: Record<string, Facts>): void;
 	/** The concert's metrics, as `Records.metrics` sums them. */
 	metrics(concert: string): Metrics;
 	close(): void;
@@ -411,6 +421,7 @@ type ConcertRow = {
 	limits: string | null;
 	disk_use: number | null;
 	snapshot: string | null;
+	facts: string | null;
 };
 
 type InstanceStatus = InstanceRecord["status"];
@@ -818,7 +829,7 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 		if (refused) throw refused;
 		db.exec(
 			`UPDATE concerts SET ir = ?, pid = ?, status = 'running', settled_at = NULL, result_node = NULL,
-			result_expansion = NULL, reason = NULL, disk_use = NULL, limits = ? WHERE id = ?`,
+			result_expansion = NULL, reason = NULL, disk_use = NULL, facts = NULL, limits = ? WHERE id = ?`,
 			[JSON.stringify(ir), process.pid, limitsColumn(limits), id],
 		);
 		db.exec("UPDATE instances SET stale = 1 WHERE concert = ?", [id]);
@@ -861,8 +872,8 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 		if (refused) throw refused;
 		db.exec(
 			`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, workspace, tour, title, module_dir,
-			file, profile, config, params, encore_of, fingerprint, limits, snapshot)
-			VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			file, profile, config, params, encore_of, fingerprint, limits, snapshot, facts)
+			VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			beginRow(concert),
 		);
 	};
@@ -870,6 +881,14 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 	return {
 		begin: writing(db, begin),
 		resume: ({ id, ir, limits }) => restart(id, ir, limits),
+		setFacts: (id, facts) => {
+			const updated = db
+				.query<{ id: string }, [string, string]>(
+					"UPDATE concerts SET facts = ? WHERE id = ? RETURNING id",
+				)
+				.get(JSON.stringify(facts), id);
+			if (!updated) throw unknownConcert(id);
+		},
 		metrics: (id) => metricsOf(db, id),
 		start: writing(
 			db,
@@ -1001,6 +1020,7 @@ function beginRow(concert: Parameters<RecordWriter["begin"]>[0]) {
 		concert.fingerprint ?? null,
 		limitsColumn(concert.limits),
 		json(concert.snapshot),
+		json(concert.facts),
 	];
 }
 
@@ -1069,10 +1089,21 @@ function laterColumns(row: ConcertRow): Partial<ConcertRecord> {
 		...(row.limits !== null && { limits: JSON.parse(row.limits) }),
 		...(row.disk_use !== null && { diskUse: row.disk_use }),
 		...(row.snapshot !== null && { snapshot: snapshotOf(row.snapshot) }),
+		...(row.facts !== null && factsOf(row.facts)),
 	};
 }
 
 const isString = (value: unknown) => typeof value === "string";
+
+/** The `facts` field a column holds, or none when it is not JSON of an object of objects, as a later version may write. */
+function factsOf(column: string): Pick<ConcertRecord, "facts"> {
+	try {
+		const facts: unknown = JSON.parse(column);
+		if (isRecord(facts) && Object.values(facts).every(isRecord))
+			return { facts: facts as Record<string, Facts> };
+	} catch {}
+	return {};
+}
 
 const isKeyPaths = (paths: unknown): paths is KeyPath[] =>
 	Array.isArray(paths) &&

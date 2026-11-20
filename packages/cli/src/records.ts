@@ -100,7 +100,7 @@ const concertColumns = ({ session, store }: Stored, concert: ConcertRecord) => {
 };
 
 /**
- * What a listing row holds of a concert's record: what places it and tells how it fared, and `elapsedMs`, its run time,
+ * What a listing row holds of a concert's record: what places it, including the `facts` its hosts gave, and tells how it fared, and `elapsedMs`, its run time,
  * up to now while it runs. The rest is `ls <concert> --json`, so a listing composes no snapshot.
  */
 const rowColumns = (concert: ConcertRecord) => {
@@ -116,6 +116,7 @@ const rowColumns = (concert: ConcertRecord) => {
 		startedAt,
 		settledAt,
 		diskUse,
+		facts,
 	} = concert;
 	return {
 		id,
@@ -129,6 +130,7 @@ const rowColumns = (concert: ConcertRecord) => {
 		startedAt,
 		settledAt,
 		diskUse,
+		facts,
 		elapsedMs: elapsedOf(concert),
 	};
 };

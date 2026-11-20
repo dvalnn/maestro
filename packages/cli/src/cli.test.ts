@@ -52,6 +52,7 @@ const LIST_ROW = [
 	"elapsedMs",
 	"tokens",
 	"diskUse",
+	"facts",
 	"notes",
 ];
 
@@ -2504,7 +2505,8 @@ describe("the record", () => {
 		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
 		for (const twin of twins)
 			db.run(
-				"INSERT INTO concerts SELECT ?, composition, pack, ir, pid, status, started_at, settled_at, result_node, result_expansion, reason, workspace, tour, title, module_dir, file, profile, config, params, encore_of, fingerprint, limits, disk_use, snapshot FROM concerts WHERE id = ?",
+				`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, settled_at, result_node, result_expansion, reason, workspace, tour, title, module_dir, file, profile, config, params, encore_of, fingerprint, limits, disk_use, snapshot)
+				SELECT ?, composition, pack, ir, pid, status, started_at, settled_at, result_node, result_expansion, reason, workspace, tour, title, module_dir, file, profile, config, params, encore_of, fingerprint, limits, disk_use, snapshot FROM concerts WHERE id = ?`,
 				[twin, ids[0] ?? ""],
 			);
 		db.close();

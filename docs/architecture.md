@@ -411,8 +411,8 @@ no coordination beyond lane isolation. It holds:
 
 - Concerts: the IR, the id of the performing process, where the code came from (workspace, module directory, file), tour
   and title, each `--preset` name in order, each `-c` as typed, the config snapshot, the root's params the flags gave,
-  the concert an encore repeats and its fingerprint, the `limits` of the latest attempt, and the disk it holds, measured
-  as it settles and again when an encore of it settles.
+  the concert an encore repeats and its fingerprint, the `limits` and the host facts of the latest attempt, and the disk
+  it holds, measured as it settles and again when an encore of it settles.
 - Node instances: outcomes with reasons, durations, metrics, artifact references and each leaf's wired inputs.
 - Events.
 

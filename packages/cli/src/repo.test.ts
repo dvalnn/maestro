@@ -82,6 +82,57 @@ async function repoWorld(extra = "", env: Record<string, string> = {}) {
 	return { ...w, call, target };
 }
 
+// Seam: both ls JSON documents place a concert from the record, even when its snapshot cannot be read.
+test("ls carries the performed checkout facts without a readable snapshot and omits them for an older concert", async () => {
+	const w = await repoWorld();
+	writeFileSync(
+		join(w.cwd, ".maestro/config.yaml"),
+		`target: { repo: ${relative(w.cwd, w.target)}, base: main }\n`,
+	);
+	const head = Bun.spawnSync(["git", "rev-parse", "main"], {
+		cwd: w.target,
+		env: GIT_ENV,
+	});
+	expect(head.exitCode).toBe(0);
+	const performed = await w.call(["perform", join(REPO, "mark.ts")]);
+	expect(performed.code).toBe(0);
+	const id = idOf(performed);
+	const legacy = Bun.randomUUIDv7();
+	const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+	db.run(
+		`INSERT INTO concerts (id, composition, pack, ir, pid, status, started_at, workspace, module_dir)
+		SELECT ?, composition, pack, ir, pid, status, started_at, workspace, module_dir FROM concerts WHERE id = ?`,
+		[legacy, id],
+	);
+	db.run("UPDATE concerts SET snapshot = ? WHERE id = ?", ["[", id]);
+	db.close();
+	const listed = await w.call(["ls", "--json"]);
+	expect(listed.code).toBe(0);
+	const rows = json(listed);
+	const row = rows.find((r: { id: string }) => r.id === id);
+	expect(row).toMatchObject({
+		facts: {
+			repo: {
+				target: w.target,
+				base: "main",
+				sparse: null,
+				revision: head.stdout.toString().trim(),
+				profiles: expect.any(String),
+			},
+		},
+	});
+	expect(rows.find((r: { id: string }) => r.id === legacy)).not.toHaveProperty(
+		"facts",
+	);
+	const single = await w.call(["ls", id, "--json"]);
+	expect(single.code).toBe(0);
+	expect(json(single).facts).toEqual(row.facts);
+	expect(json(single)).not.toHaveProperty("snapshot");
+	const old = await w.call(["ls", legacy, "--json"]);
+	expect(old.code).toBe(0);
+	expect(json(old)).not.toHaveProperty("facts");
+});
+
 test("a missing target.repo exits 2 when -c gave it, and 1 when a config file did", async () => {
 	const w = await repoWorld();
 	const missing = join(w.cwd, "gone");

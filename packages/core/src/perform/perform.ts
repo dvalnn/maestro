@@ -130,11 +130,11 @@ export type Concert = {
 	cancel(): Promise<void>;
 };
 
-/** `PerformOptions` once the record store is open for writing, with each host's facts once known for a new concert. */
+/** `PerformOptions` once the record store is open for writing, with each host's facts as one attempt obtains them. */
 type Opened = Omit<PerformOptions, "recordPath"> & {
 	record: RecordWriter;
 	kinds: Kit["kinds"];
-	env?: Promise<Record<string, Facts>>;
+	env: () => Promise<Record<string, Facts>>;
 };
 
 /** What a concert takes from its record as it starts: the instances a resume may reuse, and the concert it encores. */
@@ -220,16 +220,21 @@ export async function perform(options: PerformOptions): Promise<Concert> {
 	checkLimits(options.limits ?? {});
 	const kinds = kindLookup(options.hosts);
 	const id = options.resume ?? Bun.randomUUIDv7();
-	const env =
-		options.resume === undefined
-			? environments(options.hosts, (host) =>
-					hostSetup(host, options.config, options.roots),
-				)
-			: undefined;
-	// A host that cannot give its facts fails the concert once it is recorded, so the fingerprint goes without them.
-	const facts = await env?.catch(() => undefined);
+	const obtain = () =>
+		environments(options.hosts, (host) =>
+			hostSetup(host, options.config, options.roots),
+		);
+	// A new concert is recorded with its facts. A host that cannot give them fails it once it is recorded, so the
+	// fingerprint goes without them. A resume restarts at once, so its timeout covers the hosts, and records them then.
+	const started = options.resume === undefined ? obtain() : undefined;
+	const facts = await started?.catch(() => undefined);
 	const record = openWriter(recordPath);
-	const opened: Opened = { ...options, record, kinds, env };
+	const opened: Opened = {
+		...options,
+		record,
+		kinds,
+		env: () => started ?? obtain(),
+	};
 	let entered: Entered;
 	try {
 		entered = enter(id, opened, facts);
@@ -301,6 +306,7 @@ function enter(
 		encoreOf: encore,
 		fingerprint: facts && fingerprintOf(ir, opened.config, facts),
 		limits,
+		facts,
 		snapshot: snapshotOf(opened.config, opened.workspaceDir),
 	});
 	return { kept: new Map(), encore };
@@ -387,6 +393,7 @@ async function performed(
 	const { loadCode } = options;
 	const setup = (host: Host) => hostSetup(host, options.config, options.roots);
 	const index = indexGraph(ir);
+	const env = await recordedFacts(id, options);
 	await makeDirs(dirs);
 	await stage(dirs.artifacts, options.stage ?? []);
 	const check = portCheck(validator());
@@ -395,7 +402,7 @@ async function performed(
 		encore,
 		record: options.record,
 		dirs,
-		env: await (options.env ?? environments(options.hosts, setup)),
+		env,
 		kinds: options.kinds,
 		setup,
 		workers: new Map([[TS_RUNTIME, tsWorker(loadCode, check)]]),
@@ -421,6 +428,16 @@ async function performed(
 	return root.halt
 		? { outcome: "failed", reason: root.halt.reason }
 		: resultOf(returned);
+}
+
+/** The facts of this attempt's hosts, which a resume keeps in the record as it obtains them. */
+async function recordedFacts(
+	id: string,
+	{ env, record, resume }: Opened,
+): Promise<Record<string, Facts>> {
+	const facts = await env();
+	if (resume !== undefined) record.setFacts(id, facts);
+	return facts;
 }
 
 async function environments(

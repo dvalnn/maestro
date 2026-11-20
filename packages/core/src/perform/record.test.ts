@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Ir, parseIr } from "@maestro/ir";
 import { coreDefaults, layered, parseLayer } from "../config";
+import type { Host } from "../host";
 import { isTourSlug, TOUR_MAX_LENGTH, TOUR_SEGMENT } from "../index";
+import { stagedRef } from "./artifacts";
 import { perform } from "./perform";
 import {
 	CONCERT_FINISHED,
@@ -25,7 +27,7 @@ const IR_FIXTURE = join(
 );
 const A = { node: "a", expansion: "" };
 const V4 = 4;
-const CURRENT_VERSION = 9;
+const CURRENT_VERSION = 10;
 /** The record store schema at version 4, the oldest one an upgrade starts from. */
 const V4_SCHEMA = `
 CREATE TABLE concerts (
@@ -193,9 +195,13 @@ test("a version-4 record store opens upgraded, with its rows kept, and reopens u
 	expect(found).not.toHaveProperty("limits");
 	expect(found).not.toHaveProperty("diskUse");
 	expect(found).not.toHaveProperty("snapshot");
+	expect(found).not.toHaveProperty("facts");
 	record.close();
 	expect(userVersion(path)).toBe(CURRENT_VERSION);
 	expect(columns(path)).toEqual(columns(fresh));
+	expect(columns(path).concerts).toContainEqual(
+		expect.objectContaining({ name: "facts", notnull: 0 }),
+	);
 	const upgraded = await Bun.file(path).bytes();
 	openRecord(path).close();
 	expect(await Bun.file(path).bytes()).toEqual(upgraded);
@@ -580,6 +586,283 @@ test("a tour slug is dot-separated lower-case hyphen-joined words of at most 64 
 		"-release": false,
 		release_part: false,
 	});
+});
+
+/** Perform options over one alpha host whose facts and code `behaviour` steers, in a fresh store under `dir`. */
+async function factsFixture(behaviour: {
+	environment: Host["environment"];
+	code?: () => Promise<() => unknown>;
+}) {
+	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+	const path = join(dir, "record.db");
+	const host: Host = {
+		name: "alpha",
+		kinds: [],
+		types: [],
+		config: {},
+		validate: () => [],
+		bounds: () => ({}),
+		environment: behaviour.environment,
+	};
+	const options = {
+		ir: await fixtureIr(
+			join(import.meta.dir, "../../../ir/fixtures/minimal.json"),
+		),
+		config: layered([coreDefaults(dir, "w")]),
+		hosts: [host],
+		roots: { user: dir, packs: {} },
+		loadCode: behaviour.code ?? (async () => () => ({ text: "hello" })),
+		recordPath: path,
+		dir: join(dir, "concerts"),
+		concurrency: 1,
+	};
+	return { path, host, options };
+}
+
+// Seam: perform's attempts and the facts a reopened record reader returns.
+test("a concert records each host's facts at perform start and replaces them on resume", async () => {
+	let place = "/checkout/first";
+	let fail = true;
+	const { path, host, options } = await factsFixture({
+		environment: () => ({ place, nested: { n: 2 }, absent: null }),
+		code: async () => () => {
+			if (fail) throw new Error("first attempt");
+			return { text: "hello" };
+		},
+	});
+	const other: Host = {
+		...host,
+		name: "beta",
+		environment: () => ({ mode: "test" }),
+	};
+	const both = { ...options, hosts: [host, other] };
+	const first = await perform(both);
+	expect((await first.done).outcome).toBe("failed");
+	place = "/checkout/second";
+	const reader = openRecord(path);
+	try {
+		expect(reader.find(first.id)).toHaveProperty("facts", {
+			alpha: { place: "/checkout/first", nested: { n: 2 }, absent: null },
+			beta: { mode: "test" },
+		});
+		fail = false;
+		const resumed = await perform({ ...both, resume: first.id });
+		expect((await resumed.done).outcome).toBe("ok");
+		expect(reader.find(first.id)).toHaveProperty("facts", {
+			alpha: { place: "/checkout/second", nested: { n: 2 }, absent: null },
+			beta: { mode: "test" },
+		});
+		place = "/checkout/third";
+		const encore = await perform({ ...both, encore: first.id });
+		expect((await encore.done).outcome).toBe("ok");
+		expect(reader.find(encore.id)).toHaveProperty("facts", {
+			alpha: { place: "/checkout/third", nested: { n: 2 }, absent: null },
+			beta: { mode: "test" },
+		});
+		expect(reader.find(first.id)).toMatchObject({
+			facts: { alpha: { place: "/checkout/second" } },
+		});
+	} finally {
+		reader.close();
+	}
+});
+
+// Seam: what a reader of the record sees while an attempt is in progress.
+test("a reader sees a new concert's facts in its running row", async () => {
+	const held = Promise.withResolvers<void>();
+	let settled = false;
+	const { path, options } = await factsFixture({
+		environment: () => ({ place: "/checkout" }),
+		code: async () => async () => {
+			await held.promise;
+			return { text: "hello" };
+		},
+	});
+	const reader = openRecord(path);
+	const seen: (Record<string, unknown> | undefined)[] = [];
+	const polling = (async () => {
+		while (!settled) {
+			const [row] = reader.concerts();
+			if (row?.status === "running") seen.push(row.facts);
+			await Bun.sleep(0);
+		}
+	})();
+	try {
+		const concert = await perform(options);
+		await Bun.sleep(50);
+		held.resolve();
+		await concert.done;
+		settled = true;
+		await polling;
+		expect(seen.length).toBeGreaterThan(0);
+		expect(seen.every((facts) => facts?.alpha !== undefined)).toBe(true);
+	} finally {
+		settled = true;
+		held.resolve();
+		reader.close();
+	}
+});
+
+// Seam: what a reader of the record sees while a resume is in progress.
+test("a resume shows no facts until its hosts give its own, then shows them during the attempt", async () => {
+	const hosts = Promise.withResolvers<void>();
+	const code = Promise.withResolvers<void>();
+	let attempt = 0;
+	const { path, options } = await factsFixture({
+		environment: async () => {
+			if (attempt > 0) await hosts.promise;
+			return { place: attempt > 0 ? "/second" : "/first" };
+		},
+		code: async () => async () => {
+			if (attempt === 0) throw new Error("first attempt");
+			await code.promise;
+			return { text: "hello" };
+		},
+	});
+	const reader = openRecord(path);
+	try {
+		const first = await perform(options);
+		await first.done;
+		expect(reader.find(first.id)).toMatchObject({
+			facts: { alpha: { place: "/first" } },
+		});
+		attempt = 1;
+		const resumed = await perform({ ...options, resume: first.id });
+		const pending = reader.find(first.id);
+		expect(pending).toMatchObject({ status: "running" });
+		expect(pending).not.toHaveProperty("facts");
+		hosts.resolve();
+		await Bun.sleep(50);
+		expect(reader.find(first.id)).toMatchObject({
+			status: "running",
+			facts: { alpha: { place: "/second" } },
+		});
+		code.resolve();
+		await resumed.done;
+	} finally {
+		hosts.resolve();
+		code.resolve();
+		reader.close();
+	}
+});
+
+// Seam: a resume's limits and the record while its hosts give their facts.
+test("a resume counts the time its hosts take to give their facts against its timeout", async () => {
+	let slow = false;
+	const { options } = await factsFixture({
+		environment: async () => {
+			if (slow) Bun.sleepSync(150);
+			return { place: "/checkout" };
+		},
+		code: async () => () => ({ text: "hello" }),
+	});
+	const missing = {
+		source: join(dir, "gone.txt"),
+		ref: { path: "ab/gone.txt", contentHash: "sha256:ab" },
+		from: "--file",
+	};
+	const first = await perform({ ...options, stage: [missing] });
+	await first.done;
+	slow = true;
+	const resumed = await perform({
+		...options,
+		resume: first.id,
+		limits: { timeout: 30 },
+	});
+	expect((await resumed.done).outcome).toBe("failed");
+});
+
+// Seam: perform's attempts that fail before a node starts, and the facts a reopened record reader returns.
+test("a concert whose staged file is gone still records its facts, and a resume whose host fails keeps none of the earlier attempt's", async () => {
+	let broken = false;
+	const { path, options } = await factsFixture({
+		environment: () => {
+			if (broken) throw new Error("no checkout");
+			return { place: "/checkout" };
+		},
+	});
+	const missing = {
+		source: join(dir, "gone.txt"),
+		ref: { path: "ab/gone.txt", contentHash: "sha256:ab" },
+		from: "--file",
+	};
+	const first = await perform({ ...options, stage: [missing] });
+	expect((await first.done).outcome).toBe("failed");
+	const reader = openRecord(path);
+	try {
+		expect(reader.find(first.id)).toHaveProperty("facts", {
+			alpha: { place: "/checkout" },
+		});
+		broken = true;
+		const resumed = await perform({
+			...options,
+			resume: first.id,
+			stage: [missing],
+		});
+		expect((await resumed.done).outcome).toBe("failed");
+		expect(reader.find(first.id)).not.toHaveProperty("facts");
+	} finally {
+		reader.close();
+	}
+});
+
+// Seam: a resume whose host fails, and the files it staged before.
+test("a resume whose host fails stages nothing, keeps the earlier staged file and reports the host", async () => {
+	let broken = false;
+	const { options } = await factsFixture({
+		environment: () => {
+			if (broken) throw new Error("no checkout");
+			return { place: "/checkout" };
+		},
+		code: async () => () => {
+			throw new Error("first attempt");
+		},
+	});
+	const source = join(dir, "a.txt");
+	await writeFile(source, "one");
+	const ref = stagedRef("a.txt", new TextEncoder().encode("one"));
+	const staged = [{ source, ref, from: "--file" }];
+	const first = await perform({ ...options, stage: staged });
+	await first.done;
+	const kept = join(dir, "concerts", first.id, "artifacts", ref.path);
+	expect(await Bun.file(kept).text()).toBe("one");
+	await writeFile(source, "two");
+	broken = true;
+	const resumed = await perform({
+		...options,
+		resume: first.id,
+		stage: staged,
+	});
+	expect(await resumed.done).toMatchObject({
+		outcome: "failed",
+		reason: expect.stringContaining("no checkout"),
+	});
+	expect(await Bun.file(kept).text()).toBe("one");
+});
+
+// Seam: a reopened record reader over a column a later version wrote.
+test("a facts column that is not JSON of an object of objects is read as no facts", async () => {
+	const { path, options } = await factsFixture({
+		environment: () => ({ place: "/checkout" }),
+	});
+	const concert = await perform(options);
+	await concert.done;
+	const reader = openRecord(path);
+	try {
+		for (const column of [
+			"[1,2]",
+			'{"alpha":1}',
+			'{"alpha":[1]}',
+			"{not json",
+		]) {
+			const db = new Database(path);
+			db.exec(`UPDATE concerts SET facts = '${column}'`);
+			db.close();
+			expect(reader.find(concert.id)).not.toHaveProperty("facts");
+		}
+	} finally {
+		reader.close();
+	}
 });
 
 // Seam: perform writes the snapshot, and a reopened record reader returns it.
