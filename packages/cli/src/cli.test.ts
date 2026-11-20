@@ -2537,7 +2537,7 @@ describe("prune", () => {
 		expect(seen).toEqual([{ mode: { tag: "recorded" } }]);
 	});
 
-	test("a refused snapshot names the cleanup script in the maestro skill", async () => {
+	test("a refused snapshot names the v0.3.0 cleanup script", async () => {
 		const w = await world();
 		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
 		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
@@ -2547,7 +2547,7 @@ describe("prune", () => {
 				hosts: [hostOf()],
 			});
 			expect(refused.code).not.toBe(0);
-			expect(refused.err).toContain("scripts/prune-old-concerts.sh");
+			expect(refused.err).toContain("v0.3.0 maestro skill");
 		}
 		db.close();
 	});

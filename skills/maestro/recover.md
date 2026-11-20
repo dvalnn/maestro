@@ -41,8 +41,8 @@ Either resumes. A concert that already settled exits 0 and says so on stderr.
 `maestro prune` deletes concerts with their records and lanes. It selects by id, by the filters in `prune --help`, or
 with `--all`, every settled concert, asks before deleting (`--yes` without a terminal), and takes the lane refs into a
 pruned concert with it. It refuses a running concert named by id or `--status running`, and leaves running ones out of a
-filter. When it keeps a concert for a snapshot it cannot read or compose, and you may prune it, run
-`scripts/prune-old-concerts.sh <full id> --yes` from this skill.
+filter. When it keeps a concert for a snapshot it cannot read or compose, and you may prune it, use the
+`scripts/prune-old-concerts.sh` of the v0.3.0 release's skill.
 
 Give one task's concerts a tour at perform time, so `ls --tour <slug>` finds them (and tours under it, `epic` matching
 `epic.story`) and `prune --tour <slug> --yes` clears them. `maestro tour set <slug> <id>...` and

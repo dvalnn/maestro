@@ -188,7 +188,7 @@ async function diskOf(
 
 /** What a concert that prune refuses is told to do instead. */
 const CLEANUP =
-	"Clean it up with scripts/prune-old-concerts.sh in the maestro skill, such as ~/.claude/skills/maestro/scripts/prune-old-concerts.sh <concert> --yes";
+	"Clean it up with scripts/prune-old-concerts.sh from the v0.3.0 maestro skill";
 
 /**
  * Releases what each host holds for `row`, under its recorded config.
