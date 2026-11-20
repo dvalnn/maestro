@@ -48,7 +48,7 @@
 	"docs/requirements.md": 20,
 	"docs/rulings.md": 15,
 	"docs/sdk-spec.md": 25,
-	"packages/cli/README.md": 47,
+	"packages/cli/README.md": 45,
 	"packages/core/src/compose/README.md": 3,
 	"packages/host-repo/README.md": 38,
 	"packages/ir/README.md": 13,

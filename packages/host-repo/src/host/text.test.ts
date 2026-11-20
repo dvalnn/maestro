@@ -125,47 +125,6 @@ describe("repoText.report", () => {
 					{ part: "mcp", mark: "✗", faults: ["x loaded, not declared"] },
 				],
 			},
-			{
-				summary: "s",
-				environment: [
-					{ part: "mcp", mark: "✗", faults: ["x loaded, not declared"] },
-				],
-			},
-		],
-		[
-			{
-				report: { summary: "s" },
-				environment: [
-					{ part: "tools", mark: "✓", faults: [] },
-					{ part: "mcp", mark: "✗", faults: ["x loaded, not declared"] },
-					{ part: "hooks", mark: "?", faults: [] },
-					{
-						part: "skills",
-						mark: "✗",
-						faults: ["a declared, not loaded", "b loaded, not declared"],
-					},
-				],
-			},
-			{
-				summary: "s",
-				environment: [
-					{ part: "mcp", mark: "✗", faults: ["x loaded, not declared"] },
-					{
-						part: "skills",
-						mark: "✗",
-						faults: ["a declared, not loaded", "b loaded, not declared"],
-					},
-				],
-			},
-		],
-		[
-			{
-				report: { summary: "s" },
-				environment: [
-					{ part: "tools", mark: "✓", faults: [] },
-					{ part: "hooks", mark: "?", faults: [] },
-				],
-			},
 			{ summary: "s" },
 		],
 	])("report of %j is %j", (enrichment, report) => {
@@ -173,10 +132,60 @@ describe("repoText.report", () => {
 	});
 
 	test("reportFields names each field of a report", () => {
-		expect(Object.keys(repoText.reportFields ?? {})).toEqual([
-			...Object.keys(REPORT.properties),
-			"environment",
-		]);
+		expect(Object.keys(repoText.reportFields ?? {})).toEqual(
+			Object.keys(REPORT.properties),
+		);
+	});
+});
+
+describe("repoText.actorFields", () => {
+	test.each([
+		[
+			{
+				harness: "pi",
+				model: "github-copilot/claude-haiku-5.5",
+				thinking: "medium",
+				profile: { name: "builder", dir: "/p" },
+			},
+			{
+				harness: "pi",
+				model: "github-copilot/claude-haiku-5.5",
+				thinking: "medium",
+				profile: "builder",
+			},
+		],
+		[
+			{ harness: "pi", model: "none", thinking: "" },
+			{ harness: "pi", model: "none" },
+		],
+		[{ session: "s" }, undefined],
+	])("fields of the agent of %j are %j", (enrichment, fields) => {
+		expect(repoText.actorFields?.(enrichment)).toEqual(fields);
+	});
+});
+
+describe("repoText.details", () => {
+	test.each([
+		[
+			{ session: "s", sessionDir: "/sessions/s" },
+			{ session: { id: "s", dir: "/sessions/s" } },
+		],
+		[
+			{
+				environment: [
+					{ part: "tools", mark: "✓", faults: [] },
+					{ part: "mcp", mark: "✗", faults: ["x loaded, not declared"] },
+				],
+			},
+			{ environment: { faults: { mcp: ["x loaded, not declared"] } } },
+		],
+		[
+			{ environment: [{ part: "tools", mark: "✓", faults: [] }] },
+			{ environment: { faults: {} } },
+		],
+		[{ report: { summary: "s" } }, {}],
+	])("details of %j are %j", (enrichment, details) => {
+		expect(repoText.details?.(enrichment)).toEqual(details);
 	});
 });
 
@@ -241,6 +250,10 @@ describe("repoText.notes", () => {
 		],
 		[{ report: "a report as text" }, {}],
 		[{ session: "s" }, {}],
+		[
+			{ encoreFresh: "session s is gone from the store" },
+			{ "Fresh session": ["session s is gone from the store"] },
+		],
 	])("notes of %j are %j", (enrichment, notes) => {
 		expect(repoText.notes?.(enrichment)).toEqual(notes);
 	});

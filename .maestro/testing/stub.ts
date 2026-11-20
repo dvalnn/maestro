@@ -57,6 +57,19 @@ export async function maestro(
 	return out;
 }
 
+/** Each instance of concert `id` in the data root `data`, as `ls <concert> <instance> --json` details it, in graph order. */
+export async function detailed<T>(id: string, data: string): Promise<T[]> {
+	const listed: { instances: { name: string }[] } = JSON.parse(
+		await maestro(["ls", id, "--json"], data),
+	);
+	return Promise.all(
+		listed.instances.map(
+			async ({ name }) =>
+				JSON.parse(await maestro(["ls", id, name, "--json"], data)) as T,
+		),
+	);
+}
+
 /** A new git repo on branch `main` holding one commit, as a stub perform's target. */
 export function targetRepo(): string {
 	const target = mkdtempSync(join(scratch, "target-"));

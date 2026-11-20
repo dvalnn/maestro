@@ -184,7 +184,7 @@ members sit flat on the host; a `?` marks an optional one.
 | `param?(type, text)`  | CLI: reads a param of one of the host's `types`.                        | A value, or diagnostics.              |
 | `resources?.release`  | CLI, for `prune`, on a settled concert.                                 | Nothing.                              |
 | `resources?.usage`    | Core, as a concert settles, and its encore's; CLI, for `prune` if none. | Bytes on disk.                        |
-| `text?.*`             | CLI, for `watch`, `ls`, `ls --json`, `ls --help`.                       | Progress words, actor, notes, report. |
+| `text?.*`             | CLI, for `watch`, `ls`, `ls --json`, `ls --help`.                       | Words, actor, notes, report, details. |
 
 [^validate]:
     It sees the whole graph, where host rules live: the lane extension rule, the profile and checks a node names, bind

@@ -5,6 +5,7 @@ import {
 	readFileSync,
 	renameSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { cp } from "node:fs/promises";
@@ -14,7 +15,7 @@ import { openRecord } from "@maestro/core/perform";
 import { repoHost } from "@maestro/host-repo";
 import { stubHarness } from "@maestro/host-repo/harness";
 import { cleanup, FIXTURES, scratch } from "./fixtures/packs";
-import { idOf, json, shortOf, world } from "./fixtures/world";
+import { configValues, idOf, json, shortOf, world } from "./fixtures/world";
 import { builtinHosts } from "./hosts";
 import { diffColored } from "./output";
 
@@ -165,9 +166,8 @@ test("a lane ref names a version by the instance id ls shows, ls shows its disk 
 	const { instances } = json(await w.call(["ls", id, "--json"]));
 	const ref = `${id}.${shown}`;
 	expect(
-		instances.find((i: { node: string }) => i.node === "parMap/skeptic")
-			?.outputs.lane,
-	).toBe(ref);
+		instances.find((i: { node: string }) => i.node === "parMap/skeptic")?.name,
+	).toBe(shown);
 	const followed = await w.call([
 		"perform",
 		join(REPO, "follow.ts"),
@@ -298,14 +298,153 @@ export const typed = composition("typed", { examples: [{}] }, () => {
 	const done = await w.call(["perform", file]);
 	expect(done).toMatchObject({ code: 0 });
 	const id = idOf(done);
-	const listed = json(await w.call(["ls", id, "--json"]));
-	expect(listed.outputs).toEqual({
-		agent: { map: { tier: "small" } },
-		tierOf: { tier: "small" },
-	});
+	const outputsOf = async (instance: string) =>
+		json(await w.call(["ls", id, instance, "--json"])).outputs;
+	expect(await outputsOf("agent")).toEqual({ map: { tier: "small" } });
+	expect(await outputsOf("tierOf")).toEqual({ tier: "small" });
 	expect(
 		(await w.call(["art", "show", id, "agent", "staged/outputs.yaml"])).out,
 	).toBe("map:\n  tier: small");
+});
+
+function stringLeaves(value: unknown): string[] {
+	if (typeof value === "string") return [value];
+	if (typeof value !== "object" || value === null) return [];
+	return Object.values(value).flatMap(stringLeaves);
+}
+
+// Seam: ls's agent row and detail documents after real repo-host execution, with artifacts read through art ls.
+test("ls <concert> <instance> --json gives one step in full without duplicate report or host bookkeeping", async () => {
+	const scripts = await scratch();
+	await Bun.write(join(scripts, "a/map.json"), '{"tier":"small"}');
+	await Bun.write(join(scripts, "a/notes.md"), "the artifact\n");
+	await Bun.write(
+		join(scripts, "a/events.jsonl"),
+		[
+			'{"type":"environment","mcp":["github"]}',
+			'{"type":"environment","tools":[],"skills":["deploy"]}',
+			'{"type":"usage","tokens_in":12,"tokens_out":3}',
+			"",
+		].join("\n"),
+	);
+	const w = await repoWorld(SMOKE_RUNTIME("stub"), {
+		MAESTRO_STUB_OUTPUTS: scripts,
+	});
+	const file = join(await scratch(), "listing.ts");
+	await Bun.write(
+		file,
+		`import { fresh, MarkdownOut, seat } from "@maestro/host-repo-sdk";
+import { code, composition, Markdown, Struct, Text } from "@maestro/sdk";
+
+export const task = () => ({ text: "inspect the artifact" });
+export const consume = (_: { notes: string }) => ({ text: "consumed" });
+
+export const listing = composition("listing", { examples: [{}] }, () => {
+	const source = code(task, { out: { text: Text() } });
+	const agent = seat("smoke")({
+		label: "a",
+		task: source.out.text,
+		lane: fresh(),
+		reply: { map: Struct({ tier: Text() }) },
+		out: { notes: MarkdownOut("notes.md") },
+	});
+	return code(consume, { in: { notes: agent.out.notes }, out: { text: Text() } });
+});
+`,
+	);
+	const done = await w.call(["perform", file]);
+	expect(done.code).toBe(0);
+	const id = idOf(done);
+	const listed = await w.call(["ls", id, "--json"]);
+	expect(listed.code).toBe(0);
+	const row = json(listed).instances.find(
+		(i: { name: string }) => i.name === "a",
+	);
+	const stepKeys = [
+		"name",
+		"node",
+		"expansion",
+		"status",
+		"stale",
+		"startedAt",
+		"settledAt",
+		"elapsedMs",
+		"tokens",
+		"harness",
+		"model",
+		"profile",
+		"notes",
+	];
+	const shown = await w.call(["ls", id, "a", "--json"]);
+	expect(shown.code).toBe(0);
+	expect(shown.err).toBe("");
+	const detail = json(shown);
+	expect(Object.keys(detail).sort()).toEqual(
+		[
+			...stepKeys,
+			"metrics",
+			"report",
+			"outputs",
+			"inputs",
+			"artifacts",
+			"session",
+			"environment",
+		].sort(),
+	);
+	expect(Object.keys(row).sort()).toEqual(stepKeys.sort());
+	expect(detail).toMatchObject(row);
+	// Bun's toMatchObject writes its asymmetric matchers into the object it is given, so it gets a copy of detail.
+	expect(json(shown)).toMatchObject({
+		name: "a",
+		node: "a",
+		expansion: "",
+		status: "ok",
+		stale: false,
+		harness: "stub",
+		model: "none",
+		profile: "smoke",
+		tokens: 15,
+		metrics: { tokens_in: 12, tokens_out: 3 },
+		report: { summary: "stub" },
+		inputs: { prompt: "inspect the artifact" },
+		outputs: { map: { tier: "small" }, notes: expect.any(String) },
+		notes: { Environment: ["skills: deploy loaded, not declared"] },
+		session: { id: `${id}.a`, dir: expect.any(String) },
+	});
+	expect(detail.report).toEqual({ summary: "stub" });
+	for (const port of ["report", "session", "lane"])
+		expect(detail.outputs).not.toHaveProperty(port);
+	expect(Object.keys(detail.session).sort()).toEqual(["dir", "id"]);
+	expect(statSync(detail.session.dir).isDirectory()).toBe(true);
+	expect(Object.keys(detail.environment)).toEqual(["faults"]);
+	const faults = stringLeaves(detail.environment.faults);
+	expect(faults).toContain("deploy loaded, not declared");
+	expect(faults).not.toContain("github loaded, not declared");
+	const arts = await w.call(["art", "ls", id, "--json"]);
+	expect(arts.code).toBe(0);
+	const area = join(w.root, "data/maestro/concerts", id, "artifacts");
+	const agentArts: { port: string; path: string }[] = json(arts).filter(
+		(a: { instance: string }) => a.instance === "a",
+	);
+	expect(agentArts.map((a) => a.port).sort()).toEqual(["notes", "staged"]);
+	const paths = agentArts.map(({ port, path }) => ({
+		port,
+		path: relative(area, path),
+	}));
+	expect(
+		detail.artifacts.toSorted((a: { port: string }, b: { port: string }) =>
+			a.port.localeCompare(b.port),
+		),
+	).toEqual(paths.toSorted((a, b) => a.port.localeCompare(b.port)));
+	const note = agentArts.find((a) => a.port === "notes");
+	expect(note).toBeDefined();
+	const absolute = note?.path ?? "";
+	const relativePath = relative(area, absolute);
+	expect([absolute, relativePath]).toContain(detail.outputs.notes);
+	const consumed = await w.call(["ls", id, "consume", "--json"]);
+	expect(consumed.code).toBe(0);
+	expect([absolute, relativePath]).toContain(json(consumed).inputs.notes);
+	expect(json(consumed).outputs).toEqual({ text: "consumed" });
 });
 
 test("artifact lists a concert's artifacts, prints an instance's files by a unique ending, and refuses what names none", async () => {
@@ -725,13 +864,10 @@ describe("profiles", () => {
 		for (const concert of [id, json(encore).id]) {
 			const listed = await w.call(["ls", concert, "--json"], outside);
 			expect(listed.code).toBe(0);
-			const instances: { node: string; enrichment?: object }[] =
-				json(listed).instances;
+			const instances: { node: string }[] = json(listed).instances;
 			const agent = instances.find((instance) => instance.node === "a");
-			expect(agent).toMatchObject({
-				enrichment: { harness: "stub", model: "stub" },
-			});
-			expect(agent?.enrichment).not.toHaveProperty("thinking");
+			expect(agent).toMatchObject({ harness: "stub", model: "stub" });
+			expect(agent).not.toHaveProperty("thinking");
 			const staged = await w.call(
 				["art", "show", concert, "a", "staged/instructions.md"],
 				neutral,
@@ -1022,7 +1158,9 @@ describe("changeset", () => {
 		rmSync(preset);
 		const outside = { cwd: await scratch(), env: GIT_ENV };
 		expect(
-			json(await w.call(["ls", id, "--json"], outside)).snapshot.target.repo,
+			configValues(await w.call(["config", id, "--json"], outside))[
+				"target.repo"
+			],
 		).toBe(w.target);
 		const show = (...args: string[]) =>
 			w.call(["cs", "show", id, ...args], outside);
@@ -1192,7 +1330,12 @@ describe("changeset", () => {
 		);
 
 		const { instances } = json(await w.call(["ls", w.id, "--json"]));
-		const made = instances.find(
+		const details = await Promise.all(
+			instances.map(async ({ name }: { name: string }) =>
+				json(await w.call(["ls", w.id, name, "--json"])),
+			),
+		);
+		const made = details.find(
 			(i: { outputs?: object }) => i.outputs && "changeset" in i.outputs,
 		);
 		expect((await w.cs("show", w.id, "--node", made.node)).out).toBe(diff);
@@ -1595,34 +1738,11 @@ export const tagged = composition("tagged", { examples: [{}] }, () => {
 			"\nEnvironment\nreview  skills: deploy loaded, not declared",
 		);
 		expect(listed).not.toContain("github");
-		const { reports, instances } = json(await w.call(["ls", id, "--json"]));
-		const { review } = reports;
-		expect(
-			review.environment.flatMap((c: { faults: string[] }) => c.faults),
-		).toEqual(["deploy loaded, not declared"]);
-		expect(
-			instances.find((i: { name: string }) => i.name === "review")?.enrichment
-				.environment,
-		).toEqual([
-			{ part: "tools", mark: "✓", faults: [] },
-			{ part: "subagents", mark: "?", faults: [] },
-			{
-				part: "skills",
-				mark: "✗",
-				faults: ["deploy loaded, not declared"],
-			},
-			{ part: "mcp", mark: "?", faults: [] },
-			{ part: "hooks", mark: "?", faults: [] },
-			{ part: "contextFiles", mark: "?", faults: [] },
-			{ part: "compaction", mark: "?", faults: [] },
-		]);
-		expect(review.environment).toEqual([
-			{
-				part: "skills",
-				mark: "✗",
-				faults: ["deploy loaded, not declared"],
-			},
-		]);
+		const detail = json(await w.call(["ls", id, "review", "--json"]));
+		expect(Object.keys(detail.environment)).toEqual(["faults"]);
+		expect(Object.keys(detail.environment.faults)).toEqual(["skills"]);
+		expect(detail.environment.faults.skills).toHaveLength(1);
+		expect(detail.environment.faults.skills[0]).toContain("deploy");
 	});
 
 	test("a missing directory fails the stub agent naming the variable and the path", async () => {
@@ -1702,7 +1822,7 @@ describe("agent prompt", () => {
 });
 
 describe("ls Environment notes", () => {
-	test("lists the faults of an agent's environment report, one line each, and none for a clean one; --json carries the checks", async () => {
+	test("lists the faults of an agent's environment report, one line each, and none for a clean one; --json carries the faults", async () => {
 		const faulty = await repoWorld(SMOKE_RUNTIME("stub"), {
 			MAESTRO_STUB_ENVIRONMENT: JSON.stringify({ mcp: ["github"] }),
 		});
@@ -1714,23 +1834,20 @@ describe("ls Environment notes", () => {
 		expect(listed.out).toContain(
 			"\nEnvironment\nreview  mcp: github loaded, not declared",
 		);
-		const reports = json(await faulty.call(["ls", id, "--json"])).reports;
-		expect(reports.review.environment).toContainEqual({
-			part: "mcp",
-			mark: "✗",
-			faults: ["github loaded, not declared"],
-		});
+		const detail = json(await faulty.call(["ls", id, "review", "--json"]));
+		expect(Object.keys(detail.environment.faults)).toEqual(["mcp"]);
+		expect(detail.environment.faults.mcp).toHaveLength(1);
+		expect(detail.environment.faults.mcp[0]).toContain("github");
 
 		const clean = await repoWorld(SMOKE_RUNTIME("stub"));
 		const ok = idOf(await clean.call(["perform", file]));
 		expect((await clean.call(["ls", ok])).out).not.toContain("Environment");
-		const cleanReport = json(await clean.call(["ls", ok, "--json"])).reports
-			.review;
-		expect(cleanReport).toBeDefined();
-		expect(Object.hasOwn(cleanReport, "environment")).toBe(false);
+		const cleanDetail = json(await clean.call(["ls", ok, "review", "--json"]));
+		expect(cleanDetail.report).toBeDefined();
+		expect(cleanDetail.environment).toEqual({ faults: {} });
 	});
 
-	test("a cut Environment note points to a report holding the full fault", async () => {
+	test("a cut Environment note points to the instance's notes holding the full fault", async () => {
 		const name =
 			"repository-environment-service-with-a-name-too-long-for-the-terminal";
 		const w = await repoWorld(SMOKE_RUNTIME("stub"), {
@@ -1750,16 +1867,12 @@ describe("ls Environment notes", () => {
 		expect(note.endsWith("…")).toBe(true);
 		expect(Bun.stringWidth(note)).toBeLessThanOrEqual(40);
 		expect(lines.at(-1)?.trim()).toBe(
-			`Full reports: maestro ls ${shortOf(id)} --json | jq .reports`,
+			`Full notes: maestro ls ${shortOf(id)} <instance> --json | jq .notes`,
 		);
-		const full = await w.call(["ls", shortOf(id), "--json"]);
+		const full = await w.call(["ls", shortOf(id), "review", "--json"]);
 		expect(full.code).toBe(0);
-		expect(json(full).reports.review.environment).toContainEqual({
-			part: "mcp",
-			mark: "✗",
-			faults: [
-				"repository-environment-service-with-a-name-too-long-for-the-terminal loaded, not declared",
-			],
-		});
+		const [entry, ...more] = json(full).notes.Environment;
+		expect(more).toEqual([]);
+		expect(entry).toContain(name);
 	});
 });

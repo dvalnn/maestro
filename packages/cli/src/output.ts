@@ -21,6 +21,7 @@ import {
 	type Ir,
 	indexGraph,
 	isPlainObject,
+	type Ports,
 	replaceAt,
 	tokensOf,
 	withoutKeys,
@@ -29,6 +30,7 @@ import {
 	type Changes,
 	closingBlock,
 	padCells,
+	shellArg,
 	shortIds,
 	styled,
 	type View,
@@ -319,7 +321,7 @@ type Closing = { color: Colors; artifacts?: string; changes?: Changes };
 
 /**
  * Prints how the settled concert `row` ended: its `concert` row, and where and why when not ok, on stderr, then the
- * outputs of `result` on stdout. On a terminal stderr the reason wraps at its width; on a terminal stdout an artifact
+ * outputs of `result` on stdout. The hint after the outputs names the step it ended at when not ok. On a terminal stderr the reason wraps at its width; on a terminal stdout an artifact
  * path starts `~` for home.
  */
 export function printClosing(
@@ -337,6 +339,8 @@ export function printClosing(
 		tokens: tokensOf(store.metrics(row.id)),
 		unique: short.unique(row.id),
 	});
+	const at = atOf(indexGraph(row.ir), result);
+	const id = short.label(row.id, false);
 	const area =
 		terminal && artifacts !== undefined
 			? tildeOf(artifacts, deps.env.HOME)
@@ -346,14 +350,18 @@ export function printClosing(
 		area === undefined
 			? undefined
 			: {
-					at: atOf(indexGraph(row.ir), result),
+					at,
 					reason: reasonOf(result),
 					outputs: outputRows(row.ir, area, result),
 					summary: terminal && {
 						columns: terminal().columns,
 						changes,
-						hint: `maestro ls ${short.label(row.id, false)} --json`,
-						cutHint: `Full outputs: maestro wait ${short.label(row.id, false)} --json | jq .outputs`,
+						// The step a concert ended at holds its report; an ok one's steps are listed.
+						hint:
+							at === undefined
+								? `maestro ls ${id} --json`
+								: `maestro ls ${id} ${shellArg(at)} --json`,
+						cutHint: `Full outputs: maestro wait ${id} --json | jq .outputs`,
 					},
 				},
 		color.out,
@@ -427,31 +435,51 @@ function outputRows(
 	result: ConcertResult,
 ): [port: string, value: unknown, whole: boolean][] {
 	const outputs = result.outputs ?? {};
-	const refs = Map.groupBy(
-		artifactRefs(ir, result.node, outputs),
-		(r) => r.port,
+	const ports = ir.nodes.find((n) => n.id === result.node)?.out ?? {};
+	const whole = new Set(
+		portArtifacts(ports, outputs)
+			.filter(({ pointer }) => pointer === "")
+			.map(({ port }) => port),
 	);
-	return Object.entries(outputs).map(([port, value]) => {
-		let shown = structuredClone(value);
-		for (const { pointer, ref } of refs.get(port) ?? [])
-			shown = replaceAt(shown, pointer, join(artifacts, ref.path));
-		return [
-			port,
-			shown,
-			(refs.get(port) ?? []).some(({ pointer }) => pointer === ""),
-		];
-	});
+	const shown = withArtifactPaths(ports, outputs, (ref) =>
+		join(artifacts, ref.path),
+	);
+	return Object.entries(shown).map(([port, value]) => [
+		port,
+		value,
+		whole.has(port),
+	]);
 }
 
 /** Each artifact in `outputs` of node `node` of `ir`: its port, its JSON Pointer in that port's value, and its ref. */
-export function artifactRefs(
+export const artifactRefs = (
 	ir: Ir,
 	node: string | undefined,
 	outputs: Readonly<Record<string, unknown>>,
+) => portArtifacts(ir.nodes.find((n) => n.id === node)?.out ?? {}, outputs);
+
+/**
+ * A copy of `values` on `ports`, each artifact in them replaced by `pathOf` its ref; by default its path relative to
+ * the concert's artifact area.
+ */
+export function withArtifactPaths(
+	ports: Ports,
+	values: Readonly<Record<string, unknown>>,
+	pathOf: (ref: ArtifactRef) => string = (ref) => ref.path,
+): Record<string, unknown> {
+	const shown = structuredClone({ ...values });
+	for (const { port, pointer, ref } of portArtifacts(ports, values))
+		shown[port] = replaceAt(shown[port], pointer, pathOf(ref));
+	return shown;
+}
+
+/** Each artifact in `values` on `ports`: its port, its JSON Pointer in that port's value, and its ref. */
+export function portArtifacts(
+	ports: Ports,
+	values: Readonly<Record<string, unknown>>,
 ): { port: string; pointer: string; ref: ArtifactRef }[] {
-	const out = ir.nodes.find((n) => n.id === node)?.out ?? {};
-	return Object.entries(outputs).flatMap(([port, value]) =>
-		findMarked(out[port] ?? {}, value).flatMap(
+	return Object.entries(values).flatMap(([port, value]) =>
+		findMarked(ports[port] ?? {}, value).flatMap(
 			({ type, pointer, value: ref }) =>
 				ARTIFACT_TYPES.has(type) && isArtifactRef(ref)
 					? [{ port, pointer, ref }]

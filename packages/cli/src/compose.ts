@@ -294,11 +294,17 @@ const isConcertName = (target: string | undefined): target is string =>
 const configTarget = (args: readonly string[]) =>
 	splitFirst(COMMON, args).first;
 
-/** What `config <concert> --json` adds to its `values`: the invocation the concert was performed with. */
+/**
+ * What `config <concert> --json` adds to its `values`: the invocation the concert was performed with, and where its
+ * composition came from: `moduleDir`, the directory its modules load from, and `file`, a bare file's name in it.
+ */
 type Invocation = {
 	presets: readonly string[];
 	flags: readonly string[];
 	limits?: ConcertLimits;
+	params: Readonly<Record<string, unknown>>;
+	moduleDir?: string;
+	file?: string;
 };
 
 /** Prints `rows` as a table, or with `--json` as `values` beside `extra`. */
@@ -374,6 +380,9 @@ async function configOfConcert(
 			presets: row.presets ?? [],
 			flags: row.config ?? [],
 			limits: row.limits,
+			params: row.params ?? {},
+			moduleDir: row.moduleDir || undefined,
+			file: row.file,
 		});
 	});
 }
@@ -388,7 +397,7 @@ export const config: Command = {
 		],
 		[
 			"<concert>",
-			"A concert id or unique prefix, as 'maestro ls' lists it: the config it was performed under, read from its record alone, so no --preset or -c. Each value shows its layer, and its file and line or its -c flag, as for a composition. The params it was given for a pack's composition show as values too, with the layer that set them; a bare file's are left out. --json is {values}, plus presets and flags, each as typed in order, and limits with timeout in milliseconds, left out when the concert had none. A snapshot that is missing, unreadable or no longer composes exits 1",
+			"A concert id or unique prefix, as 'maestro ls' lists it: the config it was performed under, read from its record alone, so no --preset or -c. Each value shows its layer, and its file and line or its -c flag, as for a composition. The params it was given for a pack's composition show as values too, with the layer that set them; a bare file's are left out. --json is {values}, plus presets and flags, each as typed in order, limits with timeout in milliseconds, left out when the concert had none, params as given, and moduleDir and file, where its composition loads from. A snapshot that is missing, unreadable or no longer composes exits 1",
 		],
 	],
 	examples: [

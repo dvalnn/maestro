@@ -41,9 +41,9 @@ A ticket's recorded files, kept in one directory for every arm:
 Record the originals from a ticket's slice concert:
 
 ```sh
-maestro ls <concert> --json | jq -r .params.request > 246.md
-maestro ls <concert> --json | jq -r '.config[] | select(startswith("target.base="))' | cut -d= -f2 > 246.base
-maestro ls <concert> --json | jq -r '.presets[]' > 246.presets
+maestro config <concert> --json | jq -r .params.request > 246.md
+maestro config <concert> --json | jq -r '.flags[] | select(startswith("target.base="))' | cut -d= -f2 > 246.base
+maestro config <concert> --json | jq -r '.presets[]' > 246.presets
 ```
 
 For a triage change, replay triage on the ticket from the arm's checkout before the slice. The tour keeps it out of the

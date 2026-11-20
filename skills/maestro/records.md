@@ -12,11 +12,14 @@ How to read what a concert left: its instances, their outputs and artifacts, and
   item `risk`.
 - `stale` marks a row an earlier attempt of a resumed concert left, neither reused nor replaced.
 - The reason of the instance the closing block's `at` names is the concert's root cause.
-- `--json` gives the concert's record and `instances`, each with `status`, `reason`, `outputs`, `metrics`, `artifacts`,
-  `stale` and `inputs`: the values a leaf was fed on its wired ports. Literal ports are in the IR, never in `inputs`.
-- `--json` also gives `reports`, each agent's report, and `outputs`, each instance's typed values (an agent's reply
-  fields, a code node's values), both by instance name: `maestro ls <id> --json | jq .outputs`. An agent's reply fields
-  are also in its `staged/outputs.yaml`.
+- `ls <id> --json` gives the concert's row, `metrics` and `instances`, one row per instance. A row holds its `name`,
+  `status`, `stale`, timings, `tokens`, `reason` and `notes`. An agent's adds `harness`, `model`, `thinking` and
+  `profile`.
+- `ls <id> <instance> --json` gives one instance in full. It adds `metrics`, `report`, `outputs`, `inputs` and
+  `artifacts` to its row. An agent's adds `session` and its `environment` faults. `outputs` are an agent's reply fields,
+  also in its `staged/outputs.yaml`, or a code node's values. `inputs` are the values a leaf was fed on its wired ports;
+  literal ports are in the IR. An artifact is its path in the concert's artifact directory.
+- `maestro config <id> --json` gives the params, presets, `-c` flags, limits and config a concert was performed under.
 
 ## What each node leaves
 
@@ -39,8 +42,8 @@ How to read what a concert left: its instances, their outputs and artifacts, and
 ## Lane refs
 
 A lane version is written `<concert id>.<node instance>`, such as `01a15170-e9ec-7089-81d3-c7af21271198.test`; a
-`perform` prints one as a `lane` output, and `ls <id> --json` gives each instance's. A later composition takes one as a
-`Lane` param and can fork it, read it or make it a changeset, never extend it. Lanes stay until their concert is pruned.
+`perform` prints one as a `lane` output, and `ls <id>` names each instance. A later composition takes one as a `Lane`
+param and can fork it, read it or make it a changeset, never extend it. Lanes stay until their concert is pruned.
 
 A lane's working tree is `hosts/repo/<target id>/lanes/<concert id>/<instance>/work` under the data root, under the last
 instance that extended it, URL-encoded (`loop[0]/repair` is `loop%5B0%5D%2Frepair`). Earlier versions are sealed in the

@@ -74,12 +74,12 @@ test(
 		const ids = started.out.trim().split("\n");
 		expect(ids).toHaveLength(TICKETS.length);
 		const first = await Bun.spawn(
-			["maestro", "ls", ids[0]?.split(" ")[1] ?? "", "--json"],
+			["maestro", "config", ids[0]?.split(" ")[1] ?? "", "--json"],
 			{ env: { ...process.env, ...env }, stdout: "pipe" },
 		);
 		const origin = JSON.parse(await new Response(first.stdout).text());
 		expect(origin.presets).toEqual(["medium", "stub"]);
-		expect(origin.config).toContain("target.base=main");
+		expect(origin.flags).toContain("target.base=main");
 		expect(origin.params.request).toBe("# #246 ticket");
 
 		let rows: { ticket: number; status: string; converged: boolean | null }[] =

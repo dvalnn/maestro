@@ -227,10 +227,20 @@ export interface HostText {
 	 */
 	notes?(enrichment: Enrichment): Record<string, string[]>;
 	/**
-	 * An instance's full report as one opaque JSON object, for `ls --json`. Called on a current settled instance's
+	 * An instance's full report as one opaque JSON object, for `ls <concert> <instance> --json`. Called on a current settled instance's
 	 * enrichment; undefined when it has none.
 	 */
 	report?(enrichment: Enrichment): Record<string, unknown> | undefined;
+	/**
+	 * Who ran an instance as named one-line fields, such as `{ harness, model }`, for its `ls <concert> --json` row. Called
+	 * on a settled instance's enrichment; undefined when no one the host names ran it.
+	 */
+	actorFields?(enrichment: Enrichment): Record<string, string> | undefined;
+	/**
+	 * What `ls <concert> <instance> --json` adds of an instance beyond its row, report and values, such as the session it
+	 * ran in, each field left out when it has none. Called on a settled instance's enrichment.
+	 */
+	details?(enrichment: Enrichment): Record<string, unknown>;
 	/** What each field of the objects `report` gives means, in one short line each, for `ls --help`. */
 	readonly reportFields?: Readonly<Record<string, string>>;
 	/** An instance's one-line summary of what it did. Called on a settled instance's enrichment. */

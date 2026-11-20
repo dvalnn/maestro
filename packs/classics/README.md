@@ -121,7 +121,7 @@ encore that turns `testFirst` off continues that builder's session.
 | `Overrule`, `Overrules` | A tester's test a builder rejects, and why                                                                                                                                                      |
 | `Answers`               | A scout's answer per question: `grounded`, or `unsure` with what is `missing`                                                                                                                   |
 
-Read a run's reply fields with `maestro ls <id> --json | jq .outputs`.
+Read an agent's reply fields with `maestro ls <id> <instance> --json | jq .outputs`.
 
 Code-node values: `toMarkdown`, `copyMarkdown`, `specOf`, `briefOf`, `heldOf`, `tallyOf`, `tieredOf` and `resultOf`.
 `fill` fills prompt placeholders, `LENSES` holds each lens's task, `ROLES` and `LENS_CHECKLISTS` its role and its

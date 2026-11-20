@@ -117,7 +117,7 @@ concert    pwmqwmlu  failed  13s · 29.7k tok
 at         repair_until_green/loop[0]/repair
 reason     blocked: the failing check contradicts the spec
 logs       ~/.local/share/maestro/concerts/01a154e0-0160-7590-ba3d-93de543f1059/artifacts/abuKV1B/check.log
-maestro ls pwmqwmlu --json
+maestro ls pwmqwmlu 'repair_until_green/loop[0]/repair' --json
 ```
 
 Stdout holds a row per output port of the result node.
@@ -126,8 +126,9 @@ Stdout holds a row per output port of the result node.
   size: `text, 312 lines` (`text, 80 chars` for one overlong line), `object, 7 keys` or `list, 12 items`. An artifact
   stays its path.
 - `changes` follows when the concert holds a changeset whose diff can be read, `3 files  +120 −14` as
-  `changeset show --stat` counts them. Then a dim hint, `maestro ls <concert> --json`, or `Full outputs: ...` when a
-  value shows as its shape.
+  `changeset show --stat` counts them. Then a dim hint, or `Full outputs: ...` when a value shows as its shape. The hint
+  is `maestro ls <concert> --json`, or for a concert that is not ok `maestro ls <concert> <instance> --json`, naming the
+  step it ended at, which holds its report.
 - Piped or redirected, stdout is a `<port>  <value>` line per output and nothing else, with no color or wrapping, values
   as they are and paths absolute. On a terminal a path in the home directory starts with `~`.
 - With `--json`, stdout holds the document instead, and the id of a `perform` stays on its stderr line. A one-line
@@ -157,7 +158,7 @@ Both run from any folder under the concert's [config snapshot](../../docs/archit
   under the concert's snapshot and the encore's own `-c`, which the new concert's snapshot records. A new preset or seat
   is a new `perform`.
 - Every node runs again, and an agent continues its counterpart's session, unless its seat says `encore: false`. An
-  agent that starts fresh says why in its `encoreFresh`, shown by `ls <concert> --json`. An encore of an encore matches
+  agent that starts fresh says why in its `Fresh session` note, shown by `ls <concert>`. An encore of an encore matches
   against the encore.
 - When the params, the config and the target revision all match the concert's, the encore is refused, naming `resume`.
 
@@ -183,42 +184,49 @@ concert that matches the filters, with no hint, and refuses `--limit` beside it.
 - **Notes.** `ls` marks a concert whose instances have notes with `•` after its status, and its `--json` gives each
   concert's `notes` as a count by heading. Under its table, `ls <concert>` lists the notes its hosts give the current
   instances, such as an agent's `Obstacles` and `Lessons`, one `<instance>  <entry>` line each under its heading. On a
-  terminal an entry wider than the screen is cut with `…` and a dim line says how to read the full reports; piped output
+  terminal an entry wider than the screen is cut with `…` and a dim line says how to read the full notes; piped output
   is never cut.
 
 `ls <concert> <instance>` lists that instance alone, its row and notes. Name it as `ls <concert>` lists it, or by a
 unique ending of whole segments, such as `build` for `loop[0]/build`; a name that matches none, or several, is a usage
-error. With `--json`, `instances` and `reports` hold that instance alone.
+error.
 
-In the `--json` documents:
+`ls` lists things and their state; `ls <concert> <instance> --json` prints one instance's contents. In the `--json`
+documents a field with no value is left out:
 
-- `ls <concert> --json` lists `instances` in graph order, each with its `name`, the id that keys `reports` and `outputs`
-  and that `ls <concert> <name>` accepts, and `inputs`, the values a leaf was fed on its wired ports, left out when the
-  record has none (a group, or an instance from an older store).
-- It gives the full report of each current instance that has one as `reports`, by the instance's name:
-  `maestro ls <concert> --json | jq .reports`. An agent's report holds `summary`, `gaps`, `obstacles`, `lessons` and
-  `sightings`; `maestro ls --help` says what each means.
-- It gives the typed values of each current instance as `outputs`, by the instance's name, in the same shape:
-  `maestro ls <concert> --json | jq .outputs`. They are an agent's reply fields and a code node's values, without
-  artifacts, the report and the host's bookkeeping ports (an agent's `session` and `lane`); an instance with none is
-  left out. `instances[].outputs` keeps every output as recorded.
 - `ls --json` rows hold what places a concert and tells how it fared. They are `id`, `short`, `status`, `pack`,
   `composition`, `workspace`, `tour`, `title`, `encoreOf`, `startedAt`, `settledAt`, `elapsedMs`, `tokens`, `diskUse`,
-  `facts` and `notes`. The rest of the record is `ls <concert> --json`, which a poller reads once per concert it has not
-  seen. A row composes no snapshot, so a concert whose snapshot is unreadable is still listed.
+  `facts` and `notes`. A row composes no snapshot, so a concert whose snapshot is unreadable is still listed.
 - `facts` is on `ls --json` rows and in `ls <concert> --json`. It holds what each host gave the concert's latest attempt
   at its start, by host name. A new concert has it from its first row. A resumed concert has none until its hosts give
   the new attempt's, so a poller never reads the earlier attempt's. It is also left out for a concert recorded before
   facts were kept, and for an attempt whose hosts could not give them. The repo host's `target` is the checkout's
   absolute path:
   `"facts": {"repo": {"target": "/abs/path", "base": "main", "sparse": null, "revision": "<sha>", "profiles": "<digest>"}}`.
+- `ls <concert> --json` is the `ls <concert>` table as one object: the concert's `ls --json` row, `metrics`, and
+  `instances`, one step row per instance in graph order.
+- A step row holds `name`, `node`, `expansion`, `status`, `stale`, `startedAt`, `settledAt`, `elapsedMs`, `tokens` and
+  `reason`. The `name` is what `ls <concert> <instance>` accepts. An agent's row adds `harness`, `model`, `thinking` and
+  `profile`, the profile's name. A row with notes adds `notes`, its entries by heading.
+- `ls <concert> <instance> --json` is that instance's step row plus its contents, each once:
+  - `metrics`, its own.
+  - `report`, its full report, for a current instance. An agent's holds `summary`, `gaps`, `obstacles`, `lessons` and
+    `sightings`; `maestro ls --help` says what each means.
+  - `outputs`, its typed values: an agent's reply fields and a code node's values, without the host's bookkeeping ports
+    (an agent's `report`, `staged`, `session` and `lane`).
+  - `inputs`, the values a leaf was fed on its wired ports as recorded. A group has none, and literal ports are in the
+    IR.
+  - `artifacts`, each `{port, path}`. In `artifacts`, `outputs` and `inputs` an artifact is its path relative to the
+    concert's artifact directory, which `wait --json` names.
+  - An agent adds `session`, `{id, dir}`, and `environment`, `{faults}`: the faults of its latest environment report, by
+    part.
 - `ls <concert>`, `wait`, `watch` and `perform` carry `metrics`, each metric name's total over the concert, and
   `tokens`, the concert's total as the `tokens` column counts it. `ls <concert>` also carries `elapsedMs`,
   `settledAt - startedAt`, or the time since `startedAt` while the concert runs.
-- `ls <concert> --json` shows the recorded `--preset` list and `-c` flags as `presets` and `config`, and the concert's
-  limits as `limits`, `timeout` in milliseconds.
-- `ls <concert> --json` shows the values the [config snapshot](../../docs/architecture.md#config-snapshot) composes to
-  as `snapshot`, left out when it cannot be read or no longer composes.
+- Other documents hold the rest of a concert. `config <concert> --json` holds its params, presets, `-c` flags, limits,
+  module directory and config. `wait --json` holds its result and artifact directory. `art ls --json` holds each
+  artifact's absolute path and `contentHash`. `agent show` holds a profile's contents. `ls <concert> <instance> --json`
+  holds a step's report, values, inputs, artifacts and session.
 - `ls`, `wait`, `watch`, `kill`, `tour`, `prune`, `artifact` and `config <concert>` read no config file, and take no
   `--preset` or `-c`. `prune` measures a concert's disk use and releases what its hosts hold under its snapshot.
 
@@ -367,8 +375,8 @@ them when any does, and exits 0.
   `--no-extensions`. The window is kept per harness and model, and every agent turn refreshes it; Context shows it where
   known, and `--json` carries it as `window`.
 - Every agent session records its harness's report: `ls <concert>` lists the faults of an agent's latest one, as the
-  profile declares its environment, under an `Environment` heading. `ls --json` carries every check under the instance's
-  `enrichment.environment`, and only the checks with faults in its report.
+  profile declares its environment, under an `Environment` heading. `ls <concert> <instance> --json` carries them as
+  `environment.faults`, each part's faults by part.
 
 ### Repertoire
 
@@ -403,11 +411,12 @@ schema.
 `maestro config <concert>` takes a concert id or unique prefix, as `ls` does. It shows the config the concert was
 performed under: its recorded snapshot composed as above, with the params it was given for a pack's composition. Each
 shows the layer that set it. A bare file's params are left out. It runs from any folder, reads no config file and takes
-no `--preset` or `-c`. Its `--json` is the document of `config <composition> --json`, plus three fields.
+no `--preset` or `-c`. Its `--json` is the document of `config <composition> --json`, plus six fields.
 
 `presets` holds each `--preset` as typed, in order. `flags` holds each `-c` as typed, in order. `limits` holds the
-concert's limits, `timeout` in milliseconds, left out when it had none. A concert whose snapshot is missing, unreadable
-or no longer composes exits 1 and says why.
+concert's limits, `timeout` in milliseconds, left out when it had none. `params` holds the root composition's params as
+given, a bare file's included. `moduleDir` is the directory the composition's modules load from, and `file` a bare
+file's name in it. A concert whose snapshot is missing, unreadable or no longer composes exits 1 and says why.
 
 A preset is `<name>.yaml` in the workspace's `.maestro/presets/`, else in `$XDG_CONFIG_HOME/maestro/presets/`; the
 workspace's file wins the name whole. A compose or perform error that a missing setting raised, such as a profile with

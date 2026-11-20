@@ -13,6 +13,7 @@ import { readJson } from "@maestro/sdk/stdlib";
 import {
 	call,
 	classics,
+	detailed,
 	maestro,
 	root,
 	scratch,
@@ -335,11 +336,12 @@ const triage = async (verb: string, ...flags: string[]) => [
 const withIssue = (args: string[], issue: string) =>
 	args.map((a, i) => (args[i - 1] === "--issue" ? issue : a));
 
+/** An instance as `ls <concert> <instance> --json` details it: an artifact is its path in the concert's artifact area. */
 type Instance = {
 	node: string;
 	expansion: string;
 	status: string;
-	outputs?: Record<string, { path?: string }>;
+	outputs?: Record<string, unknown>;
 };
 
 /** A stub perform of the triage, the triager ruling `ruling` and the planner proposing `proposal`. */
@@ -381,15 +383,13 @@ async function performed(
 			{ MAESTRO_STUB_OUTPUTS: outputs },
 		),
 	);
-	const { instances }: { instances: Instance[] } = JSON.parse(
-		await maestro(["ls", concert.id, "--json"], data),
-	);
+	const instances = await detailed<Instance>(concert.id, data);
 	const statuses = (node: string) =>
 		instances.filter((i) => i.node === node).map((i) => i.status);
 	const artifact = (node: string, port: string) => {
-		const path = instances.find((i) => i.node === node)?.outputs?.[port]?.path;
+		const path = instances.find((i) => i.node === node)?.outputs?.[port];
 		const area = join(data, "maestro/concerts", concert.id, "artifacts");
-		return readFileSync(join(area, path ?? ""), "utf8");
+		return readFileSync(join(area, String(path)), "utf8");
 	};
 	return { concert, statuses, artifact };
 }
@@ -736,15 +736,11 @@ test("an encore records the triager's current backlog snapshot", async () => {
 	const firstConcert = JSON.parse(first.out);
 	expect(firstConcert.status).toBe("ok");
 	const recorded = async (id: string) => {
-		const listed = await call(["ls", id, "--json"], data);
-		expect(listed.code).toBe(0);
-		const {
-			instances,
-		}: {
-			instances: (Instance & { inputs?: Record<string, { path?: string }> })[];
-		} = JSON.parse(listed.out);
+		const instances = await detailed<
+			Instance & { inputs?: Record<string, string> }
+		>(id, data);
 		const path = instances.find((instance) => instance.node === "triager")
-			?.inputs?.backlog?.path;
+			?.inputs?.backlog;
 		expect(path).toBeDefined();
 		expect(basename(path ?? "")).toBe("snapshot.md");
 		return readFileSync(
@@ -803,15 +799,11 @@ test("an encore rereads the sightings file recorded by its first triage", async 
 	const firstConcert = JSON.parse(first.out);
 	expect(firstConcert.status).toBe("ok");
 	const attached = async (id: string) => {
-		const listed = await call(["ls", id, "--json"], data);
-		expect(listed.code).toBe(0);
-		const {
-			instances,
-		}: {
-			instances: (Instance & { inputs?: Record<string, { path?: string }> })[];
-		} = JSON.parse(listed.out);
+		const instances = await detailed<
+			Instance & { inputs?: Record<string, string> }
+		>(id, data);
 		const path = instances.find((instance) => instance.node === "planner")
-			?.inputs?.sightings?.path;
+			?.inputs?.sightings;
 		expect(path).toBeDefined();
 		return readFileSync(
 			join(data, "maestro/concerts", id, "artifacts", path ?? ""),
@@ -1363,19 +1355,13 @@ type DesignsInstance = {
 	node: string;
 	expansion: string;
 	status: string;
-	inputs?: { session?: string; plan?: Proposal; sketches?: ArtifactRef };
-	outputs?: { session?: string };
-	enrichment?: { harness?: string };
+	inputs?: { session?: string; plan?: Proposal; sketches?: string };
+	session?: { id: string };
+	harness?: string;
 };
 
-async function designsListed(id: string, data: string) {
-	const listed = await call(["ls", id, "--json"], data);
-	expect(listed.code).toBe(0);
-	const { instances }: { instances: DesignsInstance[] } = JSON.parse(
-		listed.out,
-	);
-	return instances;
-}
+const designsListed = (id: string, data: string) =>
+	detailed<DesignsInstance>(id, data);
 
 const firstDesignPlan: Proposal = {
 	verdict: "split",
@@ -1443,7 +1429,7 @@ async function designsPerformed(
 	const instances = await designsListed(concert.id, data);
 	const sketchesRead = () => {
 		const path = instances.find((instance) => instance.node === "merge")?.inputs
-			?.sketches?.path;
+			?.sketches;
 		expect(path).toBeDefined();
 		return readFileSync(
 			join(data, "maestro/concerts", concert.id, "artifacts", path ?? ""),
@@ -1540,9 +1526,9 @@ test("a designs stub perform runs both designers and settles the merge plan rath
 	const merge = instances.find((instance) => instance.node === "merge");
 	expect(merge?.status).toBe("ok");
 	for (const instance of [...ranDesigners(shape, instances), merge])
-		expect(instance?.enrichment?.harness).toBe("stub");
+		expect(instance?.harness).toBe("stub");
 	expect(merge?.inputs?.session).toBe(
-		instances.find((instance) => instance.node === "planner")?.outputs?.session,
+		instances.find((instance) => instance.node === "planner")?.session?.id,
 	);
 	expect(
 		instances.find((instance) => instance.node === "checker")?.inputs?.plan,
@@ -1572,7 +1558,7 @@ test("a designs stub perform revises findings in the merge plan even when the fi
 	const revision = instances.find((instance) => instance.node === "revise");
 	expect(revision?.status).toBe("ok");
 	expect(revision?.inputs?.session).toBe(
-		instances.find((instance) => instance.node === "merge")?.outputs?.session,
+		instances.find((instance) => instance.node === "merge")?.session?.id,
 	);
 	expect(concert.outputs.triage.spec?.what).toBe(
 		"The revised merged contract.",
@@ -1583,8 +1569,8 @@ test("a failed designer does not prevent merging the surviving sketch", async ()
 	const shape = await designsComposed("--designs");
 	const first = await designsPerformed(shape);
 	const designer = ranDesigners(shape, first.instances)[0];
-	expect(designer?.outputs?.session).toBeDefined();
-	const id = designer?.outputs?.session?.slice(first.concert.id.length + 1);
+	expect(designer?.session?.id).toBeDefined();
+	const id = designer?.session?.id?.slice(first.concert.id.length + 1);
 	const { concert, instances, sketchesRead } = await designsPerformed(shape, {
 		extra: {
 			[`${id}/events.jsonl`]: `${JSON.stringify({ type: "fault", reason: "designer unavailable" })}\n`,
@@ -1627,11 +1613,11 @@ test("an encore with designs starts both designers in new sessions", async () =>
 	);
 	expect(designers.map((instance) => instance.status)).toEqual(["ok", "ok"]);
 	const sessions = ranDesigners(shape, first.instances).map(
-		(instance) => instance.outputs?.session,
+		(instance) => instance.session?.id,
 	);
 	for (const designer of designers) {
-		expect(designer.outputs?.session).toBeDefined();
-		expect(sessions).not.toContain(designer.outputs?.session);
+		expect(designer.session?.id).toBeDefined();
+		expect(sessions).not.toContain(designer.session?.id);
 	}
 }, 60_000);
 
@@ -1740,14 +1726,12 @@ async function deepPerformed(
 	expect(run.code).toBe(0);
 	const concert = JSON.parse(run.out);
 	expect(concert.status).toBe("ok");
-	const listed = await call(["ls", concert.id, "--json"], data);
-	expect(listed.code).toBe(0);
-	const { instances }: { instances: DeepInstance[] } = JSON.parse(listed.out);
+	const instances = await detailed<DeepInstance>(concert.id, data);
 	const attached = (instance: DeepInstance | undefined, port: string) => {
-		const ref = instance?.inputs?.[port] as ArtifactRef | undefined;
-		expect(ref?.path).toBeDefined();
+		const path = instance?.inputs?.[port];
+		expect(path).toBeDefined();
 		return readFileSync(
-			join(data, "maestro/concerts", concert.id, "artifacts", ref?.path ?? ""),
+			join(data, "maestro/concerts", concert.id, "artifacts", String(path)),
 			"utf8",
 		);
 	};

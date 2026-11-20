@@ -1,7 +1,8 @@
 import { stat } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import { walk } from "@maestro/core";
-import type { ConcertRecord } from "@maestro/core/perform";
+import type { ConcertRecord, InstanceRecord } from "@maestro/core/perform";
+import type { Ir } from "@maestro/ir";
 import { shellArg, shortIds } from "@maestro/render-text/live";
 import {
 	type Command,
@@ -71,19 +72,27 @@ async function onDisk<T>(path: string, read: () => Promise<T>): Promise<T> {
 	}
 }
 
+/** Each artifact `instance` of a concert of `ir` recorded, with the output port that holds it, `-` for none. */
+export function portedArtifacts(ir: Ir, instance: InstanceRecord) {
+	const refs = artifactRefs(ir, instance.node, instance.outputs ?? {});
+	return instance.artifacts.map((ref) => ({
+		port: refs.find((r) => r.ref.path === ref.path)?.port ?? NO_PORT,
+		ref,
+	}));
+}
+
 function recorded({ session, store }: Stored, row: ConcertRecord) {
 	const area = artifactsOf(session, row.id);
 	const instances = instancesInOrder(store, row);
-	const artifacts: Listed[] = instances.flatMap((i) => {
-		const refs = artifactRefs(row.ir, i.node, i.outputs ?? {});
-		return i.artifacts.map((ref) => ({
+	const artifacts: Listed[] = instances.flatMap((i) =>
+		portedArtifacts(row.ir, i).map(({ port, ref }) => ({
 			instance: i.name,
-			port: refs.find((r) => r.ref.path === ref.path)?.port ?? NO_PORT,
+			port,
 			path: join(area, ref.path),
 			contentHash: ref.contentHash,
 			...(i.stale && { stale: true as const }),
-		}));
-	});
+		})),
+	);
 	return { names: instances.map((i) => i.name), artifacts };
 }
 

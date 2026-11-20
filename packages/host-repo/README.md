@@ -323,7 +323,8 @@ resumed concert compares against it. A fresh session's message is the task alone
 In an encore an agent with no `session` input continues its counterpart's session: the instance of the same node at the
 same keys in the concert the encore repeats, in a `loop` its last iteration. An agent's own session input wins over any
 counterpart, and a seat saying `encore: false` starts fresh. With no usable counterpart session the agent starts fresh
-and its enrichment's `encoreFresh` says why. An encore cuts fresh lanes: it continues sessions, not lanes (D-27).
+and its enrichment's `encoreFresh` says why, which `ls <concert>` shows as a `Fresh session` note. An encore cuts fresh
+lanes: it continues sessions, not lanes (D-27).
 
 ## Lanes
 

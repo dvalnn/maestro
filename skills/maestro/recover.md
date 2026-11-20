@@ -26,8 +26,8 @@ again on fresh lanes.
 
 - The session continued is the same node's at the same keys, a loop's last iteration, unless its seat says
   `encore: false` or it takes a `session`.
-- An agent whose counterpart's session is gone or on another harness starts fresh, saying why in `encoreFresh` in
-  `ls <id> --json`.
+- An agent whose counterpart's session is gone or on another harness starts fresh, saying why in its `Fresh session`
+  note in `ls <id>`.
 - An encore matching the concert's params, config and target revision is refused: resume instead.
 
 ## Kill

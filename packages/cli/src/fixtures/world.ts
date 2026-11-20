@@ -65,6 +65,14 @@ export async function world() {
 export const idOf = ({ err }: Outcome) =>
 	/^concert (\S+)$/m.exec(err)?.[1] ?? "";
 export const json = (outcome: Outcome) => JSON.parse(outcome.out);
+/** The values of a `config --json` document, by key. */
+export const configValues = (outcome: Outcome): Record<string, unknown> =>
+	Object.fromEntries(
+		json(outcome).values.map((row: { key: string; value: unknown }) => [
+			row.key,
+			row.value,
+		]),
+	);
 
 /** How many letters of a short id a listing shows. */
 const SHOWN = 8;

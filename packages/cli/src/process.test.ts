@@ -8,6 +8,7 @@ import { fakeHost } from "@maestro/testkit";
 import { cleanup, demoSource, packOf, scratch } from "./fixtures/packs";
 import {
 	closingOf,
+	configValues,
 	ECHO,
 	FIRST,
 	GREET,
@@ -77,9 +78,14 @@ describe("a concert in another process", () => {
 		const started = await w.call(["perform", ...GREET, "--detach"], { self });
 		expect(started.code).toBe(0);
 		const id = started.out;
-		const row = json(await w.call(["ls", id, "--json"]));
-		expect(row.status).toBe("running");
-		expect(sessionOf(row.pid)).toBe(row.pid);
+		expect(json(await w.call(["ls", id, "--json"])).status).toBe("running");
+		// ls --json carries no pid, so the record gives it.
+		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+		const { pid } = db
+			.query<{ pid: number }, [string]>("SELECT pid FROM concerts WHERE id = ?")
+			.get(id) ?? { pid: 0 };
+		db.close();
+		expect(sessionOf(pid)).toBe(pid);
 		expect((await w.call(["kill", id])).code).toBe(0);
 		const resumed = await w.call(["resume", id, "--detach", "--json"], {
 			self,
@@ -116,6 +122,28 @@ describe("a concert in another process", () => {
 		expect(doc.err).not.toContain("Follow it");
 		for (const out of [id, piped.out, json(doc).id])
 			expect((await w.call(["kill", out])).code).toBe(0);
+	});
+
+	test("ls <concert> --json gives a running step its run time so far and no settledAt", async () => {
+		const w = await world();
+		const self = [process.execPath, await hanging()];
+		const id = (await w.call(["perform", ...GREET, "--detach"], { self })).out;
+		type Row = { node: string; startedAt: number; elapsedMs: number };
+		const running = async () =>
+			(json(await w.call(["ls", id, "--json"])).instances as Row[]).find(
+				(i) => i.node === "echo/echo",
+			);
+		await until(async () => (await running()) !== undefined);
+		const before = Date.now();
+		const row = await running();
+		const after = Date.now();
+		expect(row).toMatchObject({ status: "running" });
+		expect(row).not.toHaveProperty("settledAt");
+		expect(row?.elapsedMs).toBeGreaterThanOrEqual(
+			before - (row?.startedAt ?? 0),
+		);
+		expect(row?.elapsedMs).toBeLessThanOrEqual(after - (row?.startedAt ?? 0));
+		expect((await w.call(["kill", id])).code).toBe(0);
 	});
 
 	test("is waited on, refused a resume and a prune while running, killed, then resumed from the changed pack without redoing settled nodes", async () => {
@@ -212,9 +240,10 @@ describe("a concert in another process", () => {
 		const shape = json(await w.call(["ls", id, "--json"])).instances.filter(
 			(i: { node: string; stale: boolean }) => i.node === "shape" && !i.stale,
 		);
-		expect(shape.map((i: { outputs: unknown }) => i.outputs)).toEqual([
-			{ text: "hi v2" },
-		]);
+		expect(shape.map((i: { name: string }) => i.name)).toEqual(["shape"]);
+		expect(json(await w.call(["ls", id, "shape", "--json"])).outputs).toEqual({
+			text: "hi v2",
+		});
 
 		await rm(w.pack, { recursive: true });
 		expect(await w.call(["resume", id])).toEqual({
@@ -330,20 +359,25 @@ describe("resume", () => {
 		});
 		const kept = await modeOf(["encore", id, "-c", "mode.from=again"]);
 		expect(kept.mode).toEqual({ source: "a", keep: "perform", from: "again" });
-		const row = async (concert: string) =>
-			json(await w.call(["ls", concert, "--json"], outside));
-		expect(await row(encore.id)).toMatchObject({
-			encoreOf: id,
-			params: { name: "y" },
+		const configured = (concert: string) =>
+			w.call(["config", concert, "--json"], outside);
+		expect(
+			json(await w.call(["ls", encore.id, "--json"], outside)),
+		).toMatchObject({ encoreOf: id });
+		expect(json(await configured(encore.id))).toMatchObject({
 			presets: ["a", "b"],
-			config: ["mode.keep=perform", "mode.keep=encore", "mode.added=true"],
-			snapshot: {
-				mode: { source: "a", keep: "encore", from: "b", added: true },
-			},
+			flags: ["mode.keep=perform", "mode.keep=encore", "mode.added=true"],
 		});
-		expect(await row(kept.id)).toMatchObject({
+		expect(configValues(await configured(encore.id))).toMatchObject({
+			"demo.greet.name": "y",
+			"mode.source": "a",
+			"mode.keep": "encore",
+			"mode.from": "b",
+			"mode.added": true,
+		});
+		expect(json(await configured(kept.id))).toMatchObject({
 			presets: ["a", "b"],
-			config: ["mode.keep=perform", "mode.from=again"],
+			flags: ["mode.keep=perform", "mode.from=again"],
 		});
 		expect((await modeOf(["resume", encore.id])).mode).toEqual({
 			source: "a",
@@ -378,7 +412,7 @@ export const work = composition("work", { examples: [{}] }, () => {
 			},
 		});
 		const id = idOf(await w.call(["perform", file], { hosts: [failAfter] }));
-		expect(json(await w.call(["ls", id, "--json"]))).toMatchObject({
+		expect(json(await w.call(["config", id, "--json"]))).toMatchObject({
 			moduleDir: dirname(file),
 			file: "work.ts",
 		});
@@ -411,9 +445,10 @@ export const work = composition("work", { examples: [{}] }, () => {
 		const marks = json(await w.call(["ls", id, "--json"])).instances.filter(
 			(i: { node: string; stale: boolean }) => i.node === "mark" && !i.stale,
 		);
-		expect(marks.map((i: { outputs: unknown }) => i.outputs)).toEqual([
-			{ text: "hi v2" },
-		]);
+		expect(marks.map((i: { name: string }) => i.name)).toEqual(["mark"]);
+		expect(json(await w.call(["ls", id, "mark", "--json"])).outputs).toEqual({
+			text: "hi v2",
+		});
 
 		const again = idOf(await w.call(["perform", file], { hosts: [failAfter] }));
 		expect(
@@ -470,9 +505,9 @@ export const work = composition("work", { examples: [{}] }, () => {
 				{ hosts: [host] },
 			),
 		);
-		expect(json(await w.call(["ls", id, "--json"]))).toMatchObject({
+		expect(json(await w.call(["config", id, "--json"]))).toMatchObject({
 			presets: ["stub", "risky"],
-			config: ["mode.keep=perform"],
+			flags: ["mode.keep=perform"],
 		});
 		await w.call(["resume", id], { hosts: [host] });
 		await w.call(["resume", id, "-c", "mode.keep=resume"], {
@@ -498,14 +533,14 @@ export const work = composition("work", { examples: [{}] }, () => {
 		const id = idOf(performed);
 		expect(performed.code).toBe(1);
 		expect(performed.err).toContain("passed limits.tokens (10): 11 tokens");
-		expect(json(await w.call(["ls", id, "--json"]))).toMatchObject({
+		expect(json(await w.call(["config", id, "--json"]))).toMatchObject({
 			limits: { timeout: 7_200_000, tokens: 10 },
 		});
 		const resumed = ["resume", id, "-c", "limits.tokens=20"];
 		expect(await w.call(resumed, { hosts: [host] })).toMatchObject({
 			code: 0,
 		});
-		expect(json(await w.call(["ls", id, "--json"]))).toMatchObject({
+		expect(json(await w.call(["config", id, "--json"]))).toMatchObject({
 			limits: { timeout: 7_200_000, tokens: 20 },
 		});
 	});
@@ -658,29 +693,30 @@ describe("encore", () => {
 		);
 		const stacked = idOf(await encore(chained, "-c", "concurrency=3"));
 		const recorded = async (id: string) => {
-			const { encoreOf, params, config } = json(
-				await w.call(["ls", id, "--json"]),
-			);
-			return { encoreOf, params, config };
+			const { encoreOf } = json(await w.call(["ls", id, "--json"]));
+			const configured = await w.call(["config", id, "--json"]);
+			const { flags } = json(configured);
+			const name = configValues(configured)["demo.greet.name"];
+			return { encoreOf, name, flags };
 		};
 		expect(await recorded(first)).toEqual({
 			encoreOf: undefined,
-			params: { name: "x" },
-			config: undefined,
+			name: "x",
+			flags: [],
 		});
 		expect(await recorded(renamed)).toEqual({
 			encoreOf: first,
-			params: { name: "y" },
-			config: undefined,
+			name: "y",
+			flags: [],
 		});
 		expect(await recorded(chained)).toEqual({
 			encoreOf: renamed,
-			params: { name: "y" },
-			config: ["concurrency=2"],
+			name: "y",
+			flags: ["concurrency=2"],
 		});
 		expect(await recorded(stacked)).toMatchObject({
 			encoreOf: chained,
-			config: ["concurrency=2", "concurrency=3"],
+			flags: ["concurrency=2", "concurrency=3"],
 		});
 	});
 });
@@ -780,8 +816,11 @@ export const doc = composition("doc", { pack: "demo", examples: [{}], params: { 
 		expect(unchanged.code).toBe(1);
 		expect(json(unchanged).ok).toBe(false);
 		expect(json(await w.call(["ls", "--json"], elsewhere))).toHaveLength(1);
-		const row = json(await w.call(["ls", id, "--json"], elsewhere));
-		expect(row.snapshot.demo.doc.doc).toBe("note.md");
+		expect(
+			configValues(await w.call(["config", id, "--json"], elsewhere))[
+				"demo.doc.doc"
+			],
+		).toBe("note.md");
 		const encore = await w.call(
 			["encore", id, "--round", "1", "--json"],
 			elsewhere,
@@ -882,19 +921,15 @@ export const docs = composition("docs", {
 		const hex = new Bun.CryptoHasher("sha256").update("v1").digest("hex");
 		const area = join(w.env.XDG_DATA_HOME, "maestro/concerts", id, "artifacts");
 		expect(await Bun.file(join(area, hex, "spec.md")).text()).toBe("v1");
-		const { instances } = json(await w.call(["ls", id, "--json"]));
-		expect(
-			instances.find((i: { node: string }) => i.node === "read"),
-		).toMatchObject({ status: "ok", outputs: { text: "v1" } });
+		expect(json(await w.call(["ls", id, "read", "--json"]))).toMatchObject({
+			status: "ok",
+			outputs: { text: "v1" },
+		});
 
 		await Bun.write(spec, "v2");
 		await rm(stop);
 		const resumed = await w.call(["resume", id, "--json"]);
 		expect(json(resumed)).toMatchObject({ outputs: { text: "v1|v1" } });
-		expect(json(await w.call(["ls", id, "--json"])).params).toEqual({
-			spec,
-			stop,
-		});
 		const elsewhere = { cwd: w.root };
 		const encore = await w.call(["encore", id, "--json"], elsewhere);
 		expect(json(encore)).toMatchObject({ outputs: { text: "v2|v2" } });

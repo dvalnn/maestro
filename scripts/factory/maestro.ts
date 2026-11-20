@@ -147,11 +147,9 @@ function resultOf(doc: unknown): Result {
 const strings = (v: unknown) =>
 	Array.isArray(v) ? v.filter((s) => typeof s === "string") : [];
 
-/** Each report's `key` entries, over the `reports` of an `ls <concert> --json` document. */
-const entriesOf = (reports: unknown, key: string) =>
-	Object.values(isJson(reports) ? reports : {}).flatMap((r) =>
-		isJson(r) ? strings(r[key]) : [],
-	);
+/** Each report's `key` entries. */
+const entriesOf = (reports: readonly Json[], key: string) =>
+	reports.flatMap((r) => strings(r[key]));
 
 const isSighting = (v: unknown): v is Sighting =>
 	isJson(v) &&
@@ -159,10 +157,10 @@ const isSighting = (v: unknown): v is Sighting =>
 	typeof v.cites === "string" &&
 	typeof v.text === "string";
 
-/** Each report's well-formed sightings, over the `reports` of an `ls <concert> --json` document. */
-const sightingsOf = (reports: unknown): Sighting[] =>
-	Object.values(isJson(reports) ? reports : {}).flatMap((r) =>
-		isJson(r) && Array.isArray(r.sightings)
+/** Each report's well-formed sightings. */
+const sightingsOf = (reports: readonly Json[]): Sighting[] =>
+	reports.flatMap((r) =>
+		Array.isArray(r.sightings)
 			? r.sightings
 					.filter(isSighting)
 					.map(({ path, cites, text }) => ({ path, cites, text }))
@@ -197,9 +195,9 @@ const instancesOf = (doc: Json) =>
 
 const count = (list: unknown) => (Array.isArray(list) ? list.length : 0);
 
-/** The sizes of the tester's `map` reply, from an `ls <concert> --json` document. */
-function testsOf(doc: Json): Report["tests"] {
-	const out = instancesOf(doc).find(
+/** The sizes of the tester's `map` reply, from the agents' `ls <concert> <instance> --json` documents. */
+function testsOf(agents: readonly Json[]): Report["tests"] {
+	const out = agents.find(
 		(i) => typeof i.node === "string" && TESTER_NODES.includes(i.node),
 	)?.outputs;
 	const map = isJson(out) ? out.map : undefined;
@@ -317,6 +315,24 @@ async function json(
 	}
 }
 
+/** Whether a step row of `ls <concert> --json` is one `report` reads in full: an agent that left notes, or the tester. */
+const isRead = (i: Json) =>
+	typeof i.harness === "string" &&
+	typeof i.name === "string" &&
+	(isJson(i.notes) ||
+		(typeof i.node === "string" && TESTER_NODES.includes(i.node)));
+
+/**
+ * The `ls <concert> <instance> --json` document of each step `isRead` picks from `doc`. A report's obstacles, lessons and
+ * sightings show as its row's notes, so one read per agent would cost a process for each agent that left nothing.
+ */
+const agentsOf = (bin: string, id: string, doc: Json) =>
+	Promise.all(
+		instancesOf(doc)
+			.filter(isRead)
+			.map((i) => json(bin, ["ls", id, String(i.name)])),
+	).then((docs) => docs.filter(isJson));
+
 export function maestro(bin = "maestro"): Maestro {
 	return {
 		concerts: async (tour, limit = WINDOW, kind) => {
@@ -342,11 +358,15 @@ export function maestro(bin = "maestro"): Maestro {
 				json(bin, ["wait", id]),
 			]);
 			if (!isJson(doc)) throw new Error("maestro ls: not an object");
+			const agents = await agentsOf(bin, id, doc);
+			const reports = agents.flatMap((a) =>
+				isJson(a.report) ? [a.report] : [],
+			);
 			const upheld = upheldOf(result);
 			return {
-				obstacles: entriesOf(doc.reports, "obstacles"),
-				lessons: entriesOf(doc.reports, "lessons"),
-				sightings: sightingsOf(doc.reports),
+				obstacles: entriesOf(reports, "obstacles"),
+				lessons: entriesOf(reports, "lessons"),
+				sightings: sightingsOf(reports),
 				upheld,
 				draft: draftOf(result, upheld),
 				delivered: deliveredOf(result),
@@ -354,7 +374,7 @@ export function maestro(bin = "maestro"): Maestro {
 				pr: prOf(result),
 				review: outputText(result, "review"),
 				blocking: blockingOf(result),
-				tests: testsOf(doc),
+				tests: testsOf(agents),
 			};
 		},
 		spend: async (id) => spendOf(await json(bin, ["ls", id])),
@@ -363,10 +383,10 @@ export function maestro(bin = "maestro"): Maestro {
 			return !(isJson(doc) && doc.ok === false);
 		},
 		tree: async (id) => {
-			const doc = await json(bin, ["ls", id]);
+			const doc = await json(bin, ["config", id]);
 			if (!isJson(doc) || typeof doc.moduleDir !== "string")
 				throw new Error(
-					`maestro ls ${id}: ${refusal(doc) || "its record names no tree"}`,
+					`maestro config ${id}: ${refusal(doc) || "its record names no tree"}`,
 				);
 			return doc.moduleDir;
 		},

@@ -8,6 +8,7 @@ import PLANNER from "./masterclass/prompts/planner.md" with { type: "text" };
 import {
 	call,
 	classics,
+	detailed,
 	maestro,
 	scratch,
 	stubOutputs,
@@ -407,18 +408,15 @@ test("masterclass records the planner's lessons, reports and backlog contents", 
 	expect(result.code).toBe(0);
 	const concert = JSON.parse(result.out);
 	expect(concert.status).toBe("ok");
-	const listed = await call(["ls", concert.id, "--json"], data);
-	expect(listed.code).toBe(0);
-	const {
-		instances,
-	}: {
-		instances: { node: string; inputs?: Record<string, { path?: string }> }[];
-	} = JSON.parse(listed.out);
+	const instances = await detailed<{
+		node: string;
+		inputs?: Record<string, string>;
+	}>(concert.id, data);
 	const inputs = instances.find(
 		(instance) => instance.node === "planner",
 	)?.inputs;
 	for (const [port, file] of Object.entries(files)) {
-		const path = inputs?.[port]?.path;
+		const path = inputs?.[port];
 		expect(path).toBeDefined();
 		expect(basename(path ?? "")).toBe(basename(file.path));
 		expect(

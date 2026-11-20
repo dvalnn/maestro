@@ -14,6 +14,7 @@ import pkg from "../package.json";
 import { cleanup, FIXTURES, packOf, scratch } from "./fixtures/packs";
 import {
 	closingOf,
+	configValues,
 	ECHO,
 	GREET,
 	hostOf,
@@ -198,11 +199,6 @@ describe("compose and config", () => {
 			ok: true,
 			plan: { bounds: { instances: { exact: 4 } } },
 		});
-		const snapshot = {
-			concurrency: 3,
-			workspace: "ws",
-			mode: { token: "recorded", path: join(w.cwd, "relative") },
-		};
 		const listed = await w.call(["ls", "--json"], outside);
 		expect(listed.code).toBe(0);
 		const rows = json(listed);
@@ -214,10 +210,17 @@ describe("compose and config", () => {
 			expect(shown.code).toBe(0);
 			return json(shown);
 		};
-		expect(await single(healthy)).toMatchObject({ id: healthy, snapshot });
-		const unshown = await single(pending);
-		expect(unshown).toMatchObject({ id: pending, status: "ok" });
-		expect(unshown).not.toHaveProperty("snapshot");
+		expect(await single(healthy)).toMatchObject({ id: healthy });
+		expect(await single(pending)).toMatchObject({ id: pending, status: "ok" });
+		const configured = await w.call(["config", healthy, "--json"], outside);
+		expect(configured.code).toBe(0);
+		expect(configValues(configured)).toMatchObject({
+			concurrency: 3,
+			workspace: "ws",
+			"mode.token": "recorded",
+			"mode.path": join(w.cwd, "relative"),
+		});
+		expect((await w.call(["config", pending, "--json"], outside)).code).toBe(1);
 		const table = await w.call(["ls"], outside);
 		expect(table.code).toBe(0);
 		expect(
@@ -404,7 +407,10 @@ describe("compose and config", () => {
 			presets: ["a", "b"],
 			flags: ["limits.tokens=10000", "limits.timeout=2h"],
 			limits: { tokens: 10000, timeout: 7200000 },
+			params: { name: "x" },
+			moduleDir: expect.any(String),
 		});
+		expect(document).not.toHaveProperty("file");
 		expect(document.values).toContainEqual(
 			expect.objectContaining({
 				key: "packs",
@@ -833,6 +839,49 @@ describe("perform", () => {
 			expect((await w.call(["wait", broke], piped)).err).toEndWith(
 				`\nreason     ${reason}`,
 			);
+	});
+
+	test("the closing hint of a concert that ended inside a group is a shell command that names the step", async () => {
+		const w = await world();
+		const done = { outcome: "ok", outputs: { text: "done" } } as const;
+		const host = fakeHost({
+			steps: {
+				init: [done],
+				"rounds/fan/worker": [done],
+				"rounds/finish": [{ outcome: "failed", reason: "flaky" }],
+			},
+		});
+		const performed = await w.call(["perform", join(FIXTURES, "loop-fan.ts")], {
+			hosts: [host],
+		});
+		const id = idOf(performed);
+		const closed = await w.call(["wait", id], {
+			hosts: [host],
+			terminal: () => ({ columns: 80, rows: 24 }),
+			env: { NO_COLOR: "1" },
+		});
+		expect(closed.code).toBe(1);
+		const hint = closed.out.trim().split("\n").at(-1) ?? "";
+		// failglob refuses an unquoted word that globs to nothing, as zsh does.
+		const shell = Bun.spawnSync([
+			"bash",
+			"-O",
+			"failglob",
+			"-c",
+			`set -- ${hint}; printf '%s\\n' "$@"`,
+		]);
+		expect(shell.exitCode).toBe(0);
+		const words = shell.stdout.toString().trimEnd().split("\n");
+		expect(words).toEqual([
+			"maestro",
+			"ls",
+			shortOf(id),
+			"rounds[0]/finish",
+			"--json",
+		]);
+		const detail = await w.call(words.slice(1), { hosts: [host] });
+		expect(detail.code).toBe(0);
+		expect(json(detail)).toMatchObject({ status: "failed" });
 	});
 
 	test("ls on a terminal hints older concerts when the limit leaves some out, piped or --json never", async () => {
@@ -1897,13 +1946,12 @@ describe("the record", () => {
 			expect(row).toMatchObject({ status: "ok" });
 			for (const key of Object.keys(row)) expect(LIST_ROW).toContain(key);
 		}
-		expect(json(await w.call(["ls", before, "--json"], outside))).toMatchObject(
-			{ snapshot: { workspace: "ws" }, moduleDir: expect.any(String) },
-		);
+		expect(
+			configValues(await w.call(["config", before, "--json"], outside)),
+		).toMatchObject({ workspace: "ws" });
 		const single = await w.call(["ls", unreadable, "--json"], outside);
 		expect(single.code).toBe(0);
 		expect(json(single)).toMatchObject({ id: unreadable, status: "ok" });
-		expect(json(single)).not.toHaveProperty("snapshot");
 		const table = await w.call(["ls"], outside);
 		expect(table.code).toBe(0);
 		expect(
@@ -2137,6 +2185,110 @@ describe("the record", () => {
 		expect(await drafts()).toEqual(first);
 	});
 
+	// Seam: the concert document and step rows printed by ls --json, not the record's columns.
+	test("ls <concert> --json contains only the concert row, metrics and step rows", async () => {
+		const w = await world();
+		const notes = { Lessons: ["keep the listing small"] };
+		const host: Host = {
+			...hostOf({
+				...ECHO,
+				metrics: { tokens_in: 12, tokens_out: 3, cost: 7 },
+				enrichment: { report: { summary: "full report" } },
+			}),
+			text: { notes: () => notes, report: () => ({ summary: "full report" }) },
+		};
+		const first = await w.call(["perform", ...GREET], { hosts: [host] });
+		expect(first.code).toBe(0);
+		const previous = idOf(first);
+		const encore = await w.call(
+			[
+				"encore",
+				previous,
+				"-c",
+				"concurrency=2",
+				"--tour",
+				"listing",
+				"--title",
+				"small listing",
+			],
+			{ hosts: [host] },
+		);
+		expect(encore.code).toBe(0);
+		const id = idOf(encore);
+		const shown = await w.call(["ls", id, "--json"], { hosts: [host] });
+		expect(shown.code).toBe(0);
+		expect(shown.err).toBe("");
+		const doc = json(shown);
+		expect(Object.keys(doc).sort()).toEqual(
+			[...LIST_ROW, "metrics", "instances"].sort(),
+		);
+		expect(doc).toMatchObject({
+			id,
+			short: shortOf(id),
+			status: "ok",
+			pack: "demo",
+			composition: "greet",
+			workspace: "ws",
+			tour: "listing",
+			title: "small listing",
+			encoreOf: previous,
+			metrics: { tokens_in: 12, tokens_out: 3, cost: 7 },
+			tokens: 15,
+			notes: { Lessons: 1 },
+		});
+		expect(doc.instances.map((row: { name: string }) => row.name)).toEqual([
+			"first",
+			"helpers_exclaim",
+			"shape",
+			"echo/echo",
+		]);
+		const step = doc.instances.find(
+			(row: { name: string }) => row.name === "echo/echo",
+		);
+		expect(Object.keys(step).sort()).toEqual(
+			[
+				"name",
+				"node",
+				"expansion",
+				"status",
+				"stale",
+				"startedAt",
+				"settledAt",
+				"elapsedMs",
+				"tokens",
+				"notes",
+			].sort(),
+		);
+		expect(step).toMatchObject({
+			name: "echo/echo",
+			node: "echo/echo",
+			expansion: "",
+			status: "ok",
+			stale: false,
+			startedAt: expect.any(Number),
+			settledAt: expect.any(Number),
+			elapsedMs: expect.any(Number),
+			tokens: 15,
+			notes,
+		});
+		const code = doc.instances.find(
+			(row: { name: string }) => row.name === "shape",
+		);
+		expect(Object.keys(code).sort()).toEqual(
+			[
+				"name",
+				"node",
+				"expansion",
+				"status",
+				"stale",
+				"startedAt",
+				"settledAt",
+				"elapsedMs",
+				"tokens",
+			].sort(),
+		);
+	});
+
 	// Seam: the JSON documents and exit codes of ls on a performed concert and one of its instances.
 	async function loopFanConcert() {
 		const w = await world();
@@ -2162,7 +2314,7 @@ describe("the record", () => {
 		return { w, host, id: idOf(performed) };
 	}
 
-	test("ls --json names each instance by the id of its reports and outputs, including a fan-out inside a loop", async () => {
+	test("ls --json names each instance as ls <concert> <instance> takes it, including a fan-out inside a loop", async () => {
 		const { w, host, id } = await loopFanConcert();
 		const result = await w.call(["ls", id, "--json"], { hosts: [host] });
 		expect(result.code).toBe(0);
@@ -2177,8 +2329,11 @@ describe("the record", () => {
 			"rounds[0]/fan[lens]/worker",
 			"rounds[0]/fan[risk]/worker",
 		]) {
-			expect(doc.reports[name]).toEqual({ summary: "reviewed" });
-			expect(doc.outputs[name]).toEqual({ text: "done" });
+			const detail = json(
+				await w.call(["ls", id, name, "--json"], { hosts: [host] }),
+			);
+			expect(detail.report).toEqual({ summary: "reviewed" });
+			expect(detail.outputs).toEqual({ text: "done" });
 		}
 		expect(workers.map((i: { name: string }) => i.name).sort()).toEqual([
 			"rounds[0]/fan[lens]/worker",
@@ -2204,7 +2359,7 @@ describe("the record", () => {
 		]);
 	});
 
-	test("ls --json accepts an instance name from the listing and returns only that named instance", async () => {
+	test("ls --json accepts an instance name from the listing and details only that named instance", async () => {
 		const { w, host, id } = await loopFanConcert();
 		const doc = json(await w.call(["ls", id, "--json"], { hosts: [host] }));
 		const worker = doc.instances.find(
@@ -2216,28 +2371,26 @@ describe("the record", () => {
 			hosts: [host],
 		});
 		expect(result.code).toBe(0);
-		const filtered = json(result);
-		expect(filtered.instances).toEqual([worker]);
-		expect(filtered.reports).toEqual({
-			"rounds[0]/fan[lens]/worker": { summary: "reviewed" },
-		});
-		expect(filtered.outputs).toEqual({
-			"rounds[0]/fan[lens]/worker": { text: "done" },
-		});
+		const detail = json(result);
+		expect(detail).toMatchObject(worker);
+		expect(detail.report).toEqual({ summary: "reviewed" });
+		expect(detail.outputs).toEqual({ text: "done" });
 	});
 
-	test("ls --json gives an instance's wired inputs, and leaves the field out of a row that has none", async () => {
+	test("ls <concert> <instance> --json gives an instance's wired inputs, and leaves the field out for one that has none", async () => {
 		const w = await world();
 		const id = idOf(
 			await w.call(["perform", join(GOLDEN, "fanout-fanin-loop.json")]),
 		);
 		const instances = json(await w.call(["ls", id, "--json"])).instances;
-		const draft = instances.find(
-			(i: { node: string }) => i.node === "topics/draft",
-		);
-		expect(draft.inputs).toEqual({ prompt: expect.any(String) });
-		const group = instances.find((i: { node: string }) => i.node === "topics");
-		expect(group).not.toHaveProperty("inputs");
+		const detail = async (node: string) => {
+			const { name } = instances.find((i: { node: string }) => i.node === node);
+			return json(await w.call(["ls", id, name, "--json"]));
+		};
+		expect((await detail("topics/draft")).inputs).toEqual({
+			prompt: expect.any(String),
+		});
+		expect(await detail("topics")).not.toHaveProperty("inputs");
 	});
 
 	test("ls shows the disk a concert held as it settled, and none for one the record holds no size for", async () => {
@@ -2419,14 +2572,13 @@ describe("the record", () => {
 		expect(one.out).toEndWith(sections);
 		expect(one.out.split("\n")[0]).toMatch(/^instance +status/);
 		expect(
-			json(await w.call(["ls", id, "echo", "--json"], { hosts: [host] }))
-				.instances,
-		).toHaveLength(1);
+			json(await w.call(["ls", id, "echo", "--json"], { hosts: [host] })).name,
+		).toBe("echo/echo");
 		const missing = await w.call(["ls", id, "zzz"], { hosts: [host] });
 		expect(missing.code).toBe(2);
 		expect(missing.err).toContain(`no instance 'zzz' in concert ${id}`);
 		const narrow = () => ({ columns: 40, rows: 24 });
-		const full = `Full reports: maestro ls ${shortOf(id)} --json | jq .reports`;
+		const full = `Full notes: maestro ls ${shortOf(id)} <instance> --json | jq .notes`;
 		const cut = (
 			await w.call(["ls", id], {
 				hosts: [host],
@@ -2445,14 +2597,14 @@ describe("the record", () => {
 			`echo/echo  ${lesson.slice(0, 28)}…`,
 			full,
 		]);
+		const detail = (hosts: Host[]) =>
+			w.call(["ls", id, "echo", "--json"], { hosts }).then(json);
+		expect((await detail([host])).report).toEqual({ summary: "s", notes });
 		const doc = json(await w.call(["ls", id, "--json"], { hosts: [host] }));
-		expect(doc.reports).toEqual({ "echo/echo": { summary: "s", notes } });
 		expect(doc.instances[0]).not.toHaveProperty("notes");
-		expect(
-			json(await w.call(["ls", id, "--json"], { hosts: [hostOf()] })).reports,
-		).toEqual({});
+		expect(await detail([hostOf()])).not.toHaveProperty("report");
 		expect((await w.call(["ls", "--help"], { hosts: [host] })).out).toContain(
-			"\n\nReports\n  --json | jq .reports\n  summary  what it did\n\nExamples:",
+			"\n\nReports\n  maestro ls <concert> <instance> --json | jq .report\n  summary  what it did\n\nExamples:",
 		);
 		const rows = json(await w.call(["ls", "--json"], { hosts: [host] }));
 		expect(rows.map((r: { notes: object }) => r.notes)).toEqual([
@@ -2479,9 +2631,7 @@ describe("the record", () => {
 		const db = new Database(join(w.root, "data/maestro/record.db"));
 		db.run("UPDATE instances SET stale = 1");
 		db.close();
-		expect(
-			json(await w.call(["ls", id, "--json"], { hosts: [host] })).reports,
-		).toEqual({});
+		expect(await detail([host])).not.toHaveProperty("report");
 	});
 
 	test("an ambiguous prefix of the id or of the short id lists at most five short ids, then how many more", async () => {

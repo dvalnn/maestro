@@ -15,10 +15,19 @@ const bin = join(dir, "maestro");
 writeFileSync(
 	bin,
 	`#!/bin/sh
+case "$1 $2 $3" in
+	"ls c"?" build/tester") echo '{"name":"build/tester","node":"build/tester","harness":"stub","outputs":{"map":{"pinned":[{},{},{}],"deferred":[{}],"untestable":[]}}}' ;;
+	"ls c"?" build/lens") echo '{"name":"build/lens","node":"build/lens","harness":"stub","report":{"summary":"s","obstacles":["not read"]}}' ;;
+	"ls c"?" build") echo '{"name":"build","node":"build","harness":"stub","report":{"summary":"s","obstacles":["no rg"],"sightings":[{"path":"a.ts","cites":"R1","text":"drops x"},{"path":"b.ts","text":"no cites"}]}}' ;;
+	"ls c"?" fixes/reviewer") echo '{"name":"fixes/reviewer","node":"fixes/reviewer","harness":"stub","report":{"summary":"s","lessons":["run just fmt first"]}}' ;;
+	"ls c5 tester") echo '{"name":"tester","node":"tester","harness":"stub","outputs":{"map":{"pinned":[{}],"deferred":[],"untestable":[]}}}' ;;
+	"ls c2 --json"|"ls c3 --json"|"ls c4 --json"|"ls c6 --json") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"name":"build/tester","node":"build/tester","harness":"stub"},{"name":"build","node":"build","harness":"stub","notes":{"Obstacles":["no rg"]}},{"name":"build/lens","node":"build/lens","harness":"stub"},{"name":"fixes[0]/fix","node":"fixes/fix","expansion":"[0]"},{"name":"fix_until_clean/fixes[1]/fix","node":"fix_until_clean/fixes/fix","expansion":"[1]"},{"name":"fix_until_clean/fixes/brief","node":"fix_until_clean/fixes/brief"},{"name":"fixes/reviewer","node":"fixes/reviewer","harness":"stub","notes":{"Lessons":["run just fmt first"]}}]}' ;;
+	"config tree --json") echo '{"values":[],"presets":[],"flags":[],"params":{},"moduleDir":"/cache/trees/abc/.maestro","file":"slice.ts"}' ;;
+	"config d"*) echo '{"values":[],"presets":[],"flags":[],"params":{}}' ;;
+	"config gone --json") echo '{"ok":false,"error":"no concert gone in the record"}' ;;
+	"ls c5 --json") echo '{"instances":[{"name":"tester","node":"tester","harness":"stub"}]}' ;;
+esac
 case "$1 $2" in
-	"ls c2"|"ls c3"|"ls c4"|"ls c6") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"node":"build/tester","outputs":{"map":{"pinned":[{},{},{}],"deferred":[{}],"untestable":[]}}},{"node":"fixes/fix","expansion":"[0]"},{"node":"fix_until_clean/fixes/fix","expansion":"[1]"},{"node":"fix_until_clean/fixes/brief"},{"node":"fixes/reviewer"}],"reports":{"build":{"summary":"s","obstacles":["no rg"],"sightings":[{"path":"a.ts","cites":"R1","text":"drops x"},{"path":"b.ts","text":"no cites"}]},"reviewer":{"summary":"s","lessons":["run just fmt first"]}}}' ;;
-	"ls tree") echo '{"moduleDir":"/cache/trees/abc/.maestro","file":"slice.ts"}' ;;
-	"ls c5") echo '{"instances":[{"node":"tester","outputs":{"map":{"pinned":[{}],"deferred":[],"untestable":[]}}}]}' ;;
 	"ls --tour") [ "$6" = "--composition" ] && by="-$7"; echo '[{"id":"l'"$5$by"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1","config":["target.base=old","x=1","target.base=abc"],"startedAt":10,"settledAt":25}]' ;;
 	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"draft":true,"delivered":2,"notice":{"path":"notice.md"},"pr":{"path":"pr.md"}}}' ;;
 	"wait c4") echo '{"status":"rejected","artifacts":"${dir}","outputs":{"review":{"path":"review.md"},"upheld":[{"id":"F1","lens":"spec","where":"a.ts:3","issue":"A seam breaks","cites":"R1"}]}}' ;;

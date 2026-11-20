@@ -14,6 +14,7 @@ import {
 	shortIds,
 	stateWord,
 } from "@maestro/render-text/live";
+import { portedArtifacts } from "./artifact";
 import { changesOf } from "./changeset";
 import {
 	COMMON,
@@ -30,7 +31,15 @@ import {
 	textOf,
 	type Values,
 } from "./command";
-import { actorOf, hostTextOf, notesOf, reportOf, valuesOf } from "./host-text";
+import {
+	actorFieldsOf,
+	actorOf,
+	detailsOf,
+	hostTextOf,
+	notesOf,
+	reportOf,
+	valuesOf,
+} from "./host-text";
 import {
 	ArgumentError,
 	CliError,
@@ -48,10 +57,10 @@ import {
 	printClosing,
 	resolveInstanceName,
 	resultDoc,
-	spendOf,
 	staleCell,
 	table,
 	usageError,
+	withArtifactPaths,
 } from "./output";
 import {
 	artifactsOf,
@@ -60,7 +69,6 @@ import {
 	instancesInOrder,
 	isMaestro,
 	type Located,
-	openRecorded,
 	type Stored,
 	withStore,
 } from "./session";
@@ -86,22 +94,8 @@ const LS_OPTIONS = {
 } as const satisfies Options;
 
 /**
- * The record's columns but its IR, its snapshot as the values it composes to over the code defaults, left out when it
- * cannot be read or no longer composes, and `elapsedMs`: the concert's run time, up to now while it runs.
- */
-const concertColumns = ({ session, store }: Stored, concert: ConcertRecord) => {
-	const { ir: _ir, snapshot: _snapshot, ...row } = concert;
-	const opened = openRecorded(session, store, concert);
-	return {
-		...row,
-		...(opened.kind === "composes" && { snapshot: opened.composed.values }),
-		elapsedMs: elapsedOf(concert),
-	};
-};
-
-/**
- * What a listing row holds of a concert's record: what places it, including the `facts` its hosts gave, and tells how it fared, and `elapsedMs`, its run time,
- * up to now while it runs. The rest is `ls <concert> --json`, so a listing composes no snapshot.
+ * What a listing row holds of a concert's record: what places it, including the `facts` its hosts gave, and tells how
+ * it fared, and `elapsedMs`, its run time, up to now while it runs. A listing composes no snapshot.
  */
 const rowColumns = (concert: ConcertRecord) => {
 	const {
@@ -135,6 +129,19 @@ const rowColumns = (concert: ConcertRecord) => {
 	};
 };
 
+/** A concert's `ls --json` row: its `rowColumns`, `short` id, token total and the count of its notes by heading. */
+const listRow = (
+	store: Stored["store"],
+	concert: ConcertRecord,
+	short: string,
+	notes: Record<string, number>,
+) => ({
+	...rowColumns(concert),
+	short,
+	tokens: tokensOf(store.metrics(concert.id)),
+	notes,
+});
+
 const tokenCell = (tokens: number) => (tokens > 0 ? compact(tokens) : "-");
 
 const dash = (text: string | undefined) => text || "-";
@@ -162,7 +169,7 @@ function noteSections(noted: readonly Noted[]): Map<string, string[][]> {
 
 /**
  * The lines of `noted`'s sections, each a blank line, its heading, then one `<instance>  <entry>` line each. A line
- * wider than `columns` cells is cut with `…`, followed by a dim hint line saying how to read the full reports.
+ * wider than `columns` cells is cut with `…`, followed by a dim hint line saying how to read the full notes.
  */
 function notesLines(
 	noted: readonly Noted[],
@@ -180,7 +187,10 @@ function notesLines(
 	if (cut.every((line, i) => line === lines[i])) return lines;
 	return [
 		...cut,
-		hintLine(`Full reports: maestro ls ${id} --json | jq .reports`, color),
+		hintLine(
+			`Full notes: maestro ls ${id} <instance> --json | jq .notes`,
+			color,
+		),
 	];
 }
 
@@ -239,7 +249,7 @@ function limitOf(values: Values): number | undefined {
 	return limit === undefined ? LIST_LIMIT : parseCount("--limit", limit);
 }
 
-/** What `ls --help` adds: the mark, and the fields of the reports `--json` gives, as the hosts word them. */
+/** What `ls --help` adds: the mark, and the fields of the report `ls <concert> <instance> --json` gives, as the hosts word them. */
 async function reportHelp(args: readonly string[], deps: Deps) {
 	const fields = deps.hosts.flatMap((h) =>
 		Object.entries(h.text?.reportFields ?? {}),
@@ -247,7 +257,7 @@ async function reportHelp(args: readonly string[], deps: Deps) {
 	if (!fields.length) return NOTED_HELP;
 	const color = colorOf(deps, peek(COMMON, args)).out;
 	const rows = fields.map(([field, what]) => [`  ${field}`, what]);
-	return `${NOTED_HELP}\n\n${paint("bold", "Reports", color)}\n  --json | jq .reports\n${table(rows)}`;
+	return `${NOTED_HELP}\n\n${paint("bold", "Reports", color)}\n  maestro ls <concert> <instance> --json | jq .report\n${table(rows)}`;
 }
 
 export const ls: Command = {
@@ -260,7 +270,7 @@ export const ls: Command = {
 		],
 		[
 			"<instance>",
-			"One of the concert's instances, as 'maestro ls <concert>' lists it, or a unique ending of its name; its row and notes alone",
+			"One of the concert's instances, as 'maestro ls <concert>' lists it, or a unique ending of its name; its row and notes alone, and with --json its contents in full",
 		],
 	],
 	options: LS_OPTIONS,
@@ -340,12 +350,9 @@ function listed(stored: Stored, query: ConcertFilter) {
 	}
 	const short = shortIds(store.ids());
 	const counts = noteCounts(stored, concerts);
-	const rows = concerts.map((c) => ({
-		...rowColumns(c),
-		short: short.label(c.id, false),
-		tokens: tokensOf(store.metrics(c.id)),
-		notes: counts.get(c.id) ?? {},
-	}));
+	const rows = concerts.map((c) =>
+		listRow(store, c, short.label(c.id, false), counts.get(c.id) ?? {}),
+	);
 	const text = table(
 		[
 			[
@@ -405,11 +412,78 @@ export function olderHint(values: Values, limit: number, color: boolean) {
 	);
 }
 
-async function instancesOf(
-	{ session, store, values, json }: Stored,
-	prefix: string,
-	which?: string,
+/** One of a concert's instances, named as `ls <concert>` lists it. */
+type Step = ReturnType<typeof instancesInOrder>[number];
+
+/** The text hooks of the host of each node of a concert, by node id. */
+type TextLookup = ReturnType<typeof hostTextOf>;
+
+/**
+ * A step's row in `ls <concert> --json`, which leads its `ls <concert> <instance> --json` document: `elapsedMs` is its
+ * run time, up to now while it runs, and who ran it and its notes are left out when its host gives none.
+ */
+function stepRow(i: Step, hostText: TextLookup) {
+	const notes = i.stale ? {} : notesOf(i.enrichment, i.node, hostText);
+	const elapsedMs =
+		i.startedAt === undefined
+			? undefined
+			: (i.settledAt ?? Date.now()) - i.startedAt;
+	return {
+		name: i.name,
+		node: i.node,
+		expansion: i.expansion,
+		status: i.status,
+		stale: i.stale,
+		startedAt: i.startedAt,
+		settledAt: i.settledAt,
+		elapsedMs,
+		tokens: tokensOf(i.metrics),
+		reason: i.reason,
+		...actorFieldsOf(i.enrichment, i.node, hostText),
+		notes: Object.keys(notes).length > 0 ? notes : undefined,
+	};
+}
+
+/**
+ * Instance `i` of concert `row` in full, each piece once: its row, metrics, report, typed values, inputs and artifacts,
+ * each artifact as its path in the concert's artifact area, then what its host adds, each left out when it has none.
+ */
+function stepDetail(row: ConcertRecord, i: Step, hostText: TextLookup) {
+	const ports = row.ir.nodes.find((n) => n.id === i.node)?.in ?? {};
+	const artifacts = portedArtifacts(row.ir, i).map(({ port, ref }) => ({
+		port,
+		path: ref.path,
+	}));
+	return {
+		...stepRow(i, hostText),
+		metrics: i.metrics,
+		report: i.stale ? undefined : reportOf(i.enrichment, i.node, hostText),
+		outputs: valuesOf(row.ir, i.node, i.outputs, hostText),
+		inputs: i.inputs && withArtifactPaths(ports, i.inputs),
+		artifacts: artifacts.length > 0 ? artifacts : undefined,
+		...detailsOf(i.enrichment, i.node, hostText),
+	};
+}
+
+/** Concert `row`'s `ls <concert> --json` document: its `ls --json` row, its metrics and a row per step. */
+function concertListing(
+	stored: Stored,
+	row: ConcertRecord,
+	steps: readonly Step[],
+	hostText: TextLookup,
 ) {
+	const { store } = stored;
+	const short = shortIds(store.ids()).label(row.id, false);
+	const notes = noteCounts(stored, [row]).get(row.id) ?? {};
+	return {
+		...listRow(store, row, short, notes),
+		metrics: store.metrics(row.id),
+		instances: steps.map((i) => stepRow(i, hostText)),
+	};
+}
+
+async function instancesOf(stored: Stored, prefix: string, which?: string) {
+	const { session, store, values, json } = stored;
 	const color = colorOf(session.deps, values).out;
 	const row = concertOf(store, prefix);
 	const hostText = hostTextOf(session.deps.hosts, row.ir);
@@ -422,37 +496,24 @@ async function instancesOf(
 					every.map((i) => i.name),
 					row.id,
 				);
-	const instances = every.filter(
-		(i) => chosen === undefined || i.name === chosen,
-	);
-	const named = instances.map((i) => ({
-		...i,
-		notes: i.stale ? {} : notesOf(i.enrichment, i.node, hostText),
-		report: i.stale ? undefined : reportOf(i.enrichment, i.node, hostText),
-		values: i.stale ? undefined : valuesOf(row.ir, i.node, i.outputs, hostText),
-	}));
-	const short = shortIds(store.ids()).label(row.id, false);
 	if (json) {
+		const step = every.find((i) => i.name === chosen);
 		session.deps.stdout(
-			jsonOf({
-				...concertColumns({ session, store, values, json }, row),
-				short,
-				...spendOf(store, row.id),
-				instances,
-				reports: Object.fromEntries(
-					named.flatMap((i) => (i.report ? [[i.name, i.report]] : [])),
-				),
-				outputs: Object.fromEntries(
-					named.flatMap((i) => (i.values ? [[i.name, i.values]] : [])),
-				),
-			}),
+			jsonOf(
+				step
+					? stepDetail(row, step, hostText)
+					: concertListing(stored, row, every, hostText),
+			),
 		);
 		return EXIT.ok;
 	}
+	const instances = every.filter(
+		(i) => chosen === undefined || i.name === chosen,
+	);
 	const text = table(
 		[
 			["instance", "status", "stale", "agent", "reason"],
-			...named.map((i) => [
+			...instances.map((i) => [
 				i.name,
 				stateWord(i.status, color),
 				staleCell(i),
@@ -462,8 +523,13 @@ async function instancesOf(
 		],
 		color,
 	);
+	const noted = instances.map((i) => ({
+		name: i.name,
+		notes: stepRow(i, hostText).notes ?? {},
+	}));
+	const short = shortIds(store.ids()).label(row.id, false);
 	const notes = notesLines(
-		named,
+		noted,
 		short,
 		color,
 		session.deps.terminal?.().columns,

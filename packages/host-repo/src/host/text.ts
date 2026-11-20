@@ -127,6 +127,26 @@ function actor(enrichment: Enrichment): string | undefined {
 	].join(SEP);
 }
 
+/** An agent's harness, model, thinking and profile name, each one its enrichment holds; undefined when it names no harness. */
+function actorFields(
+	enrichment: Enrichment,
+): Record<string, string> | undefined {
+	const harness = stringOf(enrichment.harness);
+	if (harness === undefined) return undefined;
+	const { profile } = enrichment;
+	const fields = {
+		harness,
+		model: stringOf(enrichment.model),
+		thinking: stringOf(enrichment.thinking),
+		profile: isPlainObject(profile) ? stringOf(profile.name) : undefined,
+	};
+	return Object.fromEntries(
+		Object.entries(fields).flatMap(([key, value]) =>
+			value === undefined ? [] : [[key, value]],
+		),
+	);
+}
+
 /** The headings of the report lists an agent's notes show, by report field. */
 const NOTED = {
 	obstacles: "Obstacles",
@@ -164,23 +184,40 @@ function envelopeOf({ report }: Enrichment): Report | undefined {
 		: undefined;
 }
 
-/** The envelope's report, with the checks of the latest environment report that hold a fault, when any did. */
-function reportOf(enrichment: Enrichment): Record<string, unknown> | undefined {
-	const report = envelopeOf(enrichment);
-	const checks = checksOf(enrichment).filter(({ faults }) => faults.length);
-	if (!checks.length) return report;
-	return { ...report, environment: checks };
+/**
+ * The session an agent ran in, and the faults of its latest environment report by part, each left out when its
+ * enrichment holds none.
+ */
+function details(enrichment: Enrichment): Record<string, unknown> {
+	const id = stringOf(enrichment.session);
+	const dir = stringOf(enrichment.sessionDir);
+	const faulty = checksOf(enrichment).filter(({ faults }) => faults.length);
+	return {
+		...(id !== undefined && dir !== undefined && { session: { id, dir } }),
+		...(Array.isArray(enrichment.environment) && {
+			environment: {
+				faults: Object.fromEntries(faulty.map((c) => [c.part, c.faults])),
+			},
+		}),
+	};
 }
 
 const summaryOf = (enrichment: Enrichment) =>
 	stringOf(envelopeOf(enrichment)?.summary);
 
-/** An agent's report obstacles, lessons and sightings, then the faults of its environment report, each non-empty list under its heading. */
+/** The heading of an encore's agent's note saying why it started a fresh session. */
+const FRESH = "Fresh session";
+
+/**
+ * An agent's report obstacles, lessons and sightings, then the faults of its environment report, then why an encore's
+ * agent started a fresh session, each non-empty list under its heading.
+ */
 function notes(enrichment: Enrichment): Record<string, string[]> {
 	const lists = new Map(Object.entries(envelopeOf(enrichment) ?? {}));
 	const faults = checksOf(enrichment).flatMap(({ part, faults }) =>
 		faults.map((fault) => `${part}: ${fault}`),
 	);
+	const fresh = stringOf(enrichment.encoreFresh);
 	return Object.fromEntries([
 		...Object.entries(NOTED).flatMap(([field, heading]) => {
 			const list = lists.get(field);
@@ -189,6 +226,7 @@ function notes(enrichment: Enrichment): Record<string, string[]> {
 				: [];
 		}),
 		...(faults.length ? [["Environment", faults]] : []),
+		...(fresh === undefined ? [] : [[FRESH, [fresh]]]),
 	]);
 }
 
@@ -197,12 +235,10 @@ export const repoText: HostText = {
 	progress,
 	actor,
 	notes,
-	report: reportOf,
+	report: envelopeOf,
+	actorFields,
+	details,
 	summary: summaryOf,
 	bookkeeping: AGENT_OUT_PORTS,
-	reportFields: {
-		...REPORT_FIELDS,
-		environment:
-			"each part of the agent's environment whose check against what its harness reported loading found a fault, with its faults",
-	},
+	reportFields: REPORT_FIELDS,
 };
