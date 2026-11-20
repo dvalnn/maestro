@@ -307,7 +307,7 @@ type Invocation = {
 	file?: string;
 };
 
-/** Prints `rows` as a table, or with `--json` as `values` beside `extra`. */
+/** Prints `rows` as a table, or with `--json` as `values` beside `invocation`'s fields. */
 function printConfig(
 	deps: Deps,
 	json: boolean,

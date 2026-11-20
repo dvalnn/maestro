@@ -26,7 +26,7 @@ export type Concert = {
 	tour?: string;
 	/** When it started, in milliseconds. */
 	startedAt?: number;
-	/** The commit its lane is cut from: its last `target.base` config, since an encore's follows those it continues. */
+	/** The commit its lane is cut from: its `target.base` as `config <id> --json` reads it, when set. */
 	base?: string;
 	/** When it settled, in milliseconds; absent while it runs. */
 	settledAt?: number;
@@ -117,8 +117,6 @@ function str(o: Json, key: string): string {
 	return v;
 }
 
-const BASE_CONFIG = "target.base=";
-
 const concertOf = (o: unknown): Concert => {
 	if (!isJson(o)) throw new Error("maestro: a concert is not an object");
 	return {
@@ -128,12 +126,22 @@ const concertOf = (o: unknown): Concert => {
 		composition: str(o, "composition"),
 		tour: typeof o.tour === "string" ? o.tour : undefined,
 		startedAt: typeof o.startedAt === "number" ? o.startedAt : undefined,
-		base: strings(o.config)
-			.findLast((c) => c.startsWith(BASE_CONFIG))
-			?.slice(BASE_CONFIG.length),
 		settledAt: typeof o.settledAt === "number" ? o.settledAt : undefined,
 	};
 };
+
+/**
+ * The `target.base` concert `id` is cut from, as `config <id> --json` reads it; undefined when its value is unset or
+ * empty, or its record cannot be read.
+ */
+async function baseOf(bin: string, id: string): Promise<string | undefined> {
+	// A record that cannot be read leaves the base unknown rather than failing the whole listing.
+	const doc = await json(bin, ["config", id]).catch(() => undefined);
+	if (!isJson(doc) || !Array.isArray(doc.values)) return undefined;
+	const row = doc.values.filter(isJson).find((r) => r.key === "target.base");
+	const value = row?.value;
+	return typeof value === "string" && value !== "" ? value : undefined;
+}
 
 function resultOf(doc: unknown): Result {
 	if (!isJson(doc)) throw new Error("maestro: the result is not an object");
@@ -349,7 +357,12 @@ export function maestro(bin = "maestro"): Maestro {
 				if (typeof error === "string") throw new Error(error);
 				throw new Error("maestro ls: not a list");
 			}
-			return rows.map(concertOf);
+			return Promise.all(
+				rows.map(async (row) => {
+					const concert = concertOf(row);
+					return { ...concert, base: await baseOf(bin, concert.id) };
+				}),
+			);
 		},
 		result: async (id) => resultOf(await json(bin, ["wait", id])),
 		report: async (id) => {

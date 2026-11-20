@@ -25,10 +25,16 @@ case "$1 $2 $3" in
 	"config tree --json") echo '{"values":[],"presets":[],"flags":[],"params":{},"moduleDir":"/cache/trees/abc/.maestro","file":"slice.ts"}' ;;
 	"config d"*) echo '{"values":[],"presets":[],"flags":[],"params":{}}' ;;
 	"config gone --json") echo '{"ok":false,"error":"no concert gone in the record"}' ;;
+	"config l200 --json") echo '{"values":[{"key":"x","value":1,"layer":"file"},{"key":"target.base","value":"abc","layer":"file"}],"presets":[],"flags":[],"params":{}}' ;;
+	"config l20 --json"|"config l20-triage.triage --json") echo '{"values":[],"presets":[],"flags":[],"params":{}}' ;;
+	"config l201 --json") echo '{"values":[{"key":"target.base","value":null,"layer":"unset"}],"presets":[],"flags":[],"params":{}}' ;;
+	"config l202 --json") echo "no record" >&2; exit 1 ;;
+	"config l203 --json") echo '{"ok":false,"error":"no concert l203 in the record"}' ;;
+	"config l204 --json") echo '{"values":[{"key":"target.base","value":"","layer":"file"}],"presets":[],"flags":[],"params":{}}' ;;
 	"ls c5 --json") echo '{"instances":[{"name":"tester","node":"tester","harness":"stub"}]}' ;;
 esac
 case "$1 $2" in
-	"ls --tour") [ "$6" = "--composition" ] && by="-$7"; echo '[{"id":"l'"$5$by"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1","config":["target.base=old","x=1","target.base=abc"],"startedAt":10,"settledAt":25}]' ;;
+	"ls --tour") [ "$6" = "--composition" ] && by="-$7"; echo '[{"id":"l'"$5$by"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1","startedAt":10,"settledAt":25}]' ;;
 	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"draft":true,"delivered":2,"notice":{"path":"notice.md"},"pr":{"path":"pr.md"}}}' ;;
 	"wait c4") echo '{"status":"rejected","artifacts":"${dir}","outputs":{"review":{"path":"review.md"},"upheld":[{"id":"F1","lens":"spec","where":"a.ts:3","issue":"A seam breaks","cites":"R1"}]}}' ;;
 	"wait c6") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"}}}' ;;
@@ -128,6 +134,19 @@ test("lists a tour's concerts up to the limit, the tick's window by default, eac
 	const kind = { pack: "triage", composition: "triage" };
 	expect((await fake.concerts("v", 20, kind)).map((c) => c.id)).toEqual([
 		"l20-triage.triage",
+	]);
+});
+
+test("a concert's base is its target.base config value, and undefined when that value is empty or its config cannot be read", async () => {
+	const baseOf = async (limit: number) =>
+		(await fake.concerts("v", limit))[0]?.base;
+	expect(await Promise.all([200, 20, 201, 202, 203, 204].map(baseOf))).toEqual([
+		"abc",
+		undefined,
+		undefined,
+		undefined,
+		undefined,
+		undefined,
 	]);
 });
 

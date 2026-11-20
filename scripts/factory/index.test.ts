@@ -3907,10 +3907,13 @@ describe("a tick's milestone and maestro list", () => {
 		writeFileSync(
 			bin,
 			`#!${process.execPath}
-import { renameSync, writeFileSync } from "node:fs";
-const call = ${JSON.stringify(calls)} + "." + process.pid;
-writeFileSync(call, JSON.stringify(process.argv.slice(2)));
-renameSync(call, ${JSON.stringify(calls)});
+import { writeFileSync } from "node:fs";
+// The first call is the listing the tick routes by; later calls, such as a concert's config read, leave it.
+try {
+	writeFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2)), { flag: "wx" });
+} catch {
+	// a later call: the file already holds the first
+}
 console.log(${JSON.stringify(JSON.stringify(answer))});
 process.exit(2);
 `,
