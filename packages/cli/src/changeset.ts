@@ -224,6 +224,32 @@ function named(
 	return { instance, dir: join(artifacts, ref.path) };
 }
 
+/** The instance `cs show` takes by default, and its changeset artifact: the result's when it made one, else the last `ok` one that did. */
+function defaultChoice(store: Records, row: ConcertRecord) {
+	const result = store.result(row.id);
+	const ok = store
+		.instances(row.id)
+		.filter((i) => i.status === "ok" && changesetOf(row.ir, i))
+		.sort((a, b) => (a.settledAt ?? 0) - (b.settledAt ?? 0));
+	const instance =
+		ok.find(
+			(i) => i.node === result?.node && i.expansion === result?.expansion,
+		) ?? ok.at(-1);
+	const ref = instance && changesetOf(row.ir, instance);
+	return instance && ref ? { instance, ref } : undefined;
+}
+
+/**
+ * The changeset `cs show` would pick for `row`, as its instance name and artifact path relative to the concert's
+ * artifacts directory; `undefined` when it has none. Read from the record alone.
+ */
+export function changesetPointer(store: Records, row: ConcertRecord) {
+	const found = defaultChoice(store, row);
+	if (!found) return undefined;
+	const name = indexGraph(row.ir).instanceName(found.instance);
+	return { name, path: found.ref.path };
+}
+
 /**
  * The instance whose changeset to take: `node` when given, else the result's instance when it made one, else the last
  * `ok` one that did. With `partial`, `node`'s kept partial work is taken in place of its changeset artifact.
@@ -236,23 +262,13 @@ function chosen(
 	node?: string,
 	partial = false,
 ) {
-	const instances = store.instances(row.id);
-	const made = (i: InstanceRecord) => changesetOf(row.ir, i);
 	if (node !== undefined) return named(store, row, artifacts, node, partial);
-	const result = store.result(row.id);
-	const ok = instances
-		.filter((i) => i.status === "ok" && made(i))
-		.sort((a, b) => (a.settledAt ?? 0) - (b.settledAt ?? 0));
-	const instance =
-		ok.find(
-			(i) => i.node === result?.node && i.expansion === result?.expansion,
-		) ?? ok.at(-1);
-	const ref = instance && made(instance);
-	if (!instance || !ref)
+	const found = defaultChoice(store, row);
+	if (!found)
 		throw new CliError(
 			`concert ${row.id} made no changeset\nPick a concert that ends in a changeset node, from 'maestro ls'`,
 		);
-	return { instance, dir: join(artifacts, ref.path) };
+	return { instance: found.instance, dir: join(artifacts, found.ref.path) };
 }
 
 /** The checkout `target.repo` names in `values`, when it names one. */

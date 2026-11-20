@@ -204,7 +204,9 @@ documents a field with no value is left out:
   absolute path:
   `"facts": {"repo": {"target": "/abs/path", "base": "main", "sparse": null, "revision": "<sha>", "profiles": "<digest>"}}`.
 - `ls <concert> --json` is the `ls <concert>` table as one object: the concert's `ls --json` row, `metrics`, and
-  `instances`, one step row per instance in graph order.
+  `instances`, one step row per instance in graph order. The row adds `changeset: {name, path}` when the concert has
+  one: the instance `changeset show` would pick, and its artifact path relative to the concert's artifacts directory. It
+  is read from the record alone, so it counts nothing; `changeset show <concert> --stat` gives the counts.
 - A step row holds `name`, `node`, `expansion`, `status`, `stale`, `startedAt`, `settledAt`, `elapsedMs`, `tokens` and
   `reason`. The `name` is what `ls <concert> <instance>` accepts. An agent's row adds `harness`, `model`, `thinking` and
   `profile`, the profile's name. A row with notes adds `notes`, its entries by heading.

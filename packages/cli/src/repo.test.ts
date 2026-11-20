@@ -1132,7 +1132,181 @@ describe("changeset", () => {
 
 	const a = (repo: string) => readFileSync(join(repo, "a.txt"), "utf8");
 
-	// Seam: changeset commands' diffs and effects on real checkouts, not host internals.
+	type World = Awaited<ReturnType<typeof edited>>;
+
+	/** The changeset artifact path of `instance` in concert `id`, relative to the concert's artifacts directory. */
+	async function artifactPath(w: World, id: string, instance: string) {
+		const artifacts = await w.call(["art", "ls", id, "--json"]);
+		expect(artifacts.code).toBe(0);
+		const artifact = json(artifacts).find(
+			(a: { instance: string; port: string }) =>
+				a.instance === instance && a.port === "changeset",
+		);
+		expect(artifact).toBeDefined();
+		const waited = await w.call(["wait", id, "--json"]);
+		expect(waited.code).toBe(0);
+		const path = relative(json(waited).artifacts, artifact.path);
+		return { absolute: artifact.path as string, path };
+	}
+
+	/** Runs `sql` with `args` against the record of `w`. */
+	const amend = (w: World, sql: string, args: (string | number)[]) => {
+		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+		db.run(sql, args);
+		db.close();
+	};
+
+	/** Performs a composition of two changeset steps, `firstSet` then `laterSet`, whose result makes none. */
+	async function twoSets(w: World, name: string) {
+		const file = join(await scratch(), `${name}.ts`);
+		await Bun.write(
+			file,
+			`import { changeset, check, fresh } from "@maestro/host-repo-sdk";
+import { composition } from "@maestro/sdk";
+
+export const ${name} = composition("${name}", { examples: [{}] }, () => {
+	changeset(check(fresh(), { run: "echo first > a.txt" }, { label: "first" }).out.lane, { label: "firstSet" });
+	changeset(check(fresh(), { run: "echo later > a.txt" }, { label: "later" }).out.lane, { label: "laterSet" });
+	return check(fresh(), { run: "true" }, { label: "result" });
+});
+`,
+		);
+		const done = await w.call(["perform", file]);
+		expect(done).toMatchObject({ code: 0 });
+		return idOf(done);
+	}
+
+	/** Records `node`'s step of concert `id` as settled at `at`, with `status`. */
+	const settle = (
+		w: World,
+		id: string,
+		node: string,
+		at: number,
+		status = "ok",
+	) =>
+		amend(
+			w,
+			"UPDATE instances SET settled_at = ?, status = ? WHERE concert = ? AND node LIKE ?",
+			[at, status, id, `%${node}`],
+		);
+
+	/** Records the steps of concert `id` in the order of `nodes`, which the record lists by insertion. */
+	const recordInOrder = (w: World, id: string, nodes: string[]) => {
+		nodes.forEach((node, i) => {
+			amend(
+				w,
+				"UPDATE instances SET rowid = ? WHERE concert = ? AND node LIKE ?",
+				[1_000_000 + i, id, `%${node}`],
+			);
+		});
+	};
+
+	/** `instance` of fan.ts with its other item, `lens` for `risk` and back. */
+	const swapItem = (instance: string) =>
+		instance.includes("[lens]")
+			? instance.replace("[lens]", "[risk]")
+			: instance.replace("[risk]", "[lens]");
+
+	/** Rewrites the changeset of `instance` in concert `id`, so its diff adds its item's name, not `nested`. */
+	async function markDiff(w: World, id: string, instance: string) {
+		const item = instance.includes("[lens]") ? "lens" : "risk";
+		const { absolute } = await artifactPath(w, id, instance);
+		const files = new Bun.Glob("**/*").scanSync({
+			cwd: absolute,
+			absolute: true,
+		});
+		for (const file of files) {
+			const text = readFileSync(file, "utf8");
+			writeFileSync(file, text.replace("+nested", `+${item}`));
+		}
+	}
+
+	// Seam: ls <concert> --json's changeset pointer, compared with art ls and cs show.
+	test("ls names the result node's changeset even when another settles later", async () => {
+		const w = await edited("pick.ts");
+		const shown = await w.cs("show", w.id);
+		expect(shown.code).toBe(0);
+		expect(shown.out).toContain("+kept");
+		expect((await w.cs("show", w.id, "--node", "keptSet")).out).toBe(shown.out);
+		const { path } = await artifactPath(w, w.id, "keptSet");
+		const listed = await w.call(["ls", w.id, "--json"]);
+		expect(listed.code).toBe(0);
+		expect(json(listed).changeset).toEqual({ name: "keptSet", path });
+	});
+
+	test("ls names the last ok changeset when the result has none", async () => {
+		const w = await edited();
+		const id = await twoSets(w, "fallback");
+		recordInOrder(w, id, ["laterSet", "firstSet"]);
+		settle(w, id, "firstSet", 1000);
+		settle(w, id, "laterSet", 2000);
+		const shown = await w.cs("show", id);
+		expect(shown.code).toBe(0);
+		expect((await w.cs("show", id, "--node", "laterSet")).out).toBe(shown.out);
+		const { path } = await artifactPath(w, id, "laterSet");
+		const listed = await w.call(["ls", id, "--json"]);
+		expect(listed.code).toBe(0);
+		expect(json(listed).changeset).toEqual({ name: "laterSet", path });
+	});
+
+	test("ls names the changeset that settled last, not the one recorded last", async () => {
+		const w = await edited();
+		const id = await twoSets(w, "settleorder");
+		recordInOrder(w, id, ["firstSet", "laterSet"]);
+		settle(w, id, "firstSet", 3000);
+		settle(w, id, "laterSet", 1000);
+		const shown = await w.cs("show", id);
+		expect(shown.out).toContain("+first");
+		const { path } = await artifactPath(w, id, "firstSet");
+		const listed = await w.call(["ls", id, "--json"]);
+		expect(json(listed).changeset).toEqual({ name: "firstSet", path });
+	});
+
+	test("ls skips a changeset step that did not settle ok, and omits the field when none did", async () => {
+		const w = await edited();
+		const id = await twoSets(w, "failedlater");
+		const { path } = await artifactPath(w, id, "firstSet");
+		settle(w, id, "firstSet", 1000);
+		settle(w, id, "laterSet", 2000, "failed");
+		const earlier = json(await w.call(["ls", id, "--json"]));
+		expect(earlier.changeset).toEqual({ name: "firstSet", path });
+		settle(w, id, "firstSet", 1000, "failed");
+		const none = json(await w.call(["ls", id, "--json"]));
+		expect(none).not.toHaveProperty("changeset");
+	});
+
+	test("ls names an expanded changeset step as cs show reports it", async () => {
+		const w = await edited();
+		const fan = idOf(await w.call(["perform", join(REPO, "fan.ts")]));
+		const listed = json(await w.call(["ls", fan, "--json"]));
+		const name: string = listed.changeset.name;
+		expect(name).toMatch(/^rounds\[0\]\/fan\[(lens|risk)\]\/nestedSet$/);
+		const other = swapItem(name);
+		await markDiff(w, fan, name);
+		await markDiff(w, fan, other);
+		const shown = await w.cs("show", fan);
+		expect(shown.code).toBe(0);
+		const own = await w.cs("show", fan, "--node", name);
+		expect(own.out).toBe(shown.out);
+		expect((await w.cs("show", fan, "--node", other)).out).not.toBe(shown.out);
+		const { path } = await artifactPath(w, fan, name);
+		expect(listed.changeset.path).toBe(path);
+	});
+
+	test("ls keeps the changeset pointer when its snapshot, checkout and artifact are unavailable", async () => {
+		const w = await edited("pick.ts");
+		const { absolute, path } = await artifactPath(w, w.id, "keptSet");
+		amend(w, "UPDATE concerts SET snapshot = ? WHERE id = ?", ["[", w.id]);
+		rmSync(w.target, { recursive: true });
+		rmSync(absolute, { recursive: true });
+		const listed = await w.call(["ls", w.id, "--json"], {
+			cwd: await scratch(),
+			env: { PATH: "" },
+		});
+		expect(listed.code).toBe(0);
+		expect(json(listed).changeset).toEqual({ name: "keptSet", path });
+	});
+
 	test("changeset show and apply use the snapshot checkout from any folder, without config files or the preset performed with", async () => {
 		const w = await edited();
 		const preset = join(w.cwd, ".maestro/presets/free.yaml");

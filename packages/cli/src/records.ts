@@ -15,7 +15,7 @@ import {
 	stateWord,
 } from "@maestro/render-text/live";
 import { portedArtifacts } from "./artifact";
-import { changesOf } from "./changeset";
+import { changesetPointer, changesOf } from "./changeset";
 import {
 	COMMON,
 	type Command,
@@ -475,8 +475,10 @@ function concertListing(
 	const { store } = stored;
 	const short = shortIds(store.ids()).label(row.id, false);
 	const notes = noteCounts(stored, [row]).get(row.id) ?? {};
+	const changeset = changesetPointer(store, row);
 	return {
 		...listRow(store, row, short, notes),
+		changeset,
 		metrics: store.metrics(row.id),
 		instances: steps.map((i) => stepRow(i, hostText)),
 	};
