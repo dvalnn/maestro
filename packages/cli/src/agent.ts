@@ -41,6 +41,7 @@ import {
 	faultCount,
 } from "@maestro/host-repo/harness";
 import { messageOf } from "@maestro/ir";
+import { wrapText } from "@maestro/render-text/live";
 import {
 	COMMON,
 	type Command,
@@ -158,18 +159,6 @@ const KEY_GAP = "  ";
 /** The width a fault's lines wrap at. */
 const LINE_WIDTH = 80;
 
-/** `text` broken at spaces into lines of at most `width` cells; a longer word keeps a line of its own. */
-function wrapWords(text: string, width: number): string[] {
-	const lines: string[] = [];
-	for (const word of text.split(" ")) {
-		const joined = `${lines.at(-1)} ${word}`;
-		if (lines.length && Bun.stringWidth(joined) <= width)
-			lines[lines.length - 1] = joined;
-		else lines.push(word);
-	}
-	return lines;
-}
-
 /** A row: its mark in place of the indent when it has one, the dim key, the value, the dim `[source]`, each fault under. */
 function rowLines(r: SectionRow, color: boolean): string[] {
 	const key = paint("dim", `${r.key}${KEY_GAP}`.padEnd(KEY_WIDTH), color);
@@ -177,7 +166,7 @@ function rowLines(r: SectionRow, color: boolean): string[] {
 		r.source === undefined ? "" : `  ${paint("dim", `[${r.source}]`, color)}`;
 	const lead = r.mark ? `${paint(MARK_STYLE[r.mark], r.mark, color)} ` : INDENT;
 	const faults = (r.faults ?? [])
-		.flatMap((f) => wrapWords(f, LINE_WIDTH - HEAD_WIDTH))
+		.flatMap((f) => wrapText(f, LINE_WIDTH - HEAD_WIDTH))
 		.map((l) => `${" ".repeat(HEAD_WIDTH)}${paint("red", l, color)}`);
 	return [`${lead}${key}${r.value}${source}`, ...faults];
 }

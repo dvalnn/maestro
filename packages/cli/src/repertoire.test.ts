@@ -40,10 +40,10 @@ const needy = {
 };
 
 /** A world with the `staffed` pack installed in its data home's packs directory, which no config lists. */
-async function staffed() {
+async function staffed(text = STAFFED) {
 	const w = await world();
 	const source = join(await scratch(), "staffed.ts");
-	await Bun.write(source, STAFFED);
+	await Bun.write(source, text);
 	const dir = join(w.env.XDG_DATA_HOME, "maestro/packs/staffed");
 	await mkdir(dir, { recursive: true });
 	await packOf(source, dir, { id: "staffed" });
@@ -51,6 +51,135 @@ async function staffed() {
 }
 
 describe("repertoire", () => {
+	// Seam: repertoire's terminal, piped and JSON output for pack and composition selections.
+	test("repertoire cuts listing descriptions on a terminal and leaves them whole in a pipe and JSON", async () => {
+		const doc =
+			"A detailed description of this composition explains its purpose and the steps it takes for every reader without losing the ending.";
+		const w = await staffed(
+			STAFFED.replace("Drafts a page.\\nThen leaves it for review.", doc),
+		);
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const env = { HOME: w.root, NO_COLOR: "1" };
+		for (const args of [["repertoire"], ["repertoire", "staffed"]]) {
+			const on = await w.call(args, { terminal, env });
+			expect(on.code).toBe(0);
+			const row =
+				on.out.split("\n").find((line) => line.includes("draft")) ?? "";
+			expect(Bun.stringWidth(row)).toBeLessThanOrEqual(80);
+			expect(row).toContain("draft");
+			expect(row).toContain("…");
+			expect((await w.call(args, { env })).out).toContain(doc);
+			const data = json(await w.call([...args, "--json"], { terminal, env }));
+			expect(
+				data.packs.find((p: { id: string }) => p.id === "staffed")
+					.compositions[0].doc,
+			).toBe(doc);
+		}
+	});
+
+	test("repertoire wraps a composition doc on a terminal and leaves it whole in a pipe and JSON", async () => {
+		const doc =
+			"A detailed description of this composition explains its purpose and the steps it takes for every reader without losing the ending.";
+		const w = await staffed(
+			STAFFED.replace("Drafts a page.\\nThen leaves it for review.", doc),
+		);
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const env = { HOME: w.root, NO_COLOR: "1" };
+		const args = ["repertoire", "staffed.draft"];
+		const on = await w.call(args, { terminal, env });
+		expect(on.code).toBe(0);
+		const docLines = on.out
+			.split("\n")
+			.slice(0, on.out.split("\n").indexOf("Params"));
+		expect(docLines.every((line) => Bun.stringWidth(line) <= 80)).toBe(true);
+		expect(docLines.join(" ").replace(/\s+/g, " ")).toContain(doc);
+		expect((await w.call(args, { env })).out).toContain(doc);
+		expect(
+			json(await w.call([...args, "--json"], { terminal, env })).packs[0]
+				.compositions[0].doc,
+		).toBe(doc);
+	});
+
+	test("repertoire wraps a composition doc with an overlong word and cuts a pack header to the terminal", async () => {
+		const word = "x".repeat(90);
+		const w = await staffed(
+			STAFFED.replace("Drafts a page.\\nThen leaves it for review.", word),
+		);
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const env = { HOME: w.root, NO_COLOR: "1" };
+		const doc = await w.call(["repertoire", "staffed.draft"], {
+			terminal,
+			env,
+		});
+		const lines = doc.out.split("\n");
+		expect(lines.every((line) => Bun.stringWidth(line) <= 80)).toBe(true);
+		expect(lines.join("").replaceAll(" ", "")).toContain(word);
+		const list = await w.call(["repertoire", "staffed"], { terminal, env });
+		const [head = "", ...rows] = list.out.split("\n");
+		expect(head.startsWith("staffed")).toBe(true);
+		expect(rows.join("\n")).toContain("maestro repertoire staffed --json");
+		const narrow = () => ({ columns: 20, rows: 24 });
+		const cut = await w.call(["repertoire", "staffed"], {
+			terminal: narrow,
+			env,
+		});
+		expect(Bun.stringWidth(cut.out.split("\n")[0] ?? "")).toBeLessThanOrEqual(
+			20,
+		);
+	});
+
+	test("repertoire keeps blank doc lines and survives a wide character in a narrow row on a terminal", async () => {
+		const w = await staffed(
+			STAFFED.replace(
+				"Drafts a page.\\nThen leaves it for review.",
+				"hello\\n\\n漢字",
+			),
+		);
+		const env = { HOME: w.root, NO_COLOR: "1" };
+		const at = (columns: number) =>
+			w.call(["repertoire", "staffed.draft"], {
+				terminal: () => ({ columns, rows: 24 }),
+				env,
+			});
+		const doc = (await at(80)).out.split("\n");
+		expect(doc.slice(0, 3).map((line) => line.trim())).toEqual([
+			expect.stringContaining("hello"),
+			"",
+			"漢字",
+		]);
+		expect((await at(2)).code).toBe(0);
+	});
+
+	test("repertoire cuts a pack header after its id, which stays whole, and points to the full listing", async () => {
+		const w = await staffed();
+		const env = { HOME: "/nonexistent", NO_COLOR: "1" };
+		const on = await w.call(["repertoire", "staffed"], {
+			terminal: () => ({ columns: 50, rows: 24 }),
+			env,
+		});
+		const [head = "", ...rest] = on.out.split("\n");
+		expect(head.startsWith("staffed ")).toBe(true);
+		expect(head.endsWith("…")).toBe(true);
+		expect(Bun.stringWidth(head)).toBeLessThanOrEqual(50);
+		expect(rest.join("\n")).toContain("maestro repertoire staffed --json");
+		const piped = await w.call(["repertoire", "staffed"], { env });
+		expect(piped.out).toContain(w.root);
+		expect(piped.out).not.toContain("--json");
+		// The listed demo pack, at each width from the narrowest that fits its id, version and two lone `…`.
+		const listed = { HOME: w.root, NO_COLOR: "1" };
+		const whole = (await w.call(["repertoire", "demo"], { env: listed })).out;
+		expect(whole).toContain("listed in");
+		const lead = Bun.stringWidth(whole.split("  ", 1)[0] ?? "");
+		for (let columns = lead + 6; columns <= 40; columns++) {
+			const at = await w.call(["repertoire", "demo"], {
+				terminal: () => ({ columns, rows: 24 }),
+				env: listed,
+			});
+			const header = at.out.split("\n")[0] ?? "";
+			expect(Bun.stringWidth(header)).toBeLessThanOrEqual(columns);
+		}
+	});
+
 	// Seam: repertoire's terminal and piped stdout for packs.
 	test("pack listings distinguish ids, versions, home paths and composition names on a terminal", async () => {
 		const w = await staffed();

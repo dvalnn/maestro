@@ -11,7 +11,13 @@ import { shortId, shortIds, stateWord } from "@maestro/render-text/live";
 import { SDK_VERSION, STDLIB_HASH } from "@maestro/sdk/loader";
 import { fakeHost } from "@maestro/testkit";
 import pkg from "../package.json";
-import { cleanup, FIXTURES, packOf, scratch } from "./fixtures/packs";
+import {
+	cleanup,
+	demoSource,
+	FIXTURES,
+	packOf,
+	scratch,
+} from "./fixtures/packs";
 import {
 	closingOf,
 	configValues,
@@ -128,6 +134,124 @@ test("--tour accepts a 64-character tour", async () => {
 });
 
 describe("compose and config", () => {
+	// Seam: config's terminal, piped and JSON output for compositions and recorded concerts.
+	test("config fits values while keeping their source and location and hints at full values", async () => {
+		const w = await world();
+		const value = "long-value-".repeat(12);
+		const host: Host = {
+			...hostOf(),
+			config: { mode: { type: "object", required: ["token"] } },
+		};
+		await Bun.write(
+			join(w.cwd, ".maestro/config.yaml"),
+			`packs: [${w.pack}]\nmode: { token: ${value} }\n`,
+		);
+		const performed = await w.call(["perform", ...GREET], { hosts: [host] });
+		expect(performed.code).toBe(0);
+		const env = { HOME: w.root, TERM: "xterm" };
+		for (const target of ["demo.greet", idOf(performed)]) {
+			const args = ["config", target];
+			const on = await w.call([...args, "--color"], {
+				hosts: [host],
+				env,
+				terminal: () => ({ columns: 80, rows: 24 }),
+			});
+			expect(on.code).toBe(0);
+			const plain = stripVTControlCharacters(on.out);
+			const row =
+				plain.split("\n").find((line) => line.startsWith("mode.token")) ?? "";
+			expect(row).toContain("workspace");
+			expect(row).toContain("~/ws/.maestro/config.yaml:2");
+			const piped = await w.call(args, { hosts: [host], env });
+			expect(piped.out).toContain(value);
+			expect(piped.out).not.toContain("Full values:");
+			const jsonArgs = [...args, "--json"];
+			const document = await w.call(jsonArgs, {
+				hosts: [host],
+				env,
+				terminal: () => ({ columns: 80, rows: 24 }),
+			});
+			expect(json(document)).toEqual(
+				json(await w.call(jsonArgs, { hosts: [host], env })),
+			);
+			expect(configValues(document)["mode.token"]).toBe(value);
+			expect(
+				plain.split("\n").every((line) => Bun.stringWidth(line) <= 80),
+			).toBe(true);
+			expect(row).toContain("…");
+			expect(on.out).toContain(
+				`${ESC}[2mFull values: maestro config ${target} --json${ESC}[22m`,
+			);
+		}
+	});
+
+	test("config hints at its own invocation when a value is cut and at nothing when none is", async () => {
+		const w = await world();
+		const value = "long-value-".repeat(12);
+		const host: Host = {
+			...hostOf(),
+			config: { mode: { type: "object", required: ["token"] } },
+		};
+		await Bun.write(
+			join(w.cwd, ".maestro/config.yaml"),
+			`packs: [${w.pack}]\nmode: { token: ${value} }\n`,
+		);
+		const env = { HOME: w.root, TERM: "xterm" };
+		const args = ["config", "demo.greet", "-c", "mode.other=a b"];
+		const at = async (columns: number) =>
+			(
+				await w.call(args, {
+					hosts: [host],
+					env,
+					terminal: () => ({ columns, rows: 24 }),
+				})
+			).out;
+		expect(await at(80)).toContain(
+			"Full values: maestro config demo.greet -c 'mode.other=a b' --json",
+		);
+		expect(await at(1000)).not.toContain("Full values:");
+	});
+
+	test("config's hint puts --json before a -- and stays whole however long the invocation, while its table fits", async () => {
+		const w = await world();
+		const value = "long-value-".repeat(12);
+		const host: Host = {
+			...hostOf(),
+			config: { mode: { type: "object", required: ["token"] } },
+		};
+		await Bun.write(
+			join(w.cwd, ".maestro/config.yaml"),
+			`packs: [${w.pack}]\nmode: { token: ${value} }\n`,
+		);
+		const env = { HOME: w.root, TERM: "xterm" };
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const ended = await w.call(["config", "demo.greet", "--"], {
+			hosts: [host],
+			env,
+			terminal,
+		});
+		expect(ended.out).toContain("maestro config demo.greet --json --");
+		const long = await w.call(
+			["config", "demo.greet", "-c", `mode.other=${"y".repeat(220)}`],
+			{ hosts: [host], env, terminal },
+		);
+		const [hint = "", ...rows] = long.out.split("\n").reverse();
+		expect(rows.every((l) => Bun.stringWidth(l) <= 80)).toBe(true);
+		// The hint is a command to run, so it stays whole however wide it is.
+		expect(stripVTControlCharacters(hint)).toBe(
+			`Full values: maestro config demo.greet -c mode.other=${"y".repeat(220)} --json`,
+		);
+		// A cut colored cell stops its color, so it cannot run into the next row.
+		const count = (l: string, code: string) =>
+			l.split(`${ESC}[${code}m`).length - 1;
+		expect(rows.some((l) => l.includes(`…${ESC}[0m`))).toBe(true);
+		// Bold and dim both end at 22, or at a reset.
+		for (const l of rows)
+			expect(count(l, "1") + count(l, "2")).toBe(
+				count(l, "22") + count(l, "0"),
+			);
+	});
+
 	// Seam: config's table on a terminal and in a pipe, for a composition and a recorded concert.
 	test("config distinguishes table headings, sources and home file locations on a terminal", async () => {
 		const w = await world();
@@ -2166,6 +2290,161 @@ describe("the record", () => {
 		});
 	});
 
+	// Seam: concert and instance listings on a terminal, in a pipe and as JSON.
+	test("ls fits a long title before the tour and keeps the remaining concert columns", async () => {
+		const w = await world();
+		const title = "a long concert title ".repeat(8).trim();
+		const tour = "release-one";
+		const performed = await w.call(
+			["perform", ...GREET, "--title", title, "--tour", tour],
+			{ hosts: [hostOf()] },
+		);
+		expect(performed.code).toBe(0);
+		const id = idOf(performed);
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const on = await w.call(["ls", "--no-color"], { terminal });
+		expect(on.code).toBe(0);
+		const row =
+			on.out.split("\n").find((line) => line.startsWith(shortOf(id))) ?? "";
+		expect(row).toContain(tour);
+		expect(row).toContain("ws");
+		expect(row).toContain("demo.greet");
+		expect(row).toContain("ok");
+		expect((await w.call(["ls"])).out).toContain(title);
+		const document = await w.call(["ls", "--json"], { terminal });
+		expect(json(document)[0]).toMatchObject({ id, title, tour });
+		expect(json(document)).toEqual(json(await w.call(["ls", "--json"])));
+		expect(
+			on.out.split("\n").every((line) => Bun.stringWidth(line) <= 80),
+		).toBe(true);
+		expect(row).toContain("…");
+	});
+
+	test("ls concert fits agent and reason without cutting instance names", async () => {
+		const w = await world();
+		const actor = "agent-model-".repeat(12);
+		const reason = "the failure reason is too long to fit ".repeat(5).trim();
+		const host: Host = {
+			...hostOf({ outcome: "failed", reason, enrichment: { session: "s" } }),
+			text: { actor: () => actor },
+		};
+		const performed = await w.call(["perform", ...GREET], { hosts: [host] });
+		const id = idOf(performed);
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const on = await w.call(["ls", id, "--no-color"], {
+			terminal,
+			hosts: [host],
+		});
+		expect(on.code).toBe(0);
+		const row =
+			on.out.split("\n").find((line) => line.startsWith("echo/echo")) ?? "";
+		expect(row).toContain("failed");
+		const piped = await w.call(["ls", id], { hosts: [host] });
+		expect(piped.out).toContain(actor);
+		expect(piped.out).toContain(reason);
+		const args = ["ls", id, "--json"];
+		expect(json(await w.call(args, { terminal, hosts: [host] }))).toEqual(
+			json(await w.call(args, { hosts: [host] })),
+		);
+		expect(
+			on.out.split("\n").every((line) => Bun.stringWidth(line) <= 80),
+		).toBe(true);
+		expect(row.split("…").length).toBe(3);
+	});
+
+	// Seam: concert listings on a terminal, in a pipe and as JSON.
+	test("ls cuts the tour only after the title is at its floor, keeps headings, tokens and disk, and hints at full values", async () => {
+		const w = await world();
+		const title = "a long concert title ".repeat(8).trim();
+		const tour = "release-one.build-two.stage-three";
+		const performed = await w.call(
+			["perform", ...GREET, "--title", title, "--tour", tour],
+			{ hosts: [hostOf()] },
+		);
+		const id = idOf(performed);
+		const at = async (columns: number) =>
+			(
+				await w.call(["ls", "--no-color"], {
+					terminal: () => ({ columns, rows: 24 }),
+				})
+			).out;
+		const wide = await at(60);
+		const [head = "", ...rest] = wide.split("\n");
+		const row = rest.find((line) => line.startsWith(shortOf(id))) ?? "";
+		expect(head).toContain("title");
+		expect(row).toContain("…");
+		expect(row).toContain("0 B");
+		expect(row).toContain("demo.greet");
+		expect(row).not.toContain(tour);
+		expect(wide).toContain("maestro ls --limit 20 --json");
+		const whole = await at(300);
+		expect(whole).toContain(title);
+		expect(whole).toContain(tour);
+		expect(whole).not.toContain("--json");
+	});
+
+	test("ls cuts the workspace before the composition, each down to its floor", async () => {
+		const w = await world();
+		const name = "greet-with-a-very-long-name";
+		const source = await demoSource((text) =>
+			text.replace('"greet",', `"${name}",`),
+		);
+		await packOf(join(source, "index.ts"), w.pack);
+		const cwd = join(w.root, "a-quite-long-workspace-dir");
+		await mkdir(cwd);
+		await Bun.write(join(cwd, ".maestro/config.yaml"), `packs: [${w.pack}]\n`);
+		const performed = await w.call(["perform", `demo.${name}`, "--name", "x"], {
+			cwd,
+		});
+		const id = idOf(performed);
+		const rowAt = async (columns: number) => {
+			const on = await w.call(["ls", "--no-color"], {
+				terminal: () => ({ columns, rows: 24 }),
+			});
+			return on.out.split("\n").find((l) => l.startsWith(shortOf(id))) ?? "";
+		};
+		const roomy = await rowAt(100);
+		expect(roomy).toContain(`demo.${name}`);
+		expect(roomy).not.toContain("a-quite-long-workspace-dir");
+		expect(roomy).toContain("…");
+		const tight = await rowAt(70);
+		expect(tight).not.toContain(`demo.${name}`);
+		expect(tight.split("…").length).toBe(3);
+	});
+
+	test("ls hints at the listing with its filters and limit, or --all", async () => {
+		const w = await world();
+		const title = "a long concert title ".repeat(8).trim();
+		await w.call(["perform", ...GREET, "--title", title], {
+			hosts: [hostOf()],
+		});
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const all = await w.call(["ls", "--all", "--status", "ok"], { terminal });
+		expect(all.out).toContain("maestro ls --status ok --all --json");
+		const limited = await w.call(["ls", "--limit", "5"], { terminal });
+		expect(limited.out).toContain("maestro ls --limit 5 --json");
+	});
+
+	test("ls concert cuts the agent and leaves a short reason whole", async () => {
+		const w = await world();
+		const actor = "agent-model-".repeat(12);
+		const reason = "short reason";
+		const host: Host = {
+			...hostOf({ outcome: "failed", reason, enrichment: { session: "s" } }),
+			text: { actor: () => actor },
+		};
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
+		const on = await w.call(["ls", id, "--no-color"], {
+			terminal: () => ({ columns: 80, rows: 24 }),
+			hosts: [host],
+		});
+		const row =
+			on.out.split("\n").find((line) => line.startsWith("echo/echo")) ?? "";
+		expect(row).toContain(reason);
+		expect(row.split("…").length).toBe(2);
+		expect(on.out).toContain(`maestro ls ${shortOf(id)} --json`);
+	});
+
 	// Seam: ls's table on a terminal and in a pipe.
 	test("ls dims absent table values on a terminal and leaves piped dashes plain", async () => {
 		const w = await world();
@@ -3557,7 +3836,7 @@ describe("exit codes and error states", () => {
 	});
 
 	describe("paging", () => {
-		const terminal = () => ({ columns: 80, rows: 24 });
+		const terminal = () => ({ columns: 1000, rows: 24 });
 		const env = { TERM: "xterm" };
 		/** A pager that keeps what it is given, and the command and `LESS` it was started with, and exits with `code`. */
 		const fakePager = (code = 0) => {

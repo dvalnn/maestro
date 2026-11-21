@@ -321,6 +321,9 @@ export function sharedFlags(color: boolean): string {
 	return flagRows(Object.entries(SHARED), color);
 }
 
+/** The width of the terminal stdout writes to, 0 when it is not one, so help is not wrapped. */
+export const columnsOf = ({ terminal }: Deps) => terminal?.().columns ?? 0;
+
 /** Flags as an indented table: each name with its placeholder, then its description. */
 function flagRows(
 	entries: readonly (readonly [string, OptionSpec | undefined])[],

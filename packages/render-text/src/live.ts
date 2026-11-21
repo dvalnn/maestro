@@ -1048,11 +1048,24 @@ const changesSegs = ({ files, added, removed }: Changes): Seg[] => [
 	[`\u2212${removed}`, "red"],
 ];
 
-/** `text` cut with `…` to `columns` cells when wider. */
-export const cutTo = (text: string, columns: number) =>
-	Bun.stringWidth(text) <= columns
-		? text
-		: `${painted([[text]], false, columns - Bun.stringWidth(ELLIPSIS))}${ELLIPSIS}`;
+/** A code that ends every color and style. */
+const RESET = "\u001b[0m";
+
+/** `text` cut with `…` to `columns` cells when wider; a cut colored text ends in a reset, so its color stops there. */
+export function cutTo(text: string, columns: number): string {
+	if (Bun.stringWidth(text) <= columns) return text;
+	const cut = `${painted([[text]], false, columns - Bun.stringWidth(ELLIPSIS))}${ELLIPSIS}`;
+	return text.includes("\u001b[") ? `${cut}${RESET}` : cut;
+}
+
+/** `text` in lines of at most `width` terminal cells, at least 2, an empty text one empty line, broken at spaces where it can be and by cells where it cannot. */
+export const wrapText = (text: string, width: number): string[] =>
+	text === ""
+		? [""]
+		: // A cell is at most two wide, so a narrower width could never advance.
+			wrapped([[text]], Math.max(width, 2)).map((row) =>
+				row.map(([part]) => part).join(""),
+			);
 
 export const hintLine = (text: string, color: boolean) =>
 	line([[text, "dim"]], color);

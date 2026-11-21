@@ -20,6 +20,7 @@ import {
 	COMMON,
 	type Command,
 	colorOf,
+	columnsOf,
 	type Deps,
 	FILTER_OPTIONS,
 	filterOf,
@@ -48,7 +49,10 @@ import {
 	EXIT,
 	elapsedOf,
 	exitOf,
+	fittedTable,
 	formatBytes,
+	giving,
+	jsonAgain,
 	jsonOf,
 	NAME_CONCERT,
 	orAbsent,
@@ -176,14 +180,14 @@ function notesLines(
 	noted: readonly Noted[],
 	id: string,
 	color: boolean,
-	columns?: number,
+	columns: number,
 ): string[] {
 	const lines = [...noteSections(noted)].flatMap(([heading, rows]) => [
 		"",
 		paint("bold", heading, color),
 		...table(rows).split("\n"),
 	]);
-	if (columns === undefined) return lines;
+	if (columns === 0) return lines;
 	const cut = lines.map((line) => cutTo(line, columns));
 	if (cut.every((line, i) => line === lines[i])) return lines;
 	return [
@@ -342,6 +346,7 @@ function listed(stored: Stored, query: ConcertFilter) {
 	});
 	const concerts = limit === undefined ? fetched : fetched.slice(0, limit);
 	const marked = session.deps.terminal !== undefined;
+	const columns = columnsOf(session.deps);
 	if (concerts.length === 0) {
 		const { limit: _, ...filter } = query;
 		return none(
@@ -354,7 +359,7 @@ function listed(stored: Stored, query: ConcertFilter) {
 	const rows = concerts.map((c) =>
 		listRow(store, c, short.label(c.id, false), counts.get(c.id) ?? {}),
 	);
-	const text = table(
+	const text = fittedTable(
 		[
 			[
 				"id",
@@ -382,6 +387,14 @@ function listed(stored: Stored, query: ConcertFilter) {
 			]),
 		],
 		color,
+		// Each floor keeps the column's heading whole.
+		giving(columns, [
+			{ column: 3, floor: 5 },
+			{ column: 4, floor: 4 },
+			{ column: 5, floor: 9 },
+			{ column: 6, floor: 11 },
+		]),
+		`Full values: ${fullListing(values, limit)}`,
 	);
 	const shown = color ? highlighted(short, rows, text) : text;
 	const more =
@@ -401,14 +414,25 @@ const shellWord = (value: string) =>
 		? value
 		: `'${value.replaceAll("'", "'\\''")}'`;
 
+/** `ls` with the filters of `values` and `limit`, or `--all`, as JSON: the listing whose values a cut table cut. */
+function fullListing(values: Values, limit: number | undefined): string {
+	const bound = limit === undefined ? "--all" : `--limit ${limit}`;
+	return `maestro ls${filterWords(values)} ${bound} --json`;
+}
+
+/** The ` --<filter> <value>` words of the filters `values` sets. */
+const filterWords = (values: Values) =>
+	Object.keys(FILTER_OPTIONS)
+		.flatMap((name) => {
+			const value = textOf(values, name);
+			return value === undefined ? [] : [` --${name} ${shellWord(value)}`];
+		})
+		.join("");
+
 /** The hint after a list the limit cut: `ls` with the filters given and twice the limit. */
 export function olderHint(values: Values, limit: number, color: boolean) {
-	const filters = Object.keys(FILTER_OPTIONS).flatMap((name) => {
-		const value = textOf(values, name);
-		return value === undefined ? [] : [` --${name} ${shellWord(value)}`];
-	});
 	return hintLine(
-		`Older concerts: maestro ls${filters.join("")} --limit ${limit * 2}`,
+		`Older concerts: maestro ls${filterWords(values)} --limit ${limit * 2}`,
 		color,
 	);
 }
@@ -513,7 +537,9 @@ async function instancesOf(stored: Stored, prefix: string, which?: string) {
 	const instances = every.filter(
 		(i) => chosen === undefined || i.name === chosen,
 	);
-	const text = table(
+	const columns = columnsOf(session.deps);
+	const short = shortIds(store.ids()).label(row.id, false);
+	const text = fittedTable(
 		[
 			["instance", "status", "stale", "agent", "reason"],
 			...instances.map((i) => [
@@ -525,18 +551,17 @@ async function instancesOf(stored: Stored, prefix: string, which?: string) {
 			]),
 		],
 		color,
+		giving(columns, [
+			{ column: 3, floor: 5 },
+			{ column: 4, floor: 6 },
+		]),
+		`Full values: ${jsonAgain("ls", chosen === undefined ? [short] : [short, chosen])}`,
 	);
 	const noted = instances.map((i) => ({
 		name: i.name,
 		notes: stepRow(i, hostText).notes ?? {},
 	}));
-	const short = shortIds(store.ids()).label(row.id, false);
-	const notes = notesLines(
-		noted,
-		short,
-		color,
-		session.deps.terminal?.().columns,
-	);
+	const notes = notesLines(noted, short, color, columns);
 	session.deps.stdout([text, ...notes].join("\n"));
 	return EXIT.ok;
 }

@@ -3,11 +3,13 @@ import { tildeOf } from "@maestro/core";
 import { ConfigError } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
 import { type Ir, indexGraph, messageOf } from "@maestro/ir";
+import { hintLine, wrapText } from "@maestro/render-text/live";
 import type { Described } from "@maestro/sdk/loader";
 import {
 	COMMON,
 	type Command,
 	colorOf,
+	columnsOf,
 	type Deps,
 	isSet,
 	parse,
@@ -15,7 +17,16 @@ import {
 import type { PackDir } from "./config";
 import { flagUsage, type ParamEntry, paramEntries, paramsBlock } from "./flags";
 import { type Bundle, claimsOf, openPack } from "./loader";
-import { ArgumentError, EXIT, jsonOf, paint, table } from "./output";
+import {
+	ArgumentError,
+	EXIT,
+	giving,
+	jsonAgain,
+	jsonOf,
+	laidOut,
+	paint,
+	table,
+} from "./output";
 import { paramValues } from "./params";
 import { chosen, installedPack } from "./prepare";
 import { openSession, overridesOf } from "./session";
@@ -150,28 +161,65 @@ async function loadAll(
 
 const firstLine = (text = "") => text.split("\n", 1)[0] ?? "";
 
-function packText(p: PackEntry, { color, home }: Look): string {
-	const header = [
+/** The cells a description gives up before the row outgrows `columns`. */
+const DESCRIPTION_FLOOR = 12;
+
+/** What a pack listing prints, and whether it cut anything. */
+type Shown = { text: string; cut: boolean };
+
+/**
+ * A pack's header: its id and version, which stay whole, then its path, then where it is listed. Past `columns` the
+ * place it is listed gives way first, then the path, each down to a lone `…`.
+ */
+function headerText(p: PackEntry, { color, home, columns }: Look): Shown {
+	const cells = [
 		`${paint("bold", p.id, color)} ${paint("dim", p.version, color)}`,
 		paint("dim", tildeOf(p.path, home), color),
+		...(p.config ? [`listed in ${tildeOf(p.config, home)}`] : []),
 	];
-	if (p.config) header.push(`listed in ${tildeOf(p.config, home)}`);
-	const rows = table(
+	return laidOut(
+		[cells],
+		false,
+		giving(columns, [
+			{ column: 2, floor: 1 },
+			{ column: 1, floor: 1 },
+		]),
+	);
+}
+
+function packText(p: PackEntry, look: Look): Shown {
+	const { color, columns } = look;
+	const head = headerText(p, look);
+	const rows = laidOut(
 		p.compositions.map((c) => [
 			`  ${paint("cyan", c.name, color)}`,
 			firstLine(c.doc),
 		]),
+		false,
+		giving(columns, [{ column: 1, floor: DESCRIPTION_FLOOR }]),
 	);
-	return rows ? `${header.join("  ")}\n${rows}` : header.join("  ");
+	return {
+		text: rows.text ? `${head.text}\n${rows.text}` : head.text,
+		cut: head.cut || rows.cut,
+	};
 }
 
 function compositionText(
 	c: CompositionEntry,
 	composition: Described,
 	color: boolean,
+	columns: number,
 ): string {
+	const wrap = (line: string, width = columns) =>
+		columns === 0 ? [line] : wrapText(line, width);
 	const [first = "", ...rest] = (c.doc ?? "").split("\n");
-	const lines = [table([[paint("bold", c.id, color), first]]), ...rest];
+	const idWidth = Bun.stringWidth(c.id) + 2;
+	const [head = "", ...more] = wrap(first, columns - idWidth);
+	const lines = [
+		table([[paint("bold", c.id, color), head]]),
+		...more.map((line) => `${" ".repeat(idWidth)}${line}`),
+		...rest.flatMap((line) => wrap(line)),
+	];
 	const params = paramsBlock(composition, color);
 	if (params) lines.push(params);
 	if (c.config?.length) lines.push(`Config  ${c.config.join(", ")}`);
@@ -207,20 +255,35 @@ function selected(
 	return { entries: only, composition };
 }
 
-/** How a pack listing shows: colored, and with the directory `home` as `~` on a terminal. */
-type Look = { color: boolean; home: string | undefined };
+/** How a pack listing shows: colored, and with the directory `home` as `~` and descriptions cut to `columns` on a terminal. */
+type Look = {
+	color: boolean;
+	home: string | undefined;
+	columns: number;
+};
 
 function printed(
 	deps: Deps,
 	{ entries, composition }: Selection,
 	color: boolean,
+	again: string,
 ): void {
 	const [only] = entries[0]?.compositions ?? [];
-	const look = { color, home: deps.terminal ? deps.env.HOME : undefined };
+	const columns = columnsOf(deps);
+	const look = {
+		color,
+		home: deps.terminal ? deps.env.HOME : undefined,
+		columns,
+	};
 	if (composition && only)
-		deps.stdout(compositionText(only, composition, color));
-	else if (entries.length)
-		deps.stdout(entries.map((e) => packText(e, look)).join("\n"));
+		deps.stdout(compositionText(only, composition, color, columns));
+	else if (entries.length) {
+		const shown = entries.map((e) => packText(e, look));
+		const hint = shown.some((s) => s.cut)
+			? [hintLine(`Full listing: ${again}`, color)]
+			: [];
+		deps.stdout([...shown.map((s) => s.text), ...hint].join("\n"));
+	}
 }
 
 export const repertoire: Command = {
@@ -245,7 +308,13 @@ export const repertoire: Command = {
 		const all = await loadAll(dirs, deps);
 		const shown = selected(all, positionals[0], packsDir);
 		if (isSet(values, "json")) deps.stdout(jsonOf({ packs: shown.entries }));
-		else printed(deps, shown, colorOf(deps, values).out);
+		else
+			printed(
+				deps,
+				shown,
+				colorOf(deps, values).out,
+				jsonAgain("repertoire", args),
+			);
 		if (!dirs.length)
 			deps.stderr(
 				`no packs are installed\nExtract one into ${packsDir}, or list its directory under packs in the config`,

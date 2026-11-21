@@ -29,6 +29,8 @@ import {
 import {
 	type Changes,
 	closingBlock,
+	cutTo,
+	hintLine,
 	padCells,
 	shellArg,
 	shortIds,
@@ -187,23 +189,79 @@ export function staleCell({ stale }: { stale?: boolean }): string {
 	return stale ? "stale" : "";
 }
 
-/**
- * Rows of cells in columns two spaces apart, without trailing spaces. A cell's width leaves out its color codes. With
- * `bold` the first row is bold.
- */
-export function table(
-	rows: readonly (readonly string[])[],
-	bold = false,
-): string {
-	const shown = rows.map((row, r) =>
-		bold && r === 0 ? row.map((cell) => paint("bold", cell, true)) : row,
-	);
-	const widths = shown.reduce<number[]>(
+/** A table's fit to a terminal: its `columns` width, and the columns that may give way, in that order. */
+export type Fit = {
+	columns: number;
+	give: readonly { column: number; floor: number }[];
+};
+
+const COLUMN_GAP = 2;
+
+/** The fit of a table to a terminal `columns` cells wide, giving way as `give` says; none when `columns` is 0, off a terminal. */
+export const giving = (columns: number, give: Fit["give"]): Fit | undefined =>
+	columns > 0 ? { columns, give } : undefined;
+
+const widthsOf = (rows: readonly (readonly string[])[]) =>
+	rows.reduce<number[]>(
 		(w, row) =>
 			row.map((cell, i) => Math.max(w[i] ?? 0, Bun.stringWidth(cell))),
 		[],
 	);
-	return shown
+
+type Rows = readonly (readonly string[])[];
+
+/**
+ * `rows` with the cells of the columns `fit` names cut with `…`, in its order, until a row fits or each is at its floor,
+ * and whether any cell was cut.
+ */
+function fitted(
+	rows: Rows,
+	{ columns, give }: Fit,
+): { rows: Rows; cut: boolean } {
+	const widths = widthsOf(rows);
+	let excess =
+		widths.reduce((sum, w) => sum + w, 0) +
+		COLUMN_GAP * Math.max(0, widths.length - 1) -
+		columns;
+	for (const { column, floor } of give) {
+		const width = widths[column] ?? 0;
+		const take = Math.min(Math.max(excess, 0), Math.max(width - floor, 0));
+		widths[column] = width - take;
+		excess -= take;
+	}
+	const cutRows = rows.map((row) =>
+		row.map((cell, i) =>
+			give.some((g) => g.column === i) ? cutTo(cell, widths[i] ?? 0) : cell,
+		),
+	);
+	return {
+		rows: cutRows,
+		cut: cutRows.some((row, r) => row.some((cell, i) => cell !== rows[r]?.[i])),
+	};
+}
+
+/**
+ * Rows of cells in columns two spaces apart, without trailing spaces. A cell's width leaves out its color codes. With
+ * `bold` the first row is bold. With `fit` a table wider than its columns cuts the cells of the columns it names.
+ */
+export function table(rows: Rows, bold = false, fit?: Fit): string {
+	return laidOut(rows, bold, fit).text;
+}
+
+/** `table(rows, bold, fit)` as its text, and whether `fit` cut a cell. */
+export function laidOut(
+	rows: Rows,
+	bold = false,
+	fit?: Fit,
+): { text: string; cut: boolean } {
+	const { rows: cut, cut: wasCut } = fit
+		? fitted(rows, fit)
+		: { rows, cut: false };
+	const shown = cut.map((row, r) =>
+		bold && r === 0 ? row.map((cell) => paint("bold", cell, true)) : row,
+	);
+	const widths = widthsOf(shown);
+	const text = shown
 		.map((row) =>
 			row
 				.map((cell, i) => padCells(cell, widths[i] ?? 0))
@@ -211,6 +269,35 @@ export function table(
 				.trimEnd(),
 		)
 		.join("\n");
+	return { text, cut: wasCut };
+}
+
+/**
+ * `table(rows, bold, fit)`, followed by the dim line `hint` when `fit` cut a cell; the hint is a command to run, so it is never
+ * cut. Without a `fit` it is the table alone.
+ */
+export function fittedTable(
+	rows: readonly (readonly string[])[],
+	bold: boolean,
+	fit: Fit | undefined,
+	hint: string,
+): string {
+	const { text, cut } = laidOut(rows, bold, fit);
+	return cut ? `${text}\n${hintLine(hint, bold)}` : text;
+}
+
+/**
+ * The command that repeats `maestro <verb> <args>` as JSON: `args` shell-quoted without the flags that only choose how it
+ * prints, and `--json` before a `--` that ends the flags.
+ */
+export function jsonAgain(verb: string, args: readonly string[]): string {
+	const end = args.indexOf("--");
+	const flags = end < 0 ? args : args.slice(0, end);
+	const rest = end < 0 ? [] : args.slice(end);
+	const kept = flags.filter(
+		(a) => !["--json", "--color", "--no-color"].includes(a),
+	);
+	return `maestro ${verb} ${[...kept, "--json", ...rest].map(shellArg).join(" ")}`;
 }
 
 const BYTE_UNITS = ["B", "KiB", "MiB", "GiB", "TiB"];

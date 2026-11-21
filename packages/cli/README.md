@@ -76,6 +76,19 @@ composition names, the `changeset show` head line, the `compose` name, the closi
 `error:` and `warning:` labels with their dim hint lines (a diagnostic's code shows only under `--json`), and `--help`.
 On a terminal, `config` heads its table with `key source value from`, and a path in the home directory starts with `~`.
 
+On a terminal, some tables are cut to the terminal's width. A cut shows `…` and a dim hint to the command that shows the
+full values as JSON. The hint repeats the filters and flags given, and is never cut, so it runs as printed. Each column
+stops at a floor that keeps its heading.
+
+- `ls` cuts titles, then tours, workspaces and compositions.
+- `ls <concert>` cuts agents, then reasons.
+- `repertoire` cuts each description, then the path and config file of a pack line, never its id, and
+  `repertoire <pack>.<composition>` wraps its doc.
+- `config` cuts values, then the `from` column (a file location or a flag).
+
+Ids, statuses and instance names stay whole, so a very narrow terminal can still wrap them. Other tables are not fitted.
+Piped output and `--json` are never cut.
+
 When `TERM` is set and not `dumb`, a command that prints a finished document and nothing after it pages it on a
 terminal, as `git` does, but not under `--json`. `perform`, `resume`, `encore`, `wait`, `kill`, `prune`, `tour`,
 `agent ls`, and `changeset apply` and `drop` are never paged: they stream progress, ask, or print a line after their

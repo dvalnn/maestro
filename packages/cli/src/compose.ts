@@ -17,6 +17,7 @@ import {
 	COMMON,
 	type Command,
 	colorOf,
+	columnsOf,
 	type Deps,
 	isSet,
 	parse,
@@ -36,11 +37,13 @@ import {
 	Diagnosed,
 	diagnosedExit,
 	EXIT,
+	fittedTable,
+	giving,
+	jsonAgain,
 	jsonOf,
 	NAME_CONCERT,
 	paint,
 	renderDiagnostics,
-	table,
 } from "./output";
 import {
 	bundleName,
@@ -312,9 +315,16 @@ type Invocation = {
 	file?: string;
 };
 
-/** Prints `rows` as a table, or with `--json` as `values` beside `invocation`'s fields. */
+/** The cells a value, then a flag, gives up before its row outgrows the terminal. */
+const CONFIG_VALUE_FLOOR = 12;
+
+/**
+ * Prints `rows` as a table, or with `--json` as `values` beside `invocation`'s fields. On a terminal a cut value is
+ * followed by a hint to `again`, the command that repeats the invocation as JSON.
+ */
 function printConfig(
 	deps: Deps,
+	again: string,
 	json: boolean,
 	color: boolean,
 	rows: readonly ConfigRow[],
@@ -333,7 +343,18 @@ function printConfig(
 		dim(r.file ? `${tildeOf(r.file, home)}:${r.line}` : (r.flag ?? "")),
 	]);
 	const header = deps.terminal ? [["key", "source", "value", "from"]] : [];
-	deps.stdout(table([...header, ...body], color && header.length > 0));
+	deps.stdout(
+		fittedTable(
+			[...header, ...body],
+			color && header.length > 0,
+			// A flag's text, which a long `-c` makes wide, gives way only after the value.
+			giving(columnsOf(deps), [
+				{ column: 2, floor: CONFIG_VALUE_FLOOR },
+				{ column: 3, floor: CONFIG_VALUE_FLOOR },
+			]),
+			`Full values: ${again}`,
+		),
+	);
 	return EXIT.ok;
 }
 
@@ -384,6 +405,7 @@ async function configOfConcert(
 		const composed = withParams(opened.composed, row, deps);
 		return printConfig(
 			deps,
+			jsonAgain("config", args),
 			isSet(values, "json"),
 			colorOf(deps, values).out,
 			rowsOf(composed),
@@ -445,6 +467,7 @@ export const config: Command = {
 		];
 		return printConfig(
 			deps,
+			jsonAgain("config", args),
 			isSet(early, "json"),
 			colorOf(deps, early).out,
 			rows,
