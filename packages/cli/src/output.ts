@@ -36,6 +36,7 @@ import {
 	shortIds,
 	styled,
 	type View,
+	wrapText,
 } from "@maestro/render-text/live";
 import type { Colors, Deps } from "./command";
 
@@ -189,17 +190,35 @@ export function staleCell({ stale }: { stale?: boolean }): string {
 	return stale ? "stale" : "";
 }
 
-/** A table's fit to a terminal: its `columns` width, and the columns that may give way, in that order. */
-export type Fit = {
-	columns: number;
-	give: readonly { column: number; floor: number }[];
-};
+/** The columns of a table that give way to a terminal, in that order, each cut down to its floor. */
+type Give = readonly { column: number; floor: number }[];
 
-const COLUMN_GAP = 2;
+/**
+ * A table's fit to a terminal `columns` cells wide: either the columns that give way, or a last column that wraps under
+ * itself.
+ */
+export type Fit =
+	| { columns: number; give: Give }
+	| { columns: number; wrap: true };
+
+/** A fit that cuts columns, the only one that can leave a cell short of its value. */
+type Cut = Extract<Fit, { give: Give }>;
+
+const COLUMN_GAP = "  ";
 
 /** The fit of a table to a terminal `columns` cells wide, giving way as `give` says; none when `columns` is 0, off a terminal. */
-export const giving = (columns: number, give: Fit["give"]): Fit | undefined =>
+export const giving = (columns: number, give: Give): Cut | undefined =>
 	columns > 0 ? { columns, give } : undefined;
+
+/** The fit of a table whose last column wraps at `columns` cells; none when `columns` is 0, off a terminal. */
+export const wrapping = (columns: number): Fit | undefined =>
+	columns > 0 ? { columns, wrap: true } : undefined;
+
+/**
+ * The fewest cells a wrapped last column breaks at: a wide character is two cells, and a narrower break would never
+ * advance. A narrow terminal wraps the text narrower rather than letting a line overrun it.
+ */
+const MIN_WRAP = 2;
 
 const widthsOf = (rows: readonly (readonly string[])[]) =>
 	rows.reduce<number[]>(
@@ -211,17 +230,17 @@ const widthsOf = (rows: readonly (readonly string[])[]) =>
 type Rows = readonly (readonly string[])[];
 
 /**
- * `rows` with the cells of the columns `fit` names cut with `…`, in its order, until a row fits or each is at its floor,
+ * `rows` with the cells of the columns `give` names cut with `…`, in its order, until a row fits or each is at its floor,
  * and whether any cell was cut.
  */
 function fitted(
 	rows: Rows,
-	{ columns, give }: Fit,
+	{ columns, give }: Cut,
 ): { rows: Rows; cut: boolean } {
 	const widths = widthsOf(rows);
 	let excess =
 		widths.reduce((sum, w) => sum + w, 0) +
-		COLUMN_GAP * Math.max(0, widths.length - 1) -
+		COLUMN_GAP.length * Math.max(0, widths.length - 1) -
 		columns;
 	for (const { column, floor } of give) {
 		const width = widths[column] ?? 0;
@@ -241,8 +260,39 @@ function fitted(
 }
 
 /**
+ * `row` as its lines. A full row's last cell wraps at `wrapAt` cells when that is above 0, each of its own lines
+ * wrapped apart, and each later line leaves the other cells blank, so it sits under its own column.
+ */
+function linesOf(
+	row: readonly string[],
+	width: number,
+	wrapAt: number,
+): string[][] {
+	if (wrapAt === 0 || row.length !== width) return [[...row]];
+	const head = row.slice(0, -1);
+	const [first = "", ...more] = (row.at(-1) ?? "")
+		.split("\n")
+		.flatMap((part) => wrapText(part, wrapAt));
+	return [
+		[...head, first],
+		...more.map((text) => [...head.map(() => ""), text]),
+	];
+}
+
+/** The cells a wrapping `fit` leaves the last of `width` columns of `widths`; 0, no wrap, for any other fit. */
+function wrapAtOf(widths: readonly number[], width: number, fit?: Fit): number {
+	if (fit === undefined || !("wrap" in fit)) return 0;
+	const leading = widths
+		.slice(0, width - 1)
+		.reduce((sum, w) => sum + w + COLUMN_GAP.length, 0);
+	return Math.max(MIN_WRAP, fit.columns - leading);
+}
+
+/**
  * Rows of cells in columns two spaces apart, without trailing spaces. A cell's width leaves out its color codes. With
- * `bold` the first row is bold. With `fit` a table wider than its columns cuts the cells of the columns it names.
+ * `bold` the first row is bold. With a `fit` that gives, a table wider than its columns cuts the cells of the columns it
+ * names; with one that wraps, its last column wraps under itself at the cells the others leave, so each line fits
+ * unless the columns before it alone are wider.
  */
 export function table(rows: Rows, bold = false, fit?: Fit): string {
 	return laidOut(rows, bold, fit).text;
@@ -254,22 +304,27 @@ export function laidOut(
 	bold = false,
 	fit?: Fit,
 ): { text: string; cut: boolean } {
-	const { rows: cut, cut: wasCut } = fit
-		? fitted(rows, fit)
-		: { rows, cut: false };
-	const shown = cut.map((row, r) =>
-		bold && r === 0 ? row.map((cell) => paint("bold", cell, true)) : row,
-	);
-	const widths = widthsOf(shown);
-	const text = shown
-		.map((row) =>
-			row
-				.map((cell, i) => padCells(cell, widths[i] ?? 0))
-				.join("  ")
-				.trimEnd(),
+	const { rows: cells, cut } =
+		fit && "give" in fit ? fitted(rows, fit) : { rows, cut: false };
+	const widths = widthsOf(cells);
+	const width = Math.max(0, ...cells.map((row) => row.length));
+	const wrapAt = wrapAtOf(widths, width, fit);
+	const text = cells
+		.flatMap((row, r) =>
+			linesOf(row, width, wrapAt).map((line) =>
+				line
+					.map((cell, i) =>
+						padCells(
+							bold && r === 0 ? paint("bold", cell, true) : cell,
+							widths[i] ?? 0,
+						),
+					)
+					.join(COLUMN_GAP)
+					.trimEnd(),
+			),
 		)
 		.join("\n");
-	return { text, cut: wasCut };
+	return { text, cut };
 }
 
 /**
@@ -277,9 +332,9 @@ export function laidOut(
  * cut. Without a `fit` it is the table alone.
  */
 export function fittedTable(
-	rows: readonly (readonly string[])[],
+	rows: Rows,
 	bold: boolean,
-	fit: Fit | undefined,
+	fit: Cut | undefined,
 	hint: string,
 ): string {
 	const { text, cut } = laidOut(rows, bold, fit);

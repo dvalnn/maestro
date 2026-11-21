@@ -89,6 +89,7 @@ stops at a floor that keeps its heading.
 - `repertoire` cuts each description, then the path and config file of a pack line, never its id, and
   `repertoire <pack>.<composition>` wraps its doc.
 - `config` cuts values, then the `from` column (a file location or a flag).
+- `--help` and a params block wrap each description under its own column.
 
 Ids, statuses and instance names stay whole, so a very narrow terminal can still wrap them. Other tables are not fitted.
 Piped output and `--json` are never cut.

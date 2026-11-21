@@ -6,6 +6,7 @@ import {
 	COMMON,
 	type Command,
 	colorOf,
+	columnsOf,
 	type Deps,
 	helpOf,
 	isSet,
@@ -28,6 +29,7 @@ import {
 	renderDiagnostics,
 	table,
 	usageError,
+	wrapping,
 } from "./output";
 import { withPager } from "./pager";
 
@@ -164,7 +166,8 @@ const ENVIRONMENT: readonly (readonly [string, string])[] = [
 	],
 ];
 
-const rootHelp = (color: boolean) => {
+/** The root help, with its tables wrapped at `columns` cells when above 0. */
+const rootHelp = (color: boolean, columns = 0) => {
 	const heading = (text: string) => paint("bold", text, color);
 	return [
 		`${heading("Usage:")} maestro <command> [flags]`,
@@ -176,15 +179,29 @@ const rootHelp = (color: boolean) => {
 				v.alias ? `(${v.alias})` : "",
 				v.summary,
 			]),
+			false,
+			wrapping(columns),
 		),
 		"",
 		heading("Flags:"),
-		`  ${paint("cyan", "--version", color)}    Print the maestro, SDK, IR and Bun versions`,
-		`  ${paint("cyan", "--data-root", color)}  Print the directory that holds maestro's record and packs`,
-		`  ${paint("cyan", "--help", color)}       Show this help`,
+		table(
+			[
+				[
+					`  ${paint("cyan", "--version", color)}`,
+					"Print the maestro, SDK, IR and Bun versions",
+				],
+				[
+					`  ${paint("cyan", "--data-root", color)}`,
+					"Print the directory that holds maestro's record and packs",
+				],
+				[`  ${paint("cyan", "--help", color)}`, "Show this help"],
+			],
+			false,
+			wrapping(columns),
+		),
 		"",
 		heading("Common flags (each command lists those it takes):"),
-		sharedFlags(color),
+		sharedFlags(color, columns),
 		"",
 		heading("Exit codes:"),
 		table(
@@ -192,10 +209,16 @@ const rootHelp = (color: boolean) => {
 				`  ${code}`,
 				EXIT_MEANINGS[name as keyof typeof EXIT],
 			]),
+			false,
+			wrapping(columns),
 		),
 		"",
 		heading("Environment:"),
-		table(ENVIRONMENT.map(([name, what]) => [`  ${name}`, what])),
+		table(
+			ENVIRONMENT.map(([name, what]) => [`  ${name}`, what]),
+			false,
+			wrapping(columns),
+		),
 		"",
 		"See 'maestro <command> --help', or 'maestro help <command>', for a command's flags.",
 	].join("\n");
@@ -324,7 +347,7 @@ async function bare(argv: readonly string[], deps: Deps): Promise<number> {
 		deps.stdout(placesOf(deps.env).dataRoot);
 	else if (isSet(common, "help"))
 		return withPager(deps, true, (out) => {
-			out.stdout(rootHelp(colorOf(deps, common).out));
+			out.stdout(rootHelp(colorOf(deps, common).out, columnsOf(deps)));
 			return EXIT.ok;
 		});
 	else {
@@ -378,7 +401,9 @@ export async function main(
 			const extra = await extraHelp(command, args, deps);
 			return await withPager(deps, true, (paged) => {
 				const form = command.formOptions?.(args);
-				paged.stdout(helpOf(command, verb.summary, extra, out, form));
+				paged.stdout(
+					helpOf(command, verb.summary, extra, out, form, columnsOf(deps)),
+				);
 				return EXIT.ok;
 			});
 		}

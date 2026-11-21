@@ -77,27 +77,43 @@ describe("repertoire", () => {
 		}
 	});
 
-	test("repertoire wraps a composition doc on a terminal and leaves it whole in a pipe and JSON", async () => {
+	test("repertoire wraps a composition doc and its params under their columns on a terminal and leaves them whole in a pipe and JSON", async () => {
 		const doc =
 			"A detailed description of this composition explains its purpose and the steps it takes for every reader without losing the ending.";
+		const second =
+			"Then a second line long enough to wrap again on an eighty column terminal for sure.";
+		const topic =
+			"What the page is about, said at length so that it wraps under its column on a narrow terminal";
 		const w = await staffed(
-			STAFFED.replace("Drafts a page.\\nThen leaves it for review.", doc),
+			STAFFED.replace(
+				"Drafts a page.\\nThen leaves it for review.",
+				`${doc}\\n${second}`,
+			).replace("What the page is about", topic),
 		);
 		const terminal = () => ({ columns: 80, rows: 24 });
 		const env = { HOME: w.root, NO_COLOR: "1" };
 		const args = ["repertoire", "staffed.draft"];
 		const on = await w.call(args, { terminal, env });
 		expect(on.code).toBe(0);
-		const docLines = on.out
-			.split("\n")
-			.slice(0, on.out.split("\n").indexOf("Params"));
-		expect(docLines.every((line) => Bun.stringWidth(line) <= 80)).toBe(true);
-		expect(docLines.join(" ").replace(/\s+/g, " ")).toContain(doc);
-		expect((await w.call(args, { env })).out).toContain(doc);
+		const lines = on.out.split("\n");
+		expect(lines.every((line) => Bun.stringWidth(line) <= 80)).toBe(true);
+		// Every doc line after the first sits under the doc's column, past the id and its gap.
+		const docLines = lines.slice(0, lines.indexOf("Params"));
+		const under = " ".repeat("staffed.draft  ".length);
+		expect(docLines.slice(1).every((line) => line.startsWith(under))).toBe(
+			true,
+		);
+		expect(docLines.join(" ").replace(/\s+/g, " ")).toContain(
+			`${doc} ${second}`,
+		);
+		expect(lines.join(" ").replace(/\s+/g, " ")).toContain(topic);
+		const piped = (await w.call(args, { env })).out;
+		expect(piped).toContain(doc);
+		expect(piped).toContain(topic);
 		expect(
 			json(await w.call([...args, "--json"], { terminal, env })).packs[0]
 				.compositions[0].doc,
-		).toBe(doc);
+		).toBe(`${doc}\n${second}`);
 	});
 
 	test("repertoire wraps a composition doc with an overlong word and cuts a pack header to the terminal", async () => {

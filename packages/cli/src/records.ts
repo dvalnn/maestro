@@ -67,6 +67,7 @@ import {
 	table,
 	usageError,
 	withArtifactPaths,
+	wrapping,
 } from "./output";
 import {
 	artifactsOf,
@@ -262,7 +263,7 @@ async function reportHelp(args: readonly string[], deps: Deps) {
 	if (!fields.length) return NOTED_HELP;
 	const color = colorOf(deps, peek(COMMON, args)).out;
 	const rows = fields.map(([field, what]) => [`  ${field}`, what]);
-	return `${NOTED_HELP}\n\n${paint("bold", "Reports", color)}\n  maestro ls <concert> <instance> --json | jq .report\n${table(rows)}`;
+	return `${NOTED_HELP}\n\n${paint("bold", "Reports", color)}\n  maestro ls <concert> <instance> --json | jq .report\n${table(rows, false, wrapping(columnsOf(deps)))}`;
 }
 
 export const ls: Command = {

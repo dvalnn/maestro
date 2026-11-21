@@ -7,7 +7,7 @@ import {
 } from "@maestro/ir";
 import type { Described } from "@maestro/sdk/loader";
 import type { Options, Values } from "./command";
-import { paint, table, usageError } from "./output";
+import { paint, table, usageError, wrapping } from "./output";
 import { flagFor, flagName, flagOf } from "./params";
 
 /** The flags a composition's params add to a command, and the param each one sets. */
@@ -202,11 +202,12 @@ function fallback(p: ParamEntry): string {
 
 /**
  * The `Params` block of `composition`: per param its flag, its fallback and its description. With `color` the heading
- * is bold and the flags cyan.
+ * is bold and the flags cyan. With `columns` above 0 the descriptions wrap at that width.
  */
 export function paramsBlock(
 	composition: Described,
 	color = false,
+	columns = 0,
 ): string | undefined {
 	const params = paramEntries(composition);
 	if (!params.length) return undefined;
@@ -215,5 +216,5 @@ export function paramsBlock(
 		fallback(p),
 		p.description ?? "",
 	]);
-	return `${paint("bold", "Params", color)}\n${table(rows)}`;
+	return `${paint("bold", "Params", color)}\n${table(rows, false, wrapping(columns))}`;
 }

@@ -22,6 +22,7 @@ import { type Described, STDLIB_MODULE } from "@maestro/sdk/loader";
 import {
 	COMMON,
 	colorOf,
+	columnsOf,
 	type Deps,
 	type Options,
 	parse,
@@ -419,7 +420,11 @@ export async function compositionHelp(
 		return undefined;
 	const session = await openSession(deps, overridesOf(peek(COMMON, args)));
 	const { composition } = await located(session, target);
-	return paramsBlock(composition, colorOf(deps, peek(COMMON, args)).out);
+	return paramsBlock(
+		composition,
+		colorOf(deps, peek(COMMON, args)).out,
+		columnsOf(deps),
+	);
 }
 
 /**

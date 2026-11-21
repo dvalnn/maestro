@@ -40,6 +40,7 @@ const CLASH = join(FIXTURES, "clash.ts");
 const CLASH_OUT = join(FIXTURES, "clash-out.ts");
 const CLASH_NO = join(FIXTURES, "clash-no.ts");
 const LOUD = join(FIXTURES, "loud.ts");
+const DESCRIBED = join(FIXTURES, "described.ts");
 const USES_ECHO = join(FIXTURES, "uses_echo.ts");
 const ESC = "\u001b";
 
@@ -1871,6 +1872,155 @@ describe("help and color", () => {
 		expect(help.code).toBe(0);
 		const usage = help.out.match(/Usage:[\s\S]*?(?=\n\n|$)/)?.[0] ?? "";
 		expect(usage.match(/--[a-z][a-z-]*/g) ?? []).toContain("--all");
+	});
+
+	// Seam: `prune --help` on an 80-column terminal, and piped. The widest flag is `--composition <pack.name>`, indented
+	// 2 + 4 cells and 25 long, then two spaces: its description starts at column 33 and has 47 cells.
+	test("--help wraps a description under its column on an 80-column terminal, and piped help keeps it whole", async () => {
+		const w = await world();
+		const DESC =
+			"Prune concerts that settled longer ago than this, such as 500ms, 90s, 15m, 12h or 7d";
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const on = stripVTControlCharacters(
+			(await w.call(["prune", "--help"], { terminal })).out,
+		).split("\n");
+		const at = on.findIndex((line) => line.includes("--before <duration>"));
+		expect(at).toBeGreaterThan(-1);
+		expect(on[at]?.indexOf("Prune")).toBe(33);
+		const rows = [on[at]?.slice(33) ?? ""];
+		for (const line of on.slice(at + 1)) {
+			if (!line.startsWith(" ".repeat(33))) break;
+			rows.push(line.slice(33));
+		}
+		for (const line of on)
+			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(80);
+		expect(rows.length).toBeGreaterThan(1);
+		expect(rows.join(" ").replace(/\s+/g, " ").trim()).toBe(DESC);
+
+		const piped = (await w.call(["prune", "--help", "--no-color"])).out;
+		expect(piped).toMatch(new RegExp(`--before <duration> +${DESC}\\n`));
+	});
+
+	// Seam: root help's tables on an 80-column terminal. Each description wraps under its own column.
+	test("root help wraps each table's descriptions under their column on an 80-column terminal", async () => {
+		const w = await world();
+		const terminal = () => ({ columns: 80, rows: 24 });
+		const lines = stripVTControlCharacters(
+			(await w.call(["--help"], { terminal })).out,
+		).split("\n");
+		// The tables run from Commands to the Environment block, which the closing prose line follows.
+		const tables = lines.slice(
+			lines.indexOf("Commands:"),
+			lines.findIndex((line) => line.startsWith("See '")),
+		);
+		for (const line of tables)
+			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(80);
+		const config = lines.findIndex(
+			(line) =>
+				line.includes("config") && line.includes("Show a composition's"),
+		);
+		expect(lines[config]?.indexOf("Show")).toBe(21);
+		expect(lines[config + 1]).toBe(`${" ".repeat(21)}value came from`);
+		const pager = lines.findIndex((line) => line.includes("PAGER"));
+		expect(lines[pager]?.indexOf("The pager")).toBe(19);
+		expect(lines[pager + 1]).toBe(
+			`${" ".repeat(19)}-FRX); empty or cat turns paging off`,
+		);
+	});
+
+	// Seam: `prune --help` on a 40-column terminal, narrower than the flag column plus the old 20-cell minimum.
+	test("--help on a 40-column terminal keeps every line within the width", async () => {
+		const w = await world();
+		const terminal = () => ({ columns: 40, rows: 24 });
+		const help = stripVTControlCharacters(
+			(await w.call(["prune", "--help"], { terminal })).out,
+		);
+		// Only the tables are checked: the usage line and the examples are prose and do not wrap.
+		const flags = help
+			.split("\n")
+			.slice(
+				help.split("\n").indexOf("Flags:"),
+				help.split("\n").indexOf("Examples:"),
+			);
+		for (const line of flags)
+			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(40);
+	});
+
+	// The description read back from the wrapped lines of a row at `lines[at]`, each under `column`.
+	const readBack = (lines: readonly string[], at: number, column: number) => {
+		const rows = [lines[at]?.slice(column) ?? ""];
+		for (const line of lines.slice(at + 1)) {
+			if (!line.startsWith(" ".repeat(column))) break;
+			rows.push(line.slice(column));
+		}
+		return rows.join(" ").replace(/\s+/g, " ").trim();
+	};
+	const linesOf = (out: string) => stripVTControlCharacters(out).split("\n");
+
+	// Seam: root help's Flags table on a 40-column terminal, where its descriptions wrap under their column.
+	test("root help wraps its Flags descriptions under their column on a 40-column terminal", async () => {
+		const w = await world();
+		const terminal = () => ({ columns: 40, rows: 24 });
+		const lines = linesOf((await w.call(["--help"], { terminal })).out);
+		const at = lines.findIndex((line) => line.startsWith("  --data-root"));
+		expect(lines[at]?.indexOf("Print")).toBe(15);
+		expect(readBack(lines, at, 15)).toBe(
+			"Print the directory that holds maestro's record and packs",
+		);
+		const end = lines.findIndex((line) => line.startsWith("Common flags"));
+		for (const line of lines.slice(lines.indexOf("Flags:"), end))
+			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(40);
+	});
+
+	// Seam: `prune --help` on a 40-column terminal, where the argument's description wraps under its column.
+	test("--help wraps an argument's description under its column on a 40-column terminal", async () => {
+		const w = await world();
+		const terminal = () => ({ columns: 40, rows: 24 });
+		const lines = linesOf(
+			(await w.call(["prune", "--help"], { terminal })).out,
+		);
+		const at = lines.findIndex((line) => line.startsWith("  <concert>"));
+		expect(lines[at]?.indexOf("A settled")).toBe(13);
+		expect(Bun.stringWidth(lines[at] ?? "")).toBeLessThanOrEqual(40);
+		expect(readBack(lines, at, 13)).toBe(
+			"A settled concert, as 'maestro ls' lists it",
+		);
+	});
+
+	// Seam: a composition's `--help` on a 40-column terminal, where its Params descriptions wrap; piped, whole.
+	test("compose --help wraps a param's description under its column on a 40-column terminal, and piped keeps it whole", async () => {
+		const w = await world();
+		const DESC = "Who to greet, by the name the greeting uses in its one line";
+		const terminal = () => ({ columns: 40, rows: 24 });
+		const lines = linesOf(
+			(await w.call(["compose", DESCRIBED, "--help"], { terminal })).out,
+		);
+		const at = lines.findIndex((line) => line.includes("--name"));
+		const column = lines[at]?.indexOf("Who") ?? -1;
+		expect(column).toBeGreaterThan(0);
+		expect(Bun.stringWidth(lines[at] ?? "")).toBeLessThanOrEqual(40);
+		expect(readBack(lines, at, column)).toBe(DESC);
+		const piped = (await w.call(["compose", DESCRIBED, "--help"])).out;
+		expect(piped).toContain(DESC);
+	});
+
+	// Seam: `ls --help` on a 40-column terminal, where a host's report field descriptions wrap under their column.
+	test("ls --help wraps a report field's description under its column on a 40-column terminal", async () => {
+		const w = await world();
+		const DESC =
+			"a short line on what the agent did in this step, for the whole run to read back";
+		const host: Host = {
+			...hostOf(),
+			text: { reportFields: { summary: DESC } },
+		};
+		const terminal = () => ({ columns: 40, rows: 24 });
+		const lines = linesOf(
+			(await w.call(["ls", "--help"], { hosts: [host], terminal })).out,
+		);
+		const at = lines.findIndex((line) => line.startsWith("  summary"));
+		expect(lines[at]?.indexOf("a short")).toBe(11);
+		expect(Bun.stringWidth(lines[at] ?? "")).toBeLessThanOrEqual(40);
+		expect(readBack(lines, at, 11)).toBe(DESC);
 	});
 
 	const TERMINAL = () => ({ columns: 80, rows: 24 });

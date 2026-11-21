@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Diagnostic } from "@maestro/ir";
-import { diagnosedExit, EXIT, table } from "./output";
+import { diagnosedExit, EXIT, table, wrapping } from "./output";
 
 const diagnostic = (extra: Partial<Diagnostic>): Diagnostic => ({
 	code: "CFG.param",
@@ -67,5 +67,26 @@ describe("table fit", () => {
 			],
 		};
 		expect(table(rows, false, fit).split("\n")[1]).toBe("a1  a lo…  release-…");
+	});
+});
+
+describe("table wraps its last column under itself", () => {
+	// Seam: the lines `table` returns at a width narrower than 20 cells, where the last column keeps only what is left.
+	test("a last column left few cells wraps at those cells and every line fits the width", () => {
+		expect(
+			table([["a", "one two three four five six"]], false, wrapping(10)),
+		).toBe("a  one two\n   three\n   four\n   five\n   six");
+		// A newline in the text starts a line under the column too, never at the first.
+		expect(table([["a", "one\ntwo three"]], false, wrapping(9))).toBe(
+			"a  one\n   two\n   three",
+		);
+	});
+
+	// Seam: the narrowest a last column breaks at, two cells: a wide character still advances there.
+	test("a last column two cells wide breaks at two cells, and a narrower one breaks there too", () => {
+		expect(table([["a", "ab cd"]], false, wrapping(5))).toBe("a  ab\n   cd");
+		expect(table([["a", "中文字"]], false, wrapping(3))).toBe(
+			"a  中\n   文\n   字",
+		);
 	});
 });

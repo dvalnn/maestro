@@ -3,7 +3,7 @@ import { tildeOf } from "@maestro/core";
 import { ConfigError } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
 import { type Ir, indexGraph, messageOf } from "@maestro/ir";
-import { hintLine, wrapText } from "@maestro/render-text/live";
+import { hintLine } from "@maestro/render-text/live";
 import type { Described } from "@maestro/sdk/loader";
 import {
 	COMMON,
@@ -26,6 +26,7 @@ import {
 	laidOut,
 	paint,
 	table,
+	wrapping,
 } from "./output";
 import { paramValues } from "./params";
 import { chosen, installedPack } from "./prepare";
@@ -210,17 +211,14 @@ function compositionText(
 	color: boolean,
 	columns: number,
 ): string {
-	const wrap = (line: string, width = columns) =>
-		columns === 0 ? [line] : wrapText(line, width);
-	const [first = "", ...rest] = (c.doc ?? "").split("\n");
-	const idWidth = Bun.stringWidth(c.id) + 2;
-	const [head = "", ...more] = wrap(first, columns - idWidth);
 	const lines = [
-		table([[paint("bold", c.id, color), head]]),
-		...more.map((line) => `${" ".repeat(idWidth)}${line}`),
-		...rest.flatMap((line) => wrap(line)),
+		table(
+			[[paint("bold", c.id, color), c.doc ?? ""]],
+			false,
+			wrapping(columns),
+		),
 	];
-	const params = paramsBlock(composition, color);
+	const params = paramsBlock(composition, color, columns);
 	if (params) lines.push(params);
 	if (c.config?.length) lines.push(`Config  ${c.config.join(", ")}`);
 	lines.push("", `  ${c.perform}`);

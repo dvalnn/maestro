@@ -14,6 +14,7 @@ import {
 	statusOf,
 	table,
 	usageError,
+	wrapping,
 } from "./output";
 
 /** What a command reads and writes outside itself: the hosts, the working directory, the environment and its output. */
@@ -317,17 +318,18 @@ const sharedNames = (options: Options) =>
 		.join(", ");
 
 /** The shared flags as help rows: each with its placeholder and description, the flag cyan when `color`. */
-export function sharedFlags(color: boolean): string {
-	return flagRows(Object.entries(SHARED), color);
+export function sharedFlags(color: boolean, columns = 0): string {
+	return flagRows(Object.entries(SHARED), color, columns);
 }
 
 /** The width of the terminal stdout writes to, 0 when it is not one, so help is not wrapped. */
 export const columnsOf = ({ terminal }: Deps) => terminal?.().columns ?? 0;
 
-/** Flags as an indented table: each name with its placeholder, then its description. */
+/** Flags as an indented table: each name with its placeholder, then its description, wrapped at `columns` when above 0. */
 function flagRows(
 	entries: readonly (readonly [string, OptionSpec | undefined])[],
 	color: boolean,
+	columns: number,
 ): string {
 	const rows = entries.flatMap(([name, o]) =>
 		o ? [[flagName(name, o), o.desc]] : [],
@@ -337,13 +339,16 @@ function flagRows(
 			`  ${flag.slice(0, flag.search(/\S/))}${paint("cyan", flag.trim(), color)}`,
 			desc,
 		]),
+		false,
+		wrapping(columns),
 	);
 }
 
 /**
  * Help for `command`, which `summary` describes: the summary, its usage, its arguments, each flag of `options` but the
  * shared ones with its description, `extra` when given, its examples, and a line naming the shared flags `options`
- * hold. With `color` the headings are bold and the flags cyan.
+ * hold. With `color` the headings are bold and the flags cyan. With `columns` above 0 the tables wrap their descriptions
+ * at that width.
  */
 export function helpOf(
 	command: Command,
@@ -351,6 +356,7 @@ export function helpOf(
 	extra?: string,
 	color = false,
 	options: Options = command.options,
+	columns = 0,
 ): string {
 	const heading = (text: string) => paint("bold", text, color);
 	const own = Object.entries(options).filter(
@@ -360,8 +366,12 @@ export function helpOf(
 		summary,
 		`${heading("Usage:")} maestro ${command.usage}`,
 		command.arguments &&
-			`${heading("Arguments:")}\n${table(command.arguments.map(([name, what]) => [`  ${name}`, what]))}`,
-		`${heading("Flags:")}\n${flagRows(own, color)}`,
+			`${heading("Arguments:")}\n${table(
+				command.arguments.map(([name, what]) => [`  ${name}`, what]),
+				false,
+				wrapping(columns),
+			)}`,
+		`${heading("Flags:")}\n${flagRows(own, color, columns)}`,
 		extra,
 		command.examples &&
 			`${heading("Examples:")}\n${command.examples.map(([comment, run]) => `  # ${comment}\n  ${run}`).join("\n")}`,
