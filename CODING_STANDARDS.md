@@ -52,6 +52,28 @@ CLI output, errors, prompts and confirmations follow [clig.dev](https://clig.dev
 - Stack traces and internal jargon appear only in debug output the user asked for.
 - Prompt only when stdin is a TTY, and give every prompt a flag that answers it.
 
+### Terminal look
+
+Human output on a terminal shares one look. Color and fitting apply only on a terminal, through the helpers in
+`packages/cli/src/output.ts`; piped output and `--json` stay plain and whole.
+
+| Element           | Look                                                                       |
+| ----------------- | -------------------------------------------------------------------------- |
+| Table             | a header row of bold, lowercase column names; columns two spaces apart     |
+| Label/value block | dim labels in one column, plain values                                     |
+| Section heading   | bold, Title case, no colon; `--help` headings end in a colon               |
+| Status word       | through `stateWord`: ok green, failed red, rejected yellow                 |
+| Concert id        | the short id, its unique prefix bold and the rest dim                      |
+| Hint              | one dim line, `<What>: <command>`, never repeating a line printed above it |
+| Flag, command     | cyan in help and params blocks                                             |
+| Nothing           | a dim `-` where a value is absent; blank where the column does not apply   |
+| Path              | under the home directory as `~/…`                                          |
+
+- A line fits the terminal width. A table names the columns that give way, cut with `…`. An id, a status or a name the
+  user types next never gives way. A cut points to where the whole value is, as a hint.
+- Prose such as a description wraps under its own column, never back to the first.
+- A format meant for scripts, such as `prune -n`, keeps its layout; it may color on a terminal.
+
 ## Compositions and prompts
 
 An agent reads five layers, in this order, each with one home; no layer restates another's text. Layers are defined
