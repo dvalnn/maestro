@@ -70,9 +70,11 @@ A tour is a slug of one or more dot-separated segments, each lower-case words jo
 ### Color and paging
 
 Each stream is colored when it is a terminal, stdout and stderr by their own check. `--color` or a non-empty
-`FORCE_COLOR` colors both; `NO_COLOR`, `TERM=dumb` and `--no-color` win over both. Color covers the `ls` status column
-and table headers, the closing block, the `watch` views, the `error:` and `warning:` labels with their dim hint lines (a
-diagnostic's code shows only under `--json`), and `--help`.
+`FORCE_COLOR` colors both; `NO_COLOR`, `TERM=dumb` and `--no-color` win over both. Color covers table headers, status
+words and a dim `-` for an absent value, the `config` source and file columns, the `repertoire` pack lines and
+composition names, the `changeset show` head line, the `compose` name, the closing block, the `watch` views, the
+`error:` and `warning:` labels with their dim hint lines (a diagnostic's code shows only under `--json`), and `--help`.
+On a terminal, `config` heads its table with `key source value from`, and a path in the home directory starts with `~`.
 
 When `TERM` is set and not `dumb`, a command that prints a finished document and nothing after it pages it on a
 terminal, as `git` does, but not under `--json`. `perform`, `resume`, `encore`, `wait`, `kill`, `prune`, `tour`,

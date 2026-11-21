@@ -126,6 +126,13 @@ export const paint = (
 	color: boolean,
 ) => (color ? styled(style, text) : text);
 
+/** The `-` a table shows for an absent value, dim when `color`. */
+export const absent = (color: boolean) => paint("dim", "-", color);
+
+/** `text`, or the dim dash of `absent` when it is empty or missing. */
+export const orAbsent = (text: string | undefined, color: boolean) =>
+	text || absent(color);
+
 /**
  * A diagnostic as two lines: the source location when known, `error:` or `warning:` and the message, then the hint,
  * which an empty one leaves out.

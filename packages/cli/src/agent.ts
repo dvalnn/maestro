@@ -54,7 +54,15 @@ import {
 	type Values,
 } from "./command";
 import { builtinHarnesses } from "./hosts";
-import { CliError, EXIT, jsonOf, paint, table, usageError } from "./output";
+import {
+	CliError,
+	EXIT,
+	jsonOf,
+	orAbsent,
+	paint,
+	table,
+	usageError,
+} from "./output";
 import { prepare, presetHint } from "./prepare";
 import { openSession, overridesOf, type Session, setupOf } from "./session";
 
@@ -241,17 +249,15 @@ const shownFault = (name: string, fault: string) => {
 
 /** The roster as a table: name, harness, model, the winning root and a pack shadow, faults under a broken row. */
 function lsText(listed: readonly Listed[], color: boolean): string {
-	const header = ["Profiles", "harness", "model", "from"].map((h) =>
-		paint("bold", h, color),
-	);
+	const header = ["profile", "harness", "model", "from"];
 	const rows = listed.map((l) => [
-		`${INDENT}${l.name}`,
-		l.harness ?? "-",
-		l.model ?? "-",
+		l.name,
+		orAbsent(l.harness, color),
+		orAbsent(l.model, color),
 		l.root,
 		l.shadowsPack ? paint("dim", "[shadows pack]", color) : "",
 	]);
-	const [top = "", ...lines] = table([header, ...rows]).split("\n");
+	const [top = "", ...lines] = table([header, ...rows], color).split("\n");
 	return [
 		top,
 		...lines.flatMap((line, i) => {
@@ -260,7 +266,7 @@ function lsText(listed: readonly Listed[], color: boolean): string {
 			const faults = row.faults.map((f) => shownFault(row.name, f));
 			return [
 				line,
-				`${INDENT}${INDENT}${paint("red", faults.join(FAULT_SEPARATOR), color)}`,
+				`${INDENT}${paint("red", faults.join(FAULT_SEPARATOR), color)}`,
 			];
 		}),
 	].join("\n");

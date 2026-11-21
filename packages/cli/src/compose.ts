@@ -1,4 +1,5 @@
 import { basename, dirname, extname, join, resolve } from "node:path";
+import { tildeOf } from "@maestro/core";
 import { recordedPlan } from "@maestro/core/compose";
 import {
 	type Composed,
@@ -37,6 +38,7 @@ import {
 	EXIT,
 	jsonOf,
 	NAME_CONCERT,
+	paint,
 	renderDiagnostics,
 	table,
 } from "./output";
@@ -314,6 +316,7 @@ type Invocation = {
 function printConfig(
 	deps: Deps,
 	json: boolean,
+	color: boolean,
 	rows: readonly ConfigRow[],
 	invocation: Invocation | undefined,
 ): number {
@@ -321,16 +324,16 @@ function printConfig(
 		deps.stdout(jsonOf({ values: rows, ...invocation }));
 		return EXIT.ok;
 	}
-	deps.stdout(
-		table(
-			rows.map((r) => [
-				r.key,
-				layerOf(r),
-				r.layer === "unset" ? "unset" : JSON.stringify(r.value),
-				r.file ? `${r.file}:${r.line}` : (r.flag ?? ""),
-			]),
-		),
-	);
+	const dim = (text: string) => (text ? paint("dim", text, color) : "");
+	const home = deps.terminal ? deps.env.HOME : undefined;
+	const body = rows.map((r) => [
+		r.key,
+		dim(layerOf(r)),
+		r.layer === "unset" ? "unset" : JSON.stringify(r.value),
+		dim(r.file ? `${tildeOf(r.file, home)}:${r.line}` : (r.flag ?? "")),
+	]);
+	const header = deps.terminal ? [["key", "source", "value", "from"]] : [];
+	deps.stdout(table([...header, ...body], color));
 	return EXIT.ok;
 }
 
@@ -379,14 +382,20 @@ async function configOfConcert(
 				`${composeProblem(shortIds(store.ids()).label(row.id, false), opened.error)}\nPerform its composition anew with 'maestro perform'`,
 			);
 		const composed = withParams(opened.composed, row, deps);
-		return printConfig(deps, isSet(values, "json"), rowsOf(composed), {
-			presets: row.presets ?? [],
-			flags: row.config ?? [],
-			limits: row.limits,
-			params: row.params ?? {},
-			moduleDir: row.moduleDir || undefined,
-			file: row.file,
-		});
+		return printConfig(
+			deps,
+			isSet(values, "json"),
+			colorOf(deps, values).out,
+			rowsOf(composed),
+			{
+				presets: row.presets ?? [],
+				flags: row.config ?? [],
+				limits: row.limits,
+				params: row.params ?? {},
+				moduleDir: row.moduleDir || undefined,
+				file: row.file,
+			},
+		);
 	});
 }
 
@@ -434,6 +443,12 @@ export const config: Command = {
 			...rowsOf(composed),
 			...unset.map((key) => ({ key, value: null, layer: "unset" })),
 		];
-		return printConfig(deps, isSet(early, "json"), rows, undefined);
+		return printConfig(
+			deps,
+			isSet(early, "json"),
+			colorOf(deps, early).out,
+			rows,
+			undefined,
+		);
 	},
 };

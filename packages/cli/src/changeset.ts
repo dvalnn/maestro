@@ -36,6 +36,7 @@ import {
 	CliError,
 	EXIT,
 	NAME_CONCERT,
+	orAbsent,
 	paint,
 	resolveInstanceName,
 	table,
@@ -484,12 +485,11 @@ async function shown(stored: Stored, prefix: string) {
 	deps.stderr(headOf(p, subject, stored.store, colors.err));
 	if (p.message !== undefined) deps.stdout(p.message.trimEnd());
 	const color = colorFlag(deps, values);
-	const absent = paint("dim", "-", colors.out);
 	if (isSet(values, "summary")) {
 		deps.stdout(
 			table([
-				[paint("dim", "tour", colors.out), p.row.tour || absent],
-				[paint("dim", "title", colors.out), p.row.title || absent],
+				[paint("dim", "tour", colors.out), orAbsent(p.row.tour, colors.out)],
+				[paint("dim", "title", colors.out), orAbsent(p.row.title, colors.out)],
 			]),
 		);
 		print(deps, diffOf(p, tree, [color, "--name-status"]));

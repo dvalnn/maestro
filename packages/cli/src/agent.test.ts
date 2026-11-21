@@ -2,6 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { cleanup } from "./fixtures/packs";
 import { GREET, hostOf, json, world } from "./fixtures/world";
 import * as hosts from "./hosts";
@@ -74,19 +75,35 @@ const TUNED = [
 ];
 
 describe("agent ls", () => {
+	// Seam: agent ls's terminal stdout.
+	test("the terminal roster has a bold header and dim absent values", async () => {
+		const w = await roster();
+		const terminal = () => ({ columns: 200, rows: 24 });
+		const on = await w.call(["agent", "ls", "--color"], { terminal });
+		expect(on.code).toBe(0);
+		expect(on.out).toStartWith("\u001b[1m");
+		expect(stripVTControlCharacters(on.out).split("\n")[0]).toMatch(
+			/^profile +harness +model +from$/,
+		);
+		const dash = RegExp.escape("\u001b[2m-\u001b[22m");
+		expect(on.out).toMatch(new RegExp(`^broken +pi +${dash} +workspace$`, "m"));
+		expect(on.out).toMatch(
+			new RegExp(`^slow +${dash} +${dash} +workspace$`, "m"),
+		);
+	});
 	test("lists each profile with its runtime and winning root, a pack shadow marked, a harness set without a model shown, a broken row's faults under it", async () => {
 		const w = await roster();
 		const listed = await w.call(["agent", "ls"]);
 		expect(listed.err).toBe("");
 		expect(listed.code).toBe(0);
 		expect(listed.out.split("\n")).toEqual([
-			"Profiles         harness  model   from",
-			"  broken         pi       -       workspace",
-			"  demo/builder   claude   sonnet  workspace  [shadows pack]",
-			"  demo/reviewer  stub     none    pack",
-			"  scout          pi       gpt     user",
-			"  slow           -        -       workspace",
-			"    limits.timeout 'soon' is not a duration",
+			"profile        harness  model   from",
+			"broken         pi       -       workspace",
+			"demo/builder   claude   sonnet  workspace  [shadows pack]",
+			"demo/reviewer  stub     none    pack",
+			"scout          pi       gpt     user",
+			"slow           -        -       workspace",
+			"  limits.timeout 'soon' is not a duration",
 		]);
 	});
 
@@ -97,7 +114,7 @@ describe("agent ls", () => {
 			"runtime: {}\n",
 		);
 		const listed = await w.call(["agent", "ls"]);
-		expect(listed.out).toMatch(/^ {2}bare +- +- +workspace$/m);
+		expect(listed.out).toMatch(/^bare +- +- +workspace$/m);
 		expect(listed.out).not.toContain("no harness or model");
 	});
 

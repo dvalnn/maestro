@@ -172,7 +172,7 @@ const rootHelp = (color: boolean) => {
 		heading("Commands:"),
 		table(
 			VERBS.map((v) => [
-				`  ${v.name}`,
+				`  ${paint("cyan", v.name, color)}`,
 				v.alias ? `(${v.alias})` : "",
 				v.summary,
 			]),

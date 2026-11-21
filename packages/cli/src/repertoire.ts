@@ -1,13 +1,21 @@
 import { basename, resolve } from "node:path";
+import { tildeOf } from "@maestro/core";
 import { ConfigError } from "@maestro/core/config";
 import type { Host } from "@maestro/core/host";
 import { type Ir, indexGraph, messageOf } from "@maestro/ir";
 import type { Described } from "@maestro/sdk/loader";
-import { COMMON, type Command, type Deps, isSet, parse } from "./command";
+import {
+	COMMON,
+	type Command,
+	colorOf,
+	type Deps,
+	isSet,
+	parse,
+} from "./command";
 import type { PackDir } from "./config";
 import { flagUsage, type ParamEntry, paramEntries, paramsBlock } from "./flags";
 import { type Bundle, claimsOf, openPack } from "./loader";
-import { ArgumentError, EXIT, jsonOf, table } from "./output";
+import { ArgumentError, EXIT, jsonOf, paint, table } from "./output";
 import { paramValues } from "./params";
 import { chosen, installedPack } from "./prepare";
 import { openSession, overridesOf } from "./session";
@@ -142,19 +150,29 @@ async function loadAll(
 
 const firstLine = (text = "") => text.split("\n", 1)[0] ?? "";
 
-function packText(p: PackEntry): string {
-	const header = [`${p.id} ${p.version}`, p.path];
+function packText(p: PackEntry, { color, home }: Look): string {
+	const header = [
+		`${paint("bold", p.id, color)} ${paint("dim", p.version, color)}`,
+		paint("dim", tildeOf(p.path, home), color),
+	];
 	if (p.config) header.push(`listed in ${p.config}`);
 	const rows = table(
-		p.compositions.map((c) => [`  ${c.name}`, firstLine(c.doc)]),
+		p.compositions.map((c) => [
+			`  ${paint("cyan", c.name, color)}`,
+			firstLine(c.doc),
+		]),
 	);
 	return rows ? `${header.join("  ")}\n${rows}` : header.join("  ");
 }
 
-function compositionText(c: CompositionEntry, composition: Described): string {
+function compositionText(
+	c: CompositionEntry,
+	composition: Described,
+	color: boolean,
+): string {
 	const [first = "", ...rest] = (c.doc ?? "").split("\n");
-	const lines = [table([[c.id, first]]), ...rest];
-	const params = paramsBlock(composition);
+	const lines = [table([[paint("bold", c.id, color), first]]), ...rest];
+	const params = paramsBlock(composition, color);
 	if (params) lines.push(params);
 	if (c.config?.length) lines.push(`Config  ${c.config.join(", ")}`);
 	lines.push("", `  ${c.perform}`);
@@ -189,10 +207,20 @@ function selected(
 	return { entries: only, composition };
 }
 
-function printed(deps: Deps, { entries, composition }: Selection): void {
+/** How a pack listing shows: colored, and with the directory `home` as `~` on a terminal. */
+type Look = { color: boolean; home: string | undefined };
+
+function printed(
+	deps: Deps,
+	{ entries, composition }: Selection,
+	color: boolean,
+): void {
 	const [only] = entries[0]?.compositions ?? [];
-	if (composition && only) deps.stdout(compositionText(only, composition));
-	else if (entries.length) deps.stdout(entries.map(packText).join("\n"));
+	const look = { color, home: deps.terminal ? deps.env.HOME : undefined };
+	if (composition && only)
+		deps.stdout(compositionText(only, composition, color));
+	else if (entries.length)
+		deps.stdout(entries.map((e) => packText(e, look)).join("\n"));
 }
 
 export const repertoire: Command = {
@@ -217,7 +245,7 @@ export const repertoire: Command = {
 		const all = await loadAll(dirs, deps);
 		const shown = selected(all, positionals[0], packsDir);
 		if (isSet(values, "json")) deps.stdout(jsonOf({ packs: shown.entries }));
-		else printed(deps, shown);
+		else printed(deps, shown, colorOf(deps, values).out);
 		if (!dirs.length)
 			deps.stderr(
 				`no packs are installed\nExtract one into ${packsDir}, or list its directory under packs in the config`,

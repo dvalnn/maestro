@@ -128,6 +128,49 @@ test("--tour accepts a 64-character tour", async () => {
 });
 
 describe("compose and config", () => {
+	// Seam: config's table on a terminal and in a pipe, for a composition and a recorded concert.
+	test("config distinguishes table headings, sources and home file locations on a terminal", async () => {
+		const w = await world();
+		await Bun.write(
+			join(w.cwd, ".maestro/config.yaml"),
+			`packs: [${w.pack}]\nconcurrency: 2\n`,
+		);
+		const terminal = () => ({ columns: 200, rows: 24 });
+		const env = { HOME: w.root, TERM: "xterm" };
+		const performed = await w.call(["perform", ...GREET], {
+			hosts: [hostOf()],
+			env,
+		});
+		expect(performed.code).toBe(0);
+		for (const target of ["demo.greet", idOf(performed)]) {
+			const on = await w.call(["config", target, "--color"], { terminal, env });
+			expect(on.code).toBe(0);
+			expect(on.out).toStartWith("\u001b[1m");
+			expect(stripVTControlCharacters(on.out).split("\n")[0]).toMatch(
+				/^key +source +value +from$/,
+			);
+			expect(on.out).toContain("\u001b[2mworkspace\u001b[22m");
+			expect(on.out).toContain(
+				"\u001b[2m~/ws/.maestro/config.yaml:2\u001b[22m",
+			);
+			// A row with no file or flag ends at its value, no escape after it.
+			expect(on.out).toMatch(
+				new RegExp(
+					`^caps +${RegExp.escape("\u001b[2mdefault\u001b[22m")} +\\{\\}$`,
+					"m",
+				),
+			);
+			const piped = await w.call(["config", target], { env });
+			expect(piped.code).toBe(0);
+			expect(piped.out).toMatch(
+				new RegExp(
+					`^concurrency +workspace +2 +${RegExp.escape(join(w.cwd, ".maestro/config.yaml"))}:2$`,
+					"m",
+				),
+			);
+			expect(piped.out).not.toContain("\u001b[");
+		}
+	});
 	// Seam: recorded readers' exit codes and JSON, with config files and code unavailable, after a host stops declaring a deferred key.
 	test("recorded readers show the performed plan and composed snapshot without config files or composition code, and every concert when one no longer composes", async () => {
 		const w = await world();
@@ -1613,6 +1656,19 @@ describe("usage errors", () => {
 		expect(root).toMatch(/^ {6}--color +.*--no-color turns it off/m);
 	});
 
+	// Seam: root help's terminal and piped stdout.
+	test("root help colors command names on a terminal and leaves piped help plain", async () => {
+		const w = await world();
+		const terminal = () => ({ columns: 200, rows: 24 });
+		const on = await w.call(["--help", "--color"], { terminal });
+		expect(on.code).toBe(0);
+		expect(on.out).toContain(`${ESC}[36mrepertoire${ESC}[39m`);
+		expect(on.out).toContain(`${ESC}[36mperform${ESC}[39m`);
+		const piped = await w.call(["--help"]);
+		expect(piped.code).toBe(0);
+		expect(stripVTControlCharacters(on.out)).toBe(piped.out);
+	});
+
 	test("--help bolds headings and colors flags, and a table header is bold, only on a terminal with color on", async () => {
 		const w = await world();
 		const terminal = () => ({ columns: 80, rows: 24 });
@@ -2095,6 +2151,26 @@ describe("the record", () => {
 				expect.objectContaining({ node: "echo/echo", status: "failed" }),
 			]),
 		});
+	});
+
+	// Seam: ls's table on a terminal and in a pipe.
+	test("ls dims absent table values on a terminal and leaves piped dashes plain", async () => {
+		const w = await world();
+		const performed = await w.call(["perform", ...GREET], {
+			hosts: [hostOf()],
+		});
+		expect(performed.code).toBe(0);
+		const terminal = () => ({ columns: 200, rows: 24 });
+		const on = await w.call(["ls", "--color"], { terminal });
+		expect(on.code).toBe(0);
+		const dash = RegExp.escape(`${ESC}[2m-${ESC}[22m`);
+		expect(on.out).toMatch(
+			new RegExp(` +${dash} +${dash} +ws +demo\\.greet +${dash}`),
+		);
+		const piped = await w.call(["ls"]);
+		expect(piped.code).toBe(0);
+		expect(piped.out).toMatch(/ - +- +/);
+		expect(piped.out).not.toContain(ESC);
 	});
 
 	test("ls colors its status column on a terminal stdout only, with color on, and its table stays aligned", async () => {
@@ -3501,7 +3577,11 @@ describe("exit codes and error states", () => {
 			const w = await world();
 			const piped = await w.call(["repertoire"]);
 			const a = fakePager();
-			const out = await w.call(["repertoire"], { terminal, env, ...a });
+			const out = await w.call(["repertoire", "--no-color"], {
+				terminal,
+				env,
+				...a,
+			});
 			expect(out).toEqual({ code: 0, out: "", err: "" });
 			expect(a.seen.text.trimEnd()).toBe(piped.out);
 			expect(a.seen).toMatchObject({
@@ -3510,7 +3590,7 @@ describe("exit codes and error states", () => {
 				closed: 1,
 			});
 			const b = fakePager();
-			await w.call(["repertoire"], {
+			await w.call(["repertoire", "--no-color"], {
 				terminal,
 				...b,
 				env: { ...env, PAGER: "cat | bat -p", LESS: "-i" },
@@ -3563,7 +3643,11 @@ describe("exit codes and error states", () => {
 				throw new Error("ENOENT");
 			};
 			expect(
-				await w.call(["repertoire"], { terminal, env, startPager }),
+				await w.call(["repertoire", "--no-color"], {
+					terminal,
+					env,
+					startPager,
+				}),
 			).toEqual(piped);
 		});
 
@@ -3571,7 +3655,7 @@ describe("exit codes and error states", () => {
 			const w = await world();
 			const piped = await w.call(["repertoire"]);
 			const missing = fakePager(127);
-			const out = await w.call(["repertoire"], {
+			const out = await w.call(["repertoire", "--no-color"], {
 				terminal,
 				...missing,
 				env: { ...env, PAGER: "nonexistent" },
@@ -3586,7 +3670,7 @@ describe("exit codes and error states", () => {
 			const w = await world();
 			const sink = join(w.root, "paged.txt");
 			const piped = await w.call(["repertoire"]);
-			const out = await w.call(["repertoire"], {
+			const out = await w.call(["repertoire", "--no-color"], {
 				terminal,
 				startPager,
 				env: { ...env, PAGER: `cat | dd status=none of=${sink}` },

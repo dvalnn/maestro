@@ -42,6 +42,7 @@ import {
 } from "./host-text";
 import {
 	ArgumentError,
+	absent,
 	CliError,
 	concertDoc,
 	EXIT,
@@ -50,6 +51,7 @@ import {
 	formatBytes,
 	jsonOf,
 	NAME_CONCERT,
+	orAbsent,
 	paint,
 	parseCount,
 	parseDuration,
@@ -142,9 +144,8 @@ const listRow = (
 	notes,
 });
 
-const tokenCell = (tokens: number) => (tokens > 0 ? compact(tokens) : "-");
-
-const dash = (text: string | undefined) => text || "-";
+const tokenCell = (tokens: number, color: boolean) =>
+	tokens > 0 ? compact(tokens) : absent(color);
 
 /** What follows a concert's status in `ls` when its instances have notes. */
 const NOTED_MARK = "•";
@@ -372,12 +373,12 @@ function listed(stored: Stored, query: ConcertFilter) {
 					? stateWord(r.status, color, `${r.status} ${NOTED_MARK}`)
 					: stateWord(r.status, color),
 				duration(r.elapsedMs),
-				dash(r.title),
-				dash(r.tour),
-				dash(r.workspace),
+				orAbsent(r.title, color),
+				orAbsent(r.tour, color),
+				orAbsent(r.workspace, color),
 				`${r.pack}.${r.composition}`,
-				tokenCell(r.tokens),
-				r.diskUse === undefined ? "-" : formatBytes(r.diskUse),
+				tokenCell(r.tokens, color),
+				r.diskUse === undefined ? absent(color) : formatBytes(r.diskUse),
 			]),
 		],
 		color,
