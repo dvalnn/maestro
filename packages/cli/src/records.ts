@@ -674,6 +674,8 @@ export const kill: Command = {
 		),
 };
 
+const TOUR_HELP = "Give set a slug and a concert, or clear a concert";
+
 const TOUR_FIX =
 	"Write maestro tour set <slug> <concert>..., or maestro tour clear <concert>...";
 
@@ -690,7 +692,7 @@ function tourAndConcerts(_values: Values, positionals: readonly string[]) {
 	if (ids.length === 0)
 		throw new ArgumentError(
 			`${action} needs ${action === "set" ? "a slug and " : ""}at least one concert`,
-			TOUR_FIX,
+			TOUR_HELP,
 		);
 	return {
 		slug:

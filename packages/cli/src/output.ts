@@ -359,8 +359,8 @@ export function printClosing(
 						// The step a concert ended at holds its report; an ok one's steps are listed.
 						hint:
 							at === undefined
-								? `maestro ls ${id} --json`
-								: `maestro ls ${id} ${shellArg(at)} --json`,
+								? `Details: maestro ls ${id} --json`
+								: `Details: maestro ls ${id} ${shellArg(at)} --json`,
 						cutHint: `Full outputs: maestro wait ${id} --json | jq .outputs`,
 					},
 				},

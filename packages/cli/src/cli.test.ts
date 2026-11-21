@@ -258,6 +258,28 @@ describe("compose and config", () => {
 		});
 	});
 
+	test("compose highlights the composition name on a terminal and leaves piped output plain", async () => {
+		const w = await world();
+		const args = ["compose", ...GREET];
+		const terminal = () => ({ columns: 120, rows: 24 });
+		const piped = await w.call(args);
+		const shown = await w.call(args, { terminal });
+		expect(piped.code).toBe(0);
+		expect(shown.code).toBe(0);
+		expect(piped.out).toStartWith("greet: 4 node instances");
+		expect(shown.out).toStartWith(`${ESC}[1mgreet${ESC}[22m: 4 node instances`);
+		expect(stripVTControlCharacters(shown.out)).toBe(piped.out);
+	});
+
+	test("compose --plan highlights the composition name on a terminal", async () => {
+		const w = await world();
+		const shown = await w.call(["compose", ...GREET, "--plan"], {
+			terminal: () => ({ columns: 120, rows: 24 }),
+		});
+		expect(shown.code).toBe(0);
+		expect(shown.out).toStartWith(`${ESC}[1mgreet${ESC}[22m: 4 node instances`);
+	});
+
 	test("compose --concert pre-flights the graph the concert recorded, not one built anew, and takes no composition or param flag", async () => {
 		const w = await world();
 		const id = idOf(await w.call(["p", ...GREET]));
@@ -841,6 +863,25 @@ describe("perform", () => {
 			);
 	});
 
+	test("wait and foreground perform end with a dim details hint only on a terminal", async () => {
+		const w = await world();
+		const hosts = [hostOf()];
+		const terminal = () => ({ columns: 120, rows: 24 });
+		const performed = await w.call(["perform", ...GREET], { hosts, terminal });
+		const id = idOf(performed);
+		expect(performed.code).toBe(0);
+		const hint = `${ESC}[2mDetails: maestro ls ${shortOf(id)} --json${ESC}[22m`;
+		const waited = await w.call(["wait", id], { terminal });
+		expect(waited.code).toBe(0);
+		expect([
+			performed.out.split("\n").at(-1),
+			waited.out.split("\n").at(-1),
+		]).toEqual([hint, hint]);
+		expect((await w.call(["wait", id])).out).toBe("text       done");
+		const piped = await w.call(["perform", ...GREET], { hosts });
+		expect(piped.out).toBe("text       done");
+	});
+
 	test("the closing hint of a concert that ended inside a group is a shell command that names the step", async () => {
 		const w = await world();
 		const done = { outcome: "ok", outputs: { text: "done" } } as const;
@@ -862,13 +903,14 @@ describe("perform", () => {
 		});
 		expect(closed.code).toBe(1);
 		const hint = closed.out.trim().split("\n").at(-1) ?? "";
+		expect(hint.startsWith("Details: ")).toBe(true);
 		// failglob refuses an unquoted word that globs to nothing, as zsh does.
 		const shell = Bun.spawnSync([
 			"bash",
 			"-O",
 			"failglob",
 			"-c",
-			`set -- ${hint}; printf '%s\\n' "$@"`,
+			`set -- ${hint.slice("Details: ".length)}; printf '%s\\n' "$@"`,
 		]);
 		expect(shell.exitCode).toBe(0);
 		const words = shell.stdout.toString().trimEnd().split("\n");
@@ -3072,6 +3114,34 @@ describe("prune", () => {
 });
 
 describe("prune --dry-run", () => {
+	test("prune -n colors statuses on a terminal while keeping its scripted layout", async () => {
+		const w = await world();
+		const done = idOf(
+			await w.call(["perform", ...GREET], { hosts: [hostOf()] }),
+		);
+		const broke = idOf(
+			await w.call(["perform", ...GREET], {
+				hosts: [hostOf({ outcome: "failed", reason: "flaky" })],
+			}),
+		);
+		const terminal = () => ({ columns: 120, rows: 24 });
+		const args = ["prune", done, broke, "-n"];
+		const piped = await w.call(args);
+		const shown = await w.call(args, { terminal });
+		expect(piped.code).toBe(0);
+		expect(shown.code).toBe(0);
+		const lines = shown.out.split("\n");
+		expect(lines).toHaveLength(2);
+		expect(lines.find((line) => line.startsWith(done))).toContain(
+			`${ESC}[32mok${ESC}[39m`,
+		);
+		expect(lines.find((line) => line.startsWith(broke))).toContain(
+			`${ESC}[31mfailed${ESC}[39m`,
+		);
+		expect(stripVTControlCharacters(shown.out)).toBe(piped.out);
+		expect(piped.out).not.toContain(ESC);
+	});
+
 	// Seam: the dry-run listing and the unchanged store as read through ls.
 	test("prune --all --dry-run lists every selected concert and deletes none", async () => {
 		const w = await world();
@@ -3160,6 +3230,27 @@ describe("prune --dry-run", () => {
 			existsSync(join(w.env.XDG_DATA_HOME, "maestro/concerts", done)),
 		).toBe(true);
 	});
+});
+
+test("tour set usage points to help without repeating its usage lines", async () => {
+	const w = await world();
+	const stderrTerminal = () => ({ columns: 120, rows: 24 });
+	const shown = await w.call(["tour", "set", "slug"], { stderrTerminal });
+	const piped = await w.call(["tour", "set", "slug"]);
+	expect(shown.code).toBe(2);
+	expect(piped.code).toBe(2);
+	const lines = shown.err.split("\n");
+	const hint = lines.at(-1) ?? "";
+	expect(hint.startsWith(`  ${ESC}[2m`)).toBe(true);
+	expect(hint.endsWith(`${ESC}[22m`)).toBe(true);
+	expect(stripVTControlCharacters(hint)).toContain("maestro tour --help");
+	expect(stripVTControlCharacters(hint)).not.toContain(
+		"maestro tour set <slug> <concert>",
+	);
+	expect(stripVTControlCharacters(hint)).not.toContain(
+		"maestro tour clear <concert>",
+	);
+	expect(piped.err).not.toContain(ESC);
 });
 
 describe("prune --dry-run edges", () => {

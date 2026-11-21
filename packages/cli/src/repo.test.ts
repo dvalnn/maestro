@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { cp } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import type { Host } from "@maestro/core/host";
 import { openRecord } from "@maestro/core/perform";
 import { repoHost } from "@maestro/host-repo";
@@ -1553,12 +1554,77 @@ export const ${name} = composition("${name}", { examples: [{}] }, () => {
 		});
 	});
 
+	test("changeset show highlights its concert and base on terminal stderr", async () => {
+		const w = await edited();
+		const stderrTerminal = () => ({ columns: 120, rows: 24 });
+		const args = ["cs", "show", w.id];
+		const piped = await w.call(args, { env: GIT_ENV });
+		const shown = await w.call(args, { env: GIT_ENV, stderrTerminal });
+		const short = shortOf(w.id);
+		const base = git(w.target, "rev-parse", "--short", "HEAD");
+		expect(piped.code).toBe(0);
+		expect(shown.code).toBe(0);
+		expect(shown.err).toStartWith(
+			`\u001b[1m${short[0]}\u001b[22m\u001b[2m${short.slice(1)}\u001b[22m`,
+		);
+		expect(shown.err).toContain("concert \u001b[32mok\u001b[39m");
+		expect(shown.err).toContain(`on base \u001b[33m${base}\u001b[39m two`);
+		expect(stripVTControlCharacters(shown.err)).toBe(piped.err);
+		expect(shown.out).toBe(piped.out);
+	});
+
+	test("changeset show lengthens the bold id prefix when another concert's short id collides", async () => {
+		const w = await edited();
+		// Change the fifth of the 15 digits the short id spells: the two ids share four letters.
+		const at = 25;
+		const digit = (Number.parseInt(w.id[at] ?? "0", 16) + 1) % 16;
+		const twin = `${w.id.slice(0, at)}${digit.toString(16)}${w.id.slice(at + 1)}`;
+		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+		db.run("CREATE TEMP TABLE twin AS SELECT * FROM concerts WHERE id = ?", [
+			w.id,
+		]);
+		db.run("UPDATE twin SET id = ?", [twin]);
+		db.run("INSERT INTO concerts SELECT * FROM twin");
+		db.close();
+		const shown = await w.call(["cs", "show", w.id], {
+			env: GIT_ENV,
+			stderrTerminal: () => ({ columns: 120, rows: 24 }),
+		});
+		expect(shown.code).toBe(0);
+		const short = shortOf(w.id);
+		expect(shown.err).toStartWith(
+			`\u001b[1m${short.slice(0, 5)}\u001b[22m\u001b[2m${short.slice(5)}\u001b[22m `,
+		);
+	});
+
+	test("changeset show summary dims its labels on a terminal and leaves piped output plain", async () => {
+		const w = await edited();
+		const terminal = () => ({ columns: 120, rows: 24 });
+		const args = ["cs", "show", w.id, "--summary"];
+		const piped = await w.call(args, { env: GIT_ENV });
+		const shown = await w.call(args, { env: GIT_ENV, terminal });
+		expect(piped.code).toBe(0);
+		expect(shown.code).toBe(0);
+		expect(piped.out).toBe("tour   -\ntitle  -\nM\ta.txt");
+		const [tour = "", title = ""] = shown.out.split("\n");
+		for (const [line, label] of [
+			[tour, "tour"],
+			[title, "title"],
+		] as const) {
+			expect(line.startsWith(`\u001b[2m${label}`)).toBe(true);
+			const [dimmed, value] = line.split("\u001b[22m");
+			expect(dimmed?.trimEnd()).toBe(`\u001b[2m${label}`);
+			expect(value?.trimStart()).toBe("\u001b[2m-");
+		}
+		expect(stripVTControlCharacters(shown.out)).toBe(piped.out);
+	});
+
 	test("the closing block shows what the changeset touches on a terminal stdout only", async () => {
 		const w = await edited();
 		const terminal = () => ({ columns: 80, rows: 24 });
 		const env = { ...GIT_ENV, NO_COLOR: "1" };
 		expect((await w.call(["wait", w.id], { terminal, env })).out).toMatch(
-			/\nchanges {4}1 file {2}\+1 \u22121\nmaestro ls \S+ --json$/,
+			/\nchanges {4}1 file {2}\+1 \u22121\nDetails: maestro ls \S+ --json$/,
 		);
 		expect((await w.call(["wait", w.id], { env })).out).not.toMatch(
 			/^changes /m,

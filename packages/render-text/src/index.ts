@@ -11,6 +11,7 @@ import {
 	type Plan,
 	type Severity,
 } from "@maestro/ir";
+import { styled } from "./live";
 import { label, START, STOP } from "./mermaid";
 
 export { flow } from "./flow";
@@ -38,8 +39,8 @@ const expansionOf = (n: IrNode, e: Expansion) =>
 		? `${n.test.at === "start" ? 0 : 1} to ${e.upTo}`
 		: shownExpansion(e);
 
-/** The plan in one line: node instances, each host count, then its diagnostics counted by severity. */
-export function summary(plan: Plan): string {
+/** The plan in one line: node instances, each host count, then its diagnostics counted by severity. The name is bold when `color`. */
+export function summary(plan: Plan, color = false): string {
 	const { bounds, diagnostics } = plan;
 	const parts = [
 		counted(amount(bounds.instances), "node instance"),
@@ -49,7 +50,8 @@ export function summary(plan: Plan): string {
 			return n ? [counted(n, s)] : [];
 		}),
 	];
-	return `${plan.ir.composition.id}: ${parts.join(", ")}`;
+	const name = plan.ir.composition.id;
+	return `${color ? styled("bold", name) : name}: ${parts.join(", ")}`;
 }
 
 const instance = (graph: GraphIndex, node: string, path: string) =>
@@ -83,12 +85,12 @@ function nodeLines(plan: Plan, graph: GraphIndex): string[] {
 	]);
 }
 
-/** The plan in full: each node with its kind, instance count and expansions, then its bounds. */
-export function listing(plan: Plan): string {
+/** The plan in full: each node with its kind, instance count and expansions, then its bounds; `color` as in `summary`. */
+export function listing(plan: Plan, color = false): string {
 	const graph = indexGraph(plan.ir);
 	const { bounds } = plan;
 	return [
-		summary(plan),
+		summary(plan, color),
 		"nodes:",
 		...nodeLines(plan, graph),
 		"bounds:",

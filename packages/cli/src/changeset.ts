@@ -14,7 +14,7 @@ import {
 	patchFiles,
 } from "@maestro/host-repo";
 import { type Ir, indexGraph, isPlainObject } from "@maestro/ir";
-import { type Changes, shortIds } from "@maestro/render-text/live";
+import { type Changes, shortIds, stateWord } from "@maestro/render-text/live";
 import {
 	type Command,
 	colorOf,
@@ -36,6 +36,7 @@ import {
 	CliError,
 	EXIT,
 	NAME_CONCERT,
+	paint,
 	resolveInstanceName,
 	table,
 	usageError,
@@ -463,6 +464,15 @@ export async function changesOf(
 	}
 }
 
+/** The head line of `cs show`: the short id, concert status and base, colored when `color`; `subject` is the base's `%h %s`. */
+function headOf(p: Picked, subject: string, store: Records, color: boolean) {
+	const id = shortIds(store.ids()).label(p.row.id, color);
+	const status = stateWord(p.row.status, color);
+	const [sha = "", ...title] = subject.split(" ");
+	const base = [paint("yellow", sha, color), ...title].join(" ");
+	return `${id} (node ${p.instance}, concert ${status}) on base ${base}`;
+}
+
 async function shown(stored: Stored, prefix: string) {
 	const { session, values } = stored;
 	const { deps } = session;
@@ -470,16 +480,16 @@ async function shown(stored: Stored, prefix: string) {
 	checked(p, stored);
 	const tree = await treeOf(p);
 	const subject = git(p.checkout, ["log", "-1", "--format=%h %s", p.base]);
-	deps.stderr(
-		`${p.short} (node ${p.instance}, concert ${p.row.status}) on base ${subject}`,
-	);
+	const colors = colorOf(deps, values);
+	deps.stderr(headOf(p, subject, stored.store, colors.err));
 	if (p.message !== undefined) deps.stdout(p.message.trimEnd());
 	const color = colorFlag(deps, values);
+	const absent = paint("dim", "-", colors.out);
 	if (isSet(values, "summary")) {
 		deps.stdout(
 			table([
-				["tour", p.row.tour || "-"],
-				["title", p.row.title || "-"],
+				[paint("dim", "tour", colors.out), p.row.tour || absent],
+				[paint("dim", "title", colors.out), p.row.title || absent],
 			]),
 		);
 		print(deps, diffOf(p, tree, [color, "--name-status"]));

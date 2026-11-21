@@ -117,7 +117,7 @@ concert    pwmqwmlu  failed  13s · 29.7k tok
 at         repair_until_green/loop[0]/repair
 reason     blocked: the failing check contradicts the spec
 logs       ~/.local/share/maestro/concerts/01a154e0-0160-7590-ba3d-93de543f1059/artifacts/abuKV1B/check.log
-maestro ls pwmqwmlu 'repair_until_green/loop[0]/repair' --json
+Details: maestro ls pwmqwmlu 'repair_until_green/loop[0]/repair' --json
 ```
 
 Stdout holds a row per output port of the result node.
@@ -127,8 +127,8 @@ Stdout holds a row per output port of the result node.
   stays its path.
 - `changes` follows when the concert holds a changeset whose diff can be read, `3 files  +120 −14` as
   `changeset show --stat` counts them. Then a dim hint, or `Full outputs: ...` when a value shows as its shape. The hint
-  is `maestro ls <concert> --json`, or for a concert that is not ok `maestro ls <concert> <instance> --json`, naming the
-  step it ended at, which holds its report.
+  is `Details: maestro ls <concert> --json`, or for a concert that is not ok and ended at a step
+  `Details: maestro ls <concert> <instance> --json`, naming the step, which holds its report.
 - Piped or redirected, stdout is a `<port>  <value>` line per output and nothing else, with no color or wrapping, values
   as they are and paths absolute. On a terminal a path in the home directory starts with `~`.
 - With `--json`, stdout holds the document instead, and the id of a `perform` stays on its stderr line. A one-line

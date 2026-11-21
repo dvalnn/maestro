@@ -152,9 +152,8 @@ const agentsIn = ({ deps, roots, config }: Shown, plan: Plan) =>
 /** The plan in full, then its `agents:` block when it has agent nodes. */
 async function planText(shown: Shown, plan: Plan): Promise<string> {
 	const agents = await agentsIn(shown, plan);
-	return agents.length
-		? `${listing(plan)}\n${agentLines(agents)}`
-		: listing(plan);
+	const text = listing(plan, colorOf(shown.deps, shown.values).out);
+	return agents.length ? `${text}\n${agentLines(agents)}` : text;
 }
 
 /**
@@ -166,7 +165,11 @@ async function print(shown: Shown, plan: Plan): Promise<void> {
 	const full = isSet(values, "plan");
 	const graph = isSet(values, "graph") || isSet(values, "flow");
 	if (full || !graph)
-		deps.stdout(full ? await planText(shown, plan) : summary(plan));
+		deps.stdout(
+			full
+				? await planText(shown, plan)
+				: summary(plan, colorOf(deps, values).out),
+		);
 	if (graph) deps.stdout(isSet(values, "flow") ? flow(plan) : render(plan));
 }
 

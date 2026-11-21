@@ -6,9 +6,10 @@ import {
 	diskUseOf,
 } from "@maestro/core/perform";
 import { DURATION_EXAMPLE, messageOf } from "@maestro/ir";
-import { duration } from "@maestro/render-text/live";
+import { duration, stateWord } from "@maestro/render-text/live";
 import {
 	type Command,
+	colorOf,
 	FILTER_OPTIONS,
 	filterOf,
 	isSet,
@@ -294,7 +295,7 @@ const concertsWord = (count: number) =>
 
 /** Lists `targets`, each with its status, time and size, and what pruning them would free, and prunes nothing. */
 function rehearsed(
-	{ session: { deps }, json }: Stored,
+	{ session: { deps }, values, json }: Stored,
 	targets: readonly ConcertRecord[],
 	sizes: readonly number[],
 	total: number,
@@ -315,7 +316,7 @@ function rehearsed(
 				table(
 					targets.map((c, i) => [
 						c.id,
-						c.status,
+						stateWord(c.status, colorOf(deps, values).out),
 						duration(elapsedOf(c)),
 						formatBytes(sizes[i] ?? 0),
 					]),
