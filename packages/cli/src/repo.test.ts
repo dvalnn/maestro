@@ -459,9 +459,9 @@ test("artifact ls dims the dash of an artifact no output port holds, on a termin
 	const terminal = () => ({ columns: 200, rows: 24 });
 	const dash = RegExp.escape("\u001b[2m-\u001b[22m");
 	const on = await w.call(["art", "ls", id, "--color"], { terminal });
-	expect(on.out).toMatch(new RegExp(`^inner/a +${dash} +/`, "m"));
+	expect(on.out).toMatch(new RegExp(`^inner/a +${dash} +\\w+/`, "m"));
 	const piped = await w.call(["art", "ls", id]);
-	expect(piped.out).toMatch(/^inner\/a +- +\//m);
+	expect(piped.out).toMatch(/^inner\/a +- +\w+\//m);
 });
 
 test("artifact lists a concert's artifacts, prints an instance's files by a unique ending, and refuses what names none", async () => {
@@ -481,10 +481,14 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 		["notes", true],
 		["staged", true],
 	]);
-	const table = (await w.call(["artifact", "ls", id])).out.split("\n");
+	const [head, ...table] = (await w.call(["artifact", "ls", id])).out.split(
+		"\n",
+	);
+	expect(head).toBe(`artifacts  ${area}`);
 	expect(table[0]).toMatch(/^instance +port +stale +path$/);
+	const notesPath = listed.find((a) => a.port === "notes")?.path ?? "";
 	expect(table).toContain(
-		`inner/a      notes          ${listed.find((a) => a.port === "notes")?.path}`,
+		`inner/a      notes          ${notesPath.slice(area.length + 1)}`,
 	);
 	expect((await w.call(["art", "ls", id, "--path"])).out).toBe(
 		listed.map((a) => a.path).join("\n"),
@@ -612,7 +616,7 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 	expect(
 		(await w.call(["art", "ls", id])).out
 			.split("\n")
-			.filter((l) => /^\S+ +\S+ +stale +\//.test(l))
+			.filter((l) => /^\S+ +\S+ +stale +\S+\/\S+$/.test(l))
 			.map((l) => l.split(" ")[0]),
 	).toEqual(["inner/a", "inner/a"]);
 	for (const args of [["a"], ["a", "notes.md"], ["a", "--path"]])

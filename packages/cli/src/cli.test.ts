@@ -233,7 +233,11 @@ describe("compose and config", () => {
 		expect(ended.out).toContain("maestro config demo.greet --json --");
 		const long = await w.call(
 			["config", "demo.greet", "-c", `mode.other=${"y".repeat(220)}`],
-			{ hosts: [host], env, terminal },
+			{
+				hosts: [host],
+				env,
+				terminal,
+			},
 		);
 		const [hint = "", ...rows] = long.out.split("\n").reverse();
 		expect(rows.every((l) => Bun.stringWidth(l) <= 80)).toBe(true);
@@ -847,7 +851,11 @@ describe("compose and config", () => {
 		expect(listed.out).toMatch(/^demo\.greet\.name +unset +unset$/m);
 		expect(
 			json(await w.call(["config", "demo.greet", "--json"])).values,
-		).toContainEqual({ key: "demo.greet.name", value: null, layer: "unset" });
+		).toContainEqual({
+			key: "demo.greet.name",
+			value: null,
+			layer: "unset",
+		});
 	});
 
 	test("config on a bare file lists the session's values and its required param unset", async () => {
@@ -904,7 +912,10 @@ describe("compose and config", () => {
 					"--out",
 					join(dir, `${name}.json`),
 				]),
-			).toMatchObject({ code: 0, err: expect.stringContaining("wrote") });
+			).toMatchObject({
+				code: 0,
+				err: expect.stringContaining("wrote"),
+			});
 		expect((await readdir(dir)).sort()).toEqual([
 			"again.bundle.js",
 			"again.json",
@@ -1364,7 +1375,10 @@ describe("usage errors", () => {
 			["cs", "apply", id],
 		];
 		const presets = [["resume", id], ["encore", id], ...readers].map(
-			(command) => ({ command, flags: ["--preset", "fast"] }),
+			(command) => ({
+				command,
+				flags: ["--preset", "fast"],
+			}),
 		);
 		const overrides = readers.flatMap((command) =>
 			["-c", "--config"].map((flag) => ({
@@ -3381,7 +3395,9 @@ describe("prune", () => {
 					"--json",
 				]),
 			),
-		).toMatchObject({ pruned: [x] });
+		).toMatchObject({
+			pruned: [x],
+		});
 		expect(await ids(w)).toEqual([y]);
 	});
 
@@ -3817,6 +3833,72 @@ describe("exit codes and error states", () => {
 			out: "[]",
 			err: "",
 		});
+	});
+
+	test("artifact ls prints the artifacts directory once, then each path relative to it, as ~ on a terminal and whole when piped, and --json keeps absolute paths", async () => {
+		const w = await world();
+		await Bun.write(join(w.root, "write.ts"), WRITE);
+		const file = join(w.root, "write.json");
+		await Bun.write(file, JSON.stringify(writeIr(codeHashOf(WRITE))));
+		const id = idOf(await w.call(["perform", file]));
+		await w.call(["wait", id]);
+		const area = join(w.root, "data/maestro/concerts", id, "artifacts");
+		const absolute = json(await w.call(["artifact", "ls", id, "--json"]));
+		const relative = absolute.map((a: { path: string }) =>
+			a.path.slice(area.length + 1),
+		);
+		expect(relative).toEqual([
+			expect.stringMatching(/^[^/]+\/a\.txt$/),
+			expect.stringMatching(/^[^/]+\/b\.txt$/),
+		]);
+		expect(absolute.map((a: { path: string }) => a.path)).toEqual(
+			relative.map((r: string) => join(area, r)),
+		);
+
+		const piped = await w.call(["artifact", "ls", id]);
+		const [head, columns, ...rows] = piped.out.split("\n");
+		expect(head).toBe(`artifacts  ${area}`);
+		expect(columns).toBe("instance  port    stale  path");
+		expect(rows.map((r) => r.split(/\s+/).at(-1))).toEqual(relative);
+
+		const env = { HOME: w.root };
+		const wide = await w.call(["artifact", "ls", id], {
+			terminal: () => ({ columns: 120, rows: 24 }),
+			env,
+		});
+		expect(wide.out).toContain(`${ESC}[2martifacts${ESC}[22m  `);
+		const wideLines = stripVTControlCharacters(wide.out).split("\n");
+		expect(wideLines[0]).toBe(
+			`artifacts  ~/data/maestro/concerts/${id}/artifacts`,
+		);
+		expect(wideLines.some((l) => l.startsWith("Full paths"))).toBe(false);
+	});
+
+	test("artifact ls on a terminal cuts a long path alone, keeping the header whole, and adds the full-paths hint", async () => {
+		const w = await world();
+		const long = WRITE.replaceAll("a.txt", `${"a".repeat(60)}.txt`).replaceAll(
+			"b.txt",
+			`${"b".repeat(60)}.txt`,
+		);
+		await Bun.write(join(w.root, "write.ts"), long);
+		const file = join(w.root, "write.json");
+		await Bun.write(file, JSON.stringify(writeIr(codeHashOf(long))));
+		const id = idOf(await w.call(["perform", file]));
+		await w.call(["wait", id]);
+		const shown = await w.call(["artifact", "ls", id], {
+			terminal: () => ({ columns: 81, rows: 24 }),
+			env: { HOME: w.root },
+		});
+		const lines = stripVTControlCharacters(shown.out).split("\n");
+		expect(lines[0]).toBe(`artifacts  ~/data/maestro/concerts/${id}/artifacts`);
+		expect(lines[1]).toMatch(/^instance +port +stale +path$/);
+		for (const l of lines.slice(2, 4)) {
+			expect(l).toEndWith("…");
+			expect(Bun.stringWidth(l)).toBe(81);
+		}
+		expect(lines.at(-1)).toBe(
+			`Full paths: maestro artifact ls ${shortOf(id)} --json`,
+		);
 	});
 
 	test("perform on a terminal stderr prints how to follow the concert under its id line, not piped and not under --json", async () => {

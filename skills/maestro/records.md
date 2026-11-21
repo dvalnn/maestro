@@ -31,7 +31,9 @@ How to read what a concert left: its instances, their outputs and artifacts, and
 
 ## Artifacts
 
-- `maestro art ls <id>` lists artifacts: instance, port, absolute path, `stale`.
+- `maestro art ls <id>` lists artifacts: instance, port, path relative to the artifacts directory it prints first,
+  `stale`. `--json` keeps absolute paths.
+- On a terminal the listing fits the width. Its path column cuts with `…`, and a cut adds a `Full paths` hint.
 - `maestro art show <id> <instance>` prints each file of an instance's artifacts, after a `══ <file>` line when there
   are several; `maestro art show <id> <instance> <file>` prints one, so it pipes. A file is its artifact's basename plus
   any inner path, such as `staged/prompt.md`. `--path` prints paths instead. An instance with no artifacts exits 1.

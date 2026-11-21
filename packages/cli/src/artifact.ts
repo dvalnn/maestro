@@ -1,12 +1,13 @@
 import { stat } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
-import { walk } from "@maestro/core";
+import { tildeOf, walk } from "@maestro/core";
 import type { ConcertRecord, InstanceRecord } from "@maestro/core/perform";
 import type { Ir } from "@maestro/ir";
 import { shellArg, shortIds } from "@maestro/render-text/live";
 import {
 	type Command,
 	colorOf,
+	columnsOf,
 	type Deps,
 	isSet,
 	type Options,
@@ -21,11 +22,14 @@ import {
 	CliError,
 	diffColored,
 	EXIT,
+	fittedTable,
+	giving,
+	jsonAgain,
 	jsonOf,
 	NAME_CONCERT,
+	paint,
 	resolveInstanceName,
 	staleCell,
-	table,
 	usageError,
 } from "./output";
 import {
@@ -162,6 +166,44 @@ function checked(values: Values, positionals: readonly string[]) {
 	return { prefix, instance, file };
 }
 
+/** The narrowest an artifact's path is cut to on a terminal. */
+const PATH_FLOOR = 12;
+
+/**
+ * The human listing of `artifacts`: the artifact area `area` once, whole, then a table whose path column is relative
+ * to it. On a terminal the area starts `~` for home, and a path wider than the terminal leaves is cut, with a hint to
+ * the full paths of `id`.
+ */
+function listingOf(
+	deps: Deps,
+	values: Values,
+	id: string,
+	area: string,
+	artifacts: readonly Listed[],
+): string {
+	const color = colorOf(deps, values).out;
+	const where =
+		deps.terminal === undefined ? area : tildeOf(area, deps.env.HOME);
+	const rows = [
+		["instance", "port", "stale", "path"],
+		...artifacts.map((a) => [
+			a.instance,
+			a.port === NO_PORT ? absent(color) : a.port,
+			staleCell(a),
+			relative(area, a.path),
+		]),
+	];
+	return [
+		`${paint("dim", "artifacts", color)}  ${where}`,
+		fittedTable(
+			rows,
+			color,
+			giving(columnsOf(deps), [{ column: 3, floor: PATH_FLOOR }]),
+			`Full paths: ${jsonAgain("artifact", ["ls", id])}`,
+		),
+	].join("\n");
+}
+
 function listed(
 	{ session, store, values, json }: Stored,
 	row: ConcertRecord,
@@ -177,23 +219,16 @@ function listed(
 		);
 	} else if (isSet(values, "path"))
 		for (const a of artifacts) deps.stdout(a.path);
-	else {
-		const shown = colorOf(deps, values).out;
+	else
 		deps.stdout(
-			table(
-				[
-					["instance", "port", "stale", "path"],
-					...artifacts.map((a) => [
-						a.instance,
-						a.port === NO_PORT ? absent(shown) : a.port,
-						staleCell(a),
-						a.path,
-					]),
-				],
-				shown,
+			listingOf(
+				deps,
+				values,
+				shortIds(store.ids()).label(row.id, false),
+				artifactsOf(session, row.id),
+				artifacts,
 			),
 		);
-	}
 	return EXIT.ok;
 }
 

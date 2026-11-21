@@ -70,10 +70,14 @@ A tour is a slug of one or more dot-separated segments, each lower-case words jo
 ### Color and paging
 
 Each stream is colored when it is a terminal, stdout and stderr by their own check. `--color` or a non-empty
-`FORCE_COLOR` colors both; `NO_COLOR`, `TERM=dumb` and `--no-color` win over both. Color covers table headers, status
-words and a dim `-` for an absent value, the `config` source and file columns, the `repertoire` pack lines and
-composition names, the `changeset show` head line, the `compose` name, the closing block, the `watch` views, the
-`error:` and `warning:` labels with their dim hint lines (a diagnostic's code shows only under `--json`), and `--help`.
+`FORCE_COLOR` colors both; `NO_COLOR`, `TERM=dumb` and `--no-color` win over both. Color covers:
+
+- table headers, status words and a dim `-` for an absent value;
+- the `config` source and file columns, the `repertoire` pack lines and composition names;
+- the `changeset show` head line, the `compose` name, the closing block and the `watch` views;
+- the `error:` and `warning:` labels with their dim hint lines (a diagnostic's code shows only under `--json`);
+- `--help`.
+
 On a terminal, `config` heads its table with `key source value from`, and a path in the home directory starts with `~`.
 
 On a terminal, some tables are cut to the terminal's width. A cut shows `…` and a dim hint to the command that shows the
@@ -327,7 +331,12 @@ concert's code, or 0 while it runs.
 
 ### Artifacts
 
-- `ls --json` is a list of `{instance, port, path, contentHash}`, plus `stale: true` on a stale instance's.
+- `ls --json` is a list of `{instance, port, path, contentHash}`, plus `stale: true` on a stale instance's, with
+  absolute paths.
+- Human `ls` prints the artifacts directory on a first line, `artifacts  <dir>`, then a table whose path column is each
+  artifact's path relative to that directory. Piped, the directory is whole.
+- On a terminal the directory starts `~` for home and stays whole. The path column cuts with `…` to the width the other
+  columns leave, adding a dim `Full paths` hint. The instance, port and stale columns never give way.
 - `show <concert> <instance>` prints the bytes of each file as they are (a `.patch` or `.diff` file colored like
   `git diff` when color is on), each after a `══ <file>` line when there are several. A file is named by its artifact's
   basename plus any inner path, such as `staged/prompt.md`; naming one prints only it, so it pipes.
