@@ -155,7 +155,7 @@ function packText(p: PackEntry, { color, home }: Look): string {
 		`${paint("bold", p.id, color)} ${paint("dim", p.version, color)}`,
 		paint("dim", tildeOf(p.path, home), color),
 	];
-	if (p.config) header.push(`listed in ${p.config}`);
+	if (p.config) header.push(`listed in ${tildeOf(p.config, home)}`);
 	const rows = table(
 		p.compositions.map((c) => [
 			`  ${paint("cyan", c.name, color)}`,

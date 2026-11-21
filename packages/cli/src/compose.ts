@@ -333,7 +333,7 @@ function printConfig(
 		dim(r.file ? `${tildeOf(r.file, home)}:${r.line}` : (r.flag ?? "")),
 	]);
 	const header = deps.terminal ? [["key", "source", "value", "from"]] : [];
-	deps.stdout(table([...header, ...body], color));
+	deps.stdout(table([...header, ...body], color && header.length > 0));
 	return EXIT.ok;
 }
 

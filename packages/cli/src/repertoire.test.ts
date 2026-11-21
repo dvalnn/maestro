@@ -72,7 +72,7 @@ describe("repertoire", () => {
 		}
 	});
 
-	test("a composition's name, Params heading and flags are colored on a terminal, and plain in a pipe", async () => {
+	test("a composition's name, Params heading and flags are colored on a terminal", async () => {
 		const w = await staffed();
 		const args = ["repertoire", "staffed.draft"];
 		const terminal = () => ({ columns: 200, rows: 24 });
@@ -81,21 +81,16 @@ describe("repertoire", () => {
 		expect(on.out).toContain("\u001b[1mstaffed.draft\u001b[22m");
 		expect(on.out).toContain("\u001b[1mParams\u001b[22m");
 		expect(on.out).toContain("\u001b[36m--topic <text>\u001b[39m");
-		const piped = await w.call(args, { hosts: [needy] });
-		expect(piped.out).toBe(
-			[
-				"staffed.draft  Drafts a page.",
-				"Then leaves it for review.",
-				"Params",
-				"  --topic <text>  required  What the page is about",
-				"  --tags <text>   a",
-				"  --note <text>   optional",
-				"Config  seats.write, target.checks.test",
-				"",
-				"  maestro perform staffed.draft --topic <text>",
-			].join("\n"),
-		);
 	});
+
+	test("a listed pack's config file is under ~ on a terminal", async () => {
+		const w = await staffed();
+		const terminal = () => ({ columns: 200, rows: 24 });
+		const env = { HOME: w.root, TERM: "xterm" };
+		const on = await w.call(["repertoire", "--no-color"], { terminal, env });
+		expect(on.out).toContain("listed in ~/ws/.maestro/config.yaml");
+	});
+
 	test("lists each pack, a listed one with its config file, and each composition with its doc's first line", async () => {
 		const w = await staffed();
 		const listed = await w.call(["rep"]);

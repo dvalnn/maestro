@@ -171,6 +171,19 @@ describe("compose and config", () => {
 			expect(piped.out).not.toContain("\u001b[");
 		}
 	});
+	test("config bolds a header only on a terminal and leaves empty from cells unstyled", async () => {
+		const w = await world();
+		const terminal = () => ({ columns: 200, rows: 24 });
+		const forced = await w.call(["config", "demo.greet", "--color"]);
+		expect(forced.code).toBe(0);
+		expect(forced.out).not.toContain("\u001b[1m");
+		const plain = await w.call(["config", "demo.greet", "--no-color"], {
+			terminal,
+		});
+		expect(plain.out).toMatch(/^key +source +value +from\n/);
+		const on = await w.call(["config", "demo.greet", "--color"], { terminal });
+		expect(on.out.split("\n").filter((l) => l !== l.trimEnd())).toEqual([]);
+	});
 	// Seam: recorded readers' exit codes and JSON, with config files and code unavailable, after a host stops declaring a deferred key.
 	test("recorded readers show the performed plan and composed snapshot without config files or composition code, and every concert when one no longer composes", async () => {
 		const w = await world();

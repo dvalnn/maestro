@@ -16,6 +16,7 @@ import {
 } from "./command";
 import {
 	ArgumentError,
+	absent,
 	artifactRefs,
 	CliError,
 	diffColored,
@@ -176,16 +177,23 @@ function listed(
 		);
 	} else if (isSet(values, "path"))
 		for (const a of artifacts) deps.stdout(a.path);
-	else
+	else {
+		const shown = colorOf(deps, values).out;
 		deps.stdout(
 			table(
 				[
 					["instance", "port", "stale", "path"],
-					...artifacts.map((a) => [a.instance, a.port, staleCell(a), a.path]),
+					...artifacts.map((a) => [
+						a.instance,
+						a.port === NO_PORT ? absent(shown) : a.port,
+						staleCell(a),
+						a.path,
+					]),
 				],
-				colorOf(deps, values).out,
+				shown,
 			),
 		);
+	}
 	return EXIT.ok;
 }
 

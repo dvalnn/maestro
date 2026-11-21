@@ -448,6 +448,22 @@ export const listing = composition("listing", { examples: [{}] }, () => {
 	expect(json(consumed).outputs).toEqual({ text: "consumed" });
 });
 
+test("artifact ls dims the dash of an artifact no output port holds, on a terminal only", async () => {
+	const w = await repoWorld(SMOKE_RUNTIME("stub"));
+	const done = await w.call(["perform", await artsFile()]);
+	expect(done).toMatchObject({ code: 0 });
+	const id = idOf(done);
+	const db = new Database(join(w.root, "data/maestro/record.db"));
+	db.run("UPDATE instances SET outputs = NULL");
+	db.close();
+	const terminal = () => ({ columns: 200, rows: 24 });
+	const dash = RegExp.escape("\u001b[2m-\u001b[22m");
+	const on = await w.call(["art", "ls", id, "--color"], { terminal });
+	expect(on.out).toMatch(new RegExp(`^inner/a +${dash} +/`, "m"));
+	const piped = await w.call(["art", "ls", id]);
+	expect(piped.out).toMatch(/^inner\/a +- +\//m);
+});
+
 test("artifact lists a concert's artifacts, prints an instance's files by a unique ending, and refuses what names none", async () => {
 	const w = await repoWorld(SMOKE_RUNTIME("stub"));
 	const done = await w.call(["perform", await artsFile()]);
