@@ -24,6 +24,7 @@ afterEach(cleanup);
 
 const CLI = join(import.meta.dir, "cli");
 const SPEC = join(import.meta.dir, "fixtures/spec.ts");
+const NONBLOCKING = join(import.meta.dir, "fixtures/nonblocking.ts");
 const TESTKIT = join(import.meta.dir, "../../testkit/src/index");
 const WAIT_STEP_MS = 25;
 const WAIT_LIMIT_MS = 5000;
@@ -255,6 +256,45 @@ describe("a concert in another process", () => {
 });
 
 describe("the real maestro.ts", () => {
+	// Seam: the bytes and exit status a slow reader receives from the CLI's stdout pipe.
+	test("delivers a whole output through a slow non-blocking stdout", async () => {
+		const w = await world();
+		const text = "aé🦜z".repeat(200_000);
+		const performed = await w.call(["perform", ...GREET], {
+			hosts: [hostOf({ outcome: "ok", outputs: { text } })],
+		});
+		expect(performed.code).toBe(0);
+		const child = w.spawn(["wait", idOf(performed)], NONBLOCKING);
+		await Bun.sleep(SLOW_READER_MS);
+		const output = await new Response(child.stdout).text();
+		expect(output.length).toBe(`text       ${text}\n`.length);
+		expect(output).toBe(`text       ${text}\n`);
+		expect(await child.exited).toBe(0);
+	}, 30_000);
+
+	test("delivers a whole JSON document through a slow non-blocking stdout", async () => {
+		const w = await world();
+		const titles = ["aé🦜".repeat(200_000), "z🦜é".repeat(200_000)];
+		for (const title of titles) {
+			const performed = await w.call(["perform", ...GREET, "--title", title], {
+				hosts: [hostOf()],
+			});
+			expect(performed.code).toBe(0);
+		}
+		const expected = `${(await w.call(["ls", "--json"])).out}\n`;
+		const child = w.spawn(["ls", "--json"], NONBLOCKING);
+		await Bun.sleep(SLOW_READER_MS);
+		const output = await new Response(child.stdout).text();
+		expect(Buffer.byteLength(output)).toBe(Buffer.byteLength(expected));
+		expect(output).toBe(expected);
+		expect(
+			JSON.parse(output)
+				.map((row: { title: string }) => row.title)
+				.sort(),
+		).toEqual(titles.sort());
+		expect(await child.exited).toBe(0);
+	}, 30_000);
+
 	test("delivers every byte of stdout through a slow pipe", async () => {
 		const w = await world();
 		for (const letter of "abcdefghij")
@@ -265,6 +305,15 @@ describe("the real maestro.ts", () => {
 		const child = w.spawn(["ls", "--json"]);
 		await Bun.sleep(SLOW_READER_MS);
 		expect((await new Response(child.stdout).text()).length).toBe(expected);
+	});
+
+	// Seam: the CLI's exit status and remaining output when a pipe reader closes.
+	test("stops quietly, exiting 0, when the reader of stderr is gone", async () => {
+		const w = await world();
+		const child = w.spawn(["not-a-command"]);
+		await child.stderr.cancel();
+		expect(await child.exited).toBe(0);
+		expect(await new Response(child.stdout).text()).toBe("");
 	});
 
 	test("stops quietly, exiting 0, when the reader of stdout is gone", async () => {

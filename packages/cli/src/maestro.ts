@@ -18,10 +18,25 @@ const STDERR_FD = 2;
 /** The size taken for a terminal that reports none. */
 const UNSIZED_TERMINAL = { columns: 80, rows: 24 };
 
-/** Writes `data` to `fd`. A reader that has gone away ends the process quietly, as it does a Unix filter. */
+const PAUSE = new Int32Array(new SharedArrayBuffer(4));
+/** How long a full pipe is waited on before the write is retried. */
+const FULL_PIPE_WAIT_MS = 1;
+
+/**
+ * Writes every byte of `data` to `fd`, waiting synchronously while a non-blocking pipe is full. A reader that has gone
+ * away ends the process quietly, as it does a Unix filter.
+ */
 function emit(fd: number, data: string | Uint8Array): void {
+	let rest = typeof data === "string" ? Buffer.from(data) : data;
 	try {
-		writeSync(fd, typeof data === "string" ? Buffer.from(data) : data);
+		while (rest.length > 0) {
+			try {
+				rest = rest.subarray(writeSync(fd, rest));
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "EAGAIN") throw error;
+				Atomics.wait(PAUSE, 0, 0, FULL_PIPE_WAIT_MS);
+			}
+		}
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "EPIPE") throw error;
 		process.exit(EXIT.ok);
@@ -58,8 +73,6 @@ process.exit(
 		stdoutBytes: (bytes) => emit(STDOUT_FD, bytes),
 		stderr: (line) => emit(STDERR_FD, `${line}\n`),
 		confirm: process.stdin.isTTY ? confirm : undefined,
-		// Reading `process.stdout` or `process.stderr` makes its descriptor non-blocking, which loses writes to a slow
-		// pipe.
 		terminal: isatty(STDOUT_FD)
 			? () => ({
 					columns: process.stdout.columns || UNSIZED_TERMINAL.columns,
@@ -75,7 +88,7 @@ process.exit(
 			isatty(STDIN_FD) && isatty(STDOUT_FD)
 				? fullScreen({
 						stdin: process.stdin,
-						write: (text) => writeSync(STDOUT_FD, text),
+						write: (text) => emit(STDOUT_FD, text),
 						process,
 						stderr: (line) => emit(STDERR_FD, `${line}\n`),
 					})
