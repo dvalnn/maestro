@@ -3121,6 +3121,30 @@ describe("the record", () => {
 		);
 	});
 
+	// Seam: notes in a concert listing on a narrow terminal.
+	test("ls cuts notes entries without cutting instance names", async () => {
+		const w = await world();
+		const notes = { Lessons: ["an entry that needs cutting"] };
+		const host: Host = {
+			...hostOf({ ...ECHO, enrichment: { notes } }),
+			text: { notes: (e) => (e.notes ?? {}) as Record<string, string[]> },
+		};
+		const id = idOf(await w.call(["perform", ...GREET], { hosts: [host] }));
+		const result = await w.call(["ls", id, "--color"], {
+			hosts: [host],
+			terminal: () => ({ columns: 8, rows: 24 }),
+		});
+		expect(result.code).toBe(0);
+		const lines = result.out.split("\n");
+		const heading = lines.indexOf(`${ESC}[1mLessons${ESC}[22m`);
+		expect(heading).toBeGreaterThanOrEqual(0);
+		expect(lines[heading + 1]?.startsWith("echo/echo")).toBe(true);
+		expect(lines[heading + 1]).not.toContain(notes.Lessons[0]);
+		expect(result.out).toContain(
+			`Full notes: maestro ls ${shortOf(id)} <instance> --json | jq .notes`,
+		);
+	});
+
 	test("ls <concert> lists its instances' notes under their headings, cut to a terminal's width, and ls marks and counts them", async () => {
 		const w = await world();
 		const lesson = `the lesson ${"is long ".repeat(10)}`.trim();

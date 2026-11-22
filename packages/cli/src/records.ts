@@ -54,6 +54,7 @@ import {
 	giving,
 	jsonAgain,
 	jsonOf,
+	laidOut,
 	NAME_CONCERT,
 	orAbsent,
 	paint,
@@ -183,16 +184,17 @@ function notesLines(
 	color: boolean,
 	columns: number,
 ): string[] {
-	const lines = [...noteSections(noted)].flatMap(([heading, rows]) => [
-		"",
-		paint("bold", heading, color),
-		...table(rows).split("\n"),
-	]);
-	if (columns === 0) return lines;
-	const cut = lines.map((line) => cutTo(line, columns));
-	if (cut.every((line, i) => line === lines[i])) return lines;
+	const fit = giving(columns, [{ column: 1, floor: 1 }]);
+	let cut = false;
+	const lines = [...noteSections(noted)].flatMap(([heading, rows]) => {
+		const laid = laidOut(rows, false, fit);
+		const head = columns === 0 ? heading : cutTo(heading, columns);
+		cut ||= laid.cut || head !== heading;
+		return ["", paint("bold", head, color), ...laid.text.split("\n")];
+	});
+	if (!cut) return lines;
 	return [
-		...cut,
+		...lines,
 		hintLine(
 			`Full notes: maestro ls ${id} <instance> --json | jq .notes`,
 			color,

@@ -334,7 +334,7 @@ function printConfig(
 		deps.stdout(jsonOf({ values: rows, ...invocation }));
 		return EXIT.ok;
 	}
-	const dim = (text: string) => (text ? paint("dim", text, color) : "");
+	const dim = (text: string) => paint("dim", text, color);
 	const home = deps.terminal ? deps.env.HOME : undefined;
 	const body = rows.map((r) => [
 		r.key,

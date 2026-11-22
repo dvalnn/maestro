@@ -87,9 +87,11 @@ type Style = Named | typeof SOFT_GREY;
 const isGrey = (style: Style): style is typeof SOFT_GREY => style === SOFT_GREY;
 
 export const styled = (style: Style, text: string) =>
-	isGrey(style)
-		? `${style.open}${text}${style.close}`
-		: styleText(style, text, { validateStream: false });
+	text === ""
+		? ""
+		: isGrey(style)
+			? `${style.open}${text}${style.close}`
+			: styleText(style, text, { validateStream: false });
 /** How a state is drawn. `whole` styles the whole line, `noted` its note too. */
 type Look = { style: Style; whole?: boolean; noted?: boolean };
 
@@ -367,16 +369,45 @@ function* clusters(text: string): Generator<[string, number]> {
 		yield [segment, Bun.stringWidth(segment)];
 }
 
-/** `text` cut to its first `room` terminal cells, by whole grapheme clusters. */
-function fit(text: string, room: number): string {
-	let cut = "";
-	let left = room;
-	for (const [cluster, width] of clusters(text)) {
-		left -= width;
-		if (left < 0) break;
-		cut += cluster;
+/** A code that ends every color and style. */
+const ESC = "\u001b";
+const RESET = `${ESC}[0m`;
+
+/** Splits a text around its SGR codes, which take no cell, keeping each code as its own part. */
+const SGR_SPLIT = new RegExp(`(${ESC}\\[[0-9;:]*m)`);
+
+/** Whether `text` holds an SGR code. */
+const holdsSgr = (text: string) => new RegExp(`${ESC}\\[[0-9;:]*m`).test(text);
+
+/** Each SGR code of `text` at width undefined, and each grapheme cluster of the text between them at its width. */
+function* cells(text: string): Generator<[string, number | undefined]> {
+	for (const [i, part] of text.split(SGR_SPLIT).entries()) {
+		// split puts each captured code at an odd index, between the plain text around it.
+		if (i % 2 === 1) yield [part, undefined];
+		else yield* clusters(part);
 	}
-	return cut;
+}
+
+/**
+ * `text` cut to its first `room` terminal cells, by whole grapheme clusters, and whether it was cut. An SGR code counts
+ * no cell and is kept whole only before a kept cluster; a cut text that holds one ends in a reset.
+ */
+function fit(text: string, room: number): { text: string; cut: boolean } {
+	let kept = "";
+	let pending = "";
+	let left = room;
+	for (const [cell, width] of cells(text)) {
+		if (width === undefined) {
+			pending += cell;
+			continue;
+		}
+		left -= width;
+		if (left < 0)
+			return { text: holdsSgr(text) ? kept + RESET : kept, cut: true };
+		kept += pending + cell;
+		pending = "";
+	}
+	return { text, cut: false };
 }
 
 /** One line cut at `limit` terminal cells without trailing spaces, each segment styled after the cut when `color`. */
@@ -388,10 +419,16 @@ export function painted(
 	const plain = segs.map(([text]) => text).join("");
 	let room = Math.min(Bun.stringWidth(plain.trimEnd()), limit);
 	let out = "";
+	let kept = "";
 	for (const [text, style] of segs) {
-		const cut = fit(text, room);
-		room = cut === text ? room - Bun.stringWidth(cut) : 0;
-		out += color && style && cut ? styled(style, cut) : cut;
+		const part = fit(text, room);
+		kept += part.text;
+		out += color && style ? styled(style, part.text) : part.text;
+		if (part.cut) {
+			// A code an earlier segment's own text opened would stay open past the cut; a style `styled` adds is closed.
+			return part.text.endsWith(RESET) || !holdsSgr(kept) ? out : out + RESET;
+		}
+		room -= Bun.stringWidth(part.text);
 	}
 	return out;
 }
@@ -399,9 +436,7 @@ export function painted(
 /** `segs` as one line as they are, each styled when `color`. */
 const line = (segs: readonly Seg[], color: boolean) =>
 	segs
-		.map(([text, style]) =>
-			color && style && text ? styled(style, text) : text,
-		)
+		.map(([text, style]) => (color && style ? styled(style, text) : text))
 		.join("");
 
 export const lookOf = (state: string): Look | undefined =>
@@ -1063,14 +1098,13 @@ const changesSegs = ({ files, added, removed }: Changes): Seg[] => [
 	[`\u2212${removed}`, "red"],
 ];
 
-/** A code that ends every color and style. */
-const RESET = "\u001b[0m";
-
 /** `text` cut with `…` to `columns` cells when wider; a cut colored text ends in a reset, so its color stops there. */
 export function cutTo(text: string, columns: number): string {
 	if (Bun.stringWidth(text) <= columns) return text;
-	const cut = `${painted([[text]], false, columns - Bun.stringWidth(ELLIPSIS))}${ELLIPSIS}`;
-	return text.includes("\u001b[") ? `${cut}${RESET}` : cut;
+	const body = painted([[text]], false, columns - Bun.stringWidth(ELLIPSIS));
+	return body.endsWith(RESET)
+		? `${body.slice(0, -RESET.length)}${ELLIPSIS}${RESET}`
+		: `${body}${ELLIPSIS}`;
 }
 
 /** `text` in lines of at most `width` terminal cells except one grapheme cluster wider than it, an empty text one empty line, broken at spaces where it can be and by cells where it cannot. */

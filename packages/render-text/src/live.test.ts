@@ -145,6 +145,54 @@ describe("painted", () => {
 	});
 });
 
+// Seams: cutTo's fitted line and painted's fitted segments.
+describe("cutting styled text", () => {
+	test("cutTo counts visible cells and keeps whole SGR codes only before kept characters", () => {
+		const text = `${ESC}[2mab${ESC}[31mcd${ESC}[39m${ESC}[1mef${ESC}[22m`;
+		expect(cutTo(text, 4)).toBe(`${ESC}[2mab${ESC}[31mc…${ESC}[0m`);
+		expect(cutTo(`${ESC}[2mabc${ESC}[31mdef`, 4)).toBe(
+			`${ESC}[2mabc…${ESC}[0m`,
+		);
+		expect(cutTo(`${ESC}[1mAB${ESC}[0m`, 1)).toBe(`…${ESC}[0m`);
+		expect(cutTo(`${ESC}[31m👩‍💻${ESC}[39myz`, 3)).toBe(
+			`${ESC}[31m👩‍💻…${ESC}[0m`,
+		);
+		expect(cutTo(`${ESC}[2mabcdefgh${ESC}[22m tail`, 6)).toBe(
+			`${ESC}[2mabcde…${ESC}[0m`,
+		);
+	});
+
+	test("cutTo resets after the ellipsis even when the style closed before the cut", () => {
+		expect(cutTo(`${ESC}[2mab${ESC}[22mcdef`, 5)).toBe(
+			`${ESC}[2mab${ESC}[22mcd…${ESC}[0m`,
+		);
+		expect(cutTo(`abcdef${ESC}[31mgh`, 4)).toBe(`abc…${ESC}[0m`);
+	});
+
+	test("cutTo keeps a colon-form SGR code whole", () => {
+		const code = `${ESC}[38:2::255:0:0m`;
+		expect(cutTo(`${code}abcdef${ESC}[39m`, 4)).toBe(`${code}abc…${ESC}[0m`);
+	});
+
+	test("painted closes a style an earlier segment opened when a later plain segment is cut", () => {
+		expect(painted([[`${ESC}[31mabc`], ["def"]], false, 4)).toBe(
+			`${ESC}[31mabcd${ESC}[0m`,
+		);
+	});
+
+	test("painted closes a cut segment that holds SGR codes", () => {
+		expect(painted([[`${ESC}[2mabcdef${ESC}[22m`]], false, 3)).toBe(
+			`${ESC}[2mabc${ESC}[0m`,
+		);
+	});
+
+	test("painted drops later segments after a cut", () => {
+		expect(painted([["abcdef"], [`${ESC}[31m`], ["later"]], false, 3)).toBe(
+			"abc",
+		);
+	});
+});
+
 describe("frame", () => {
 	test("draws a header, `now` and `last`, the authored rows with a parMap body aggregated, and a footer of counts", () => {
 		const lines = drawn().split("\n");

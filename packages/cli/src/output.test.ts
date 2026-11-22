@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Diagnostic } from "@maestro/ir";
-import { diagnosedExit, EXIT, table, wrapping } from "./output";
+import { diagnosedExit, EXIT, paint, table, wrapping } from "./output";
 
 const diagnostic = (extra: Partial<Diagnostic>): Diagnostic => ({
 	code: "CFG.param",
@@ -28,6 +28,21 @@ describe("diagnosedExit", () => {
 	);
 });
 
+// Seams: the text returned by paint and table for terminal output.
+test("paint leaves empty text empty with color on or off", () => {
+	expect(paint("dim", "", true)).toBe("");
+	expect(paint("bold", "", true)).toBe("");
+	expect(paint("dim", "", false)).toBe("");
+});
+
+test("a table leaves no trailing padding for empty terminal headers and cells", () => {
+	const rows = [
+		["name", ""],
+		["a", paint("dim", "", true)],
+	];
+	expect(table(rows, true)).toBe("\u001b[1mname\u001b[22m\na");
+});
+
 describe("table fit", () => {
 	const rows = [
 		["id", "title", "tour"],
@@ -43,6 +58,15 @@ describe("table fit", () => {
 	test("a table that fits is left whole", () => {
 		const fit = { columns: 40, give: [{ column: 1, floor: 5 }] };
 		expect(table(rows, false, fit)).toBe(table(rows));
+	});
+
+	test("a fitted painted cell keeps its visible width and ends its style", () => {
+		const rows = [
+			["id", "v"],
+			["a", "\u001b[2mabcdefgh\u001b[22m"],
+		];
+		const fit = { columns: 8, give: [{ column: 1, floor: 2 }] };
+		expect(table(rows, false, fit)).toBe("id  v\na   \u001b[2mabc…\u001b[0m");
 	});
 
 	test("the first named column gives way before the second", () => {
