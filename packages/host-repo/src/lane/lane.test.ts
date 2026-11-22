@@ -37,6 +37,11 @@ const ENV = {
 	GIT_AUTHOR_EMAIL: "op@x",
 	GIT_COMMITTER_NAME: "op",
 	GIT_COMMITTER_EMAIL: "op@x",
+	GIT_CONFIG_COUNT: "2",
+	GIT_CONFIG_KEY_0: "maintenance.auto",
+	GIT_CONFIG_VALUE_0: "false",
+	GIT_CONFIG_KEY_1: "gc.auto",
+	GIT_CONFIG_VALUE_1: "0",
 };
 
 function git(cwd: string, ...args: string[]): string {
