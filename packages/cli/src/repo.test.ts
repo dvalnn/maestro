@@ -1071,21 +1071,26 @@ describe("profiles", () => {
 	});
 });
 
-/** Each real harness behind its gate: the agent's instructions and file, and the metrics it reports. */
+/**
+ * Each real harness behind its gate: the agent's instructions and file, and the metrics it reports. pi's model is one
+ * the presets seat. claude thinks at high: at low, haiku streams no thinking text and drops the instructed word.
+ */
 const REAL_HARNESSES = [
 	{
 		gate: "MAESTRO_PI",
 		harness: "pi",
-		model: process.env.MAESTRO_PI_MODEL ?? "github-copilot/gpt-5-mini",
+		model: process.env.MAESTRO_PI_MODEL ?? "github-copilot/gpt-6-luna",
+		thinking: "low",
 	},
 	{
 		gate: "MAESTRO_CLAUDE",
 		harness: "claude",
 		model: process.env.MAESTRO_CLAUDE_MODEL ?? "haiku",
+		thinking: "high",
 	},
 ];
 
-for (const { gate, harness, model } of REAL_HARNESSES) {
+for (const { gate, harness, model, thinking } of REAL_HARNESSES) {
 	test.skipIf(!process.env[gate])(
 		`${harness} performs an agent with instructions, and its file is in the version a check reads`,
 		async () => {
@@ -1093,7 +1098,7 @@ for (const { gate, harness, model } of REAL_HARNESSES) {
 			profileIn(
 				w.cwd,
 				"writer",
-				`runtime: { harness: ${harness}, model: ${model}, thinking: low }\ninstructions: instructions.md\n`,
+				`runtime: { harness: ${harness}, model: ${model}, thinking: ${thinking} }\ninstructions: instructions.md\n`,
 				{
 					"instructions.md":
 						"You end every report summary you give with the word kumquat.",

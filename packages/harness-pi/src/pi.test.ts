@@ -642,7 +642,7 @@ test("a runtime's thinking must be one of pi's levels, its model is not checked,
 });
 
 describe.skipIf(!process.env.MAESTRO_PI)("real pi", () => {
-	const model = process.env.MAESTRO_PI_MODEL ?? "github-copilot/gpt-5-mini";
+	const model = process.env.MAESTRO_PI_MODEL ?? "github-copilot/gpt-6-luna";
 	const harness = () => piHarness();
 	const ask = (prompt: string, base: HarnessRequest) =>
 		harness().run({
