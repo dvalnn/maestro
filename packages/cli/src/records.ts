@@ -11,6 +11,7 @@ import {
 	flat,
 	hintLine,
 	type ShortIds,
+	shellArg,
 	shortIds,
 	stateWord,
 } from "@maestro/render-text/live";
@@ -411,12 +412,6 @@ function listed(stored: Stored, query: ConcertFilter) {
 	return EXIT.ok;
 }
 
-/** `value` as one shell word: as it is when plain, otherwise in single quotes. */
-const shellWord = (value: string) =>
-	/^[A-Za-z0-9._/:@-]+$/.test(value)
-		? value
-		: `'${value.replaceAll("'", "'\\''")}'`;
-
 /** `ls` with the filters of `values` and `limit`, or `--all`, as JSON: the listing whose values a cut table cut. */
 function fullListing(values: Values, limit: number | undefined): string {
 	const bound = limit === undefined ? "--all" : `--limit ${limit}`;
@@ -428,7 +423,7 @@ const filterWords = (values: Values) =>
 	Object.keys(FILTER_OPTIONS)
 		.flatMap((name) => {
 			const value = textOf(values, name);
-			return value === undefined ? [] : [` --${name} ${shellWord(value)}`];
+			return value === undefined ? [] : [` --${name} ${shellArg(value)}`];
 		})
 		.join("");
 

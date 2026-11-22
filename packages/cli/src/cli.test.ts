@@ -2576,6 +2576,43 @@ describe("the record", () => {
 		expect(tight.split("…").length).toBe(3);
 	});
 
+	// Seam: the commands in ls's terminal hints when a listing and a cell are cut.
+	test("ls hints preserve shell-safe filter values without quotes", async () => {
+		const w = await world();
+		const cwd = join(w.root, "ws%+=,");
+		await mkdir(join(cwd, ".maestro"), { recursive: true });
+		await Bun.write(join(cwd, ".maestro/config.yaml"), `packs: [${w.pack}]\n`);
+		for (let i = 0; i < 2; i++) {
+			const performed = await w.call(
+				["perform", ...GREET, "--title", "a long concert title ".repeat(8)],
+				{ cwd, hosts: [hostOf()] },
+			);
+			expect(performed.code).toBe(0);
+		}
+		const listed = await w.call(
+			[
+				"ls",
+				"--no-color",
+				"--limit",
+				"1",
+				"--status",
+				"ok",
+				"--workspace",
+				"ws%+=,",
+			],
+			{ terminal: () => ({ columns: 80, rows: 24 }) },
+		);
+		expect(listed.code).toBe(0);
+		const lines = listed.out.split("\n");
+		expect([
+			lines.find((line) => line.startsWith("Full values:")),
+			lines.find((line) => line.startsWith("Older concerts:")),
+		]).toEqual([
+			"Full values: maestro ls --status ok --workspace ws%+=, --limit 1 --json",
+			"Older concerts: maestro ls --status ok --workspace ws%+=, --limit 2",
+		]);
+	});
+
 	test("ls hints at the listing with its filters and limit, or --all", async () => {
 		const w = await world();
 		const title = "a long concert title ".repeat(8).trim();
