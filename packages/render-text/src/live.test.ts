@@ -11,6 +11,7 @@ import {
 	cutTo,
 	eventLine,
 	frame,
+	headBlock,
 	inGraphOrder,
 	painted,
 	seen,
@@ -100,6 +101,23 @@ const VIEW: View = {
 
 const drawn = (view: Partial<View> = {}) =>
 	frame(ir, seen(new Map(), EVENTS), { ...VIEW, ...view }, new Map());
+
+describe("headBlock", () => {
+	test("colors its lines when color is on", () => {
+		const view = { ...VIEW, color: true };
+		const head = headBlock(ir, seen(new Map(), EVENTS), view);
+		expect(head).not.toBe(headBlock(ir, seen(new Map(), EVENTS), VIEW));
+		expect(head).toContain("\u001b[");
+	});
+
+	test("draws the first three lines of the frame, each cut to the columns", () => {
+		const view = { ...VIEW, columns: 30 };
+		const whole = frame(ir, seen(new Map(), EVENTS), view, new Map());
+		const head = headBlock(ir, seen(new Map(), EVENTS), view);
+		expect(head.split("\n")).toHaveLength(3);
+		expect(head).toBe(whole.split("\n").slice(0, 3).join("\n"));
+	});
+});
 
 const CUT = "Full outputs: maestro wait kswoykny --json | jq .outputs";
 

@@ -136,6 +136,9 @@ flowchart TD
 
 ### Frame
 
+`headBlock(ir, seen, view)` is the first three lines of the frame alone, each cut as `frame` cuts them;
+`maestro perform` redraws it on stderr while it waits, as [Performing](../cli/README.md#performing) says.
+
 `frame(ir, seen, view, agents)` is the plain view: a header, `now`, `last`, the rows and a footer of counts and tokens.
 On a narrow terminal the header cuts its label and title with `…`, then leaves them out. It keeps the short id, status
 and elapsed time while they fit. No hint points at the whole title. A footer whose counts do not fit in words counts by

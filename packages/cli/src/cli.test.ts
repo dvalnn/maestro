@@ -22,6 +22,7 @@ import {
 	closingOf,
 	configValues,
 	ECHO,
+	FIRST,
 	GREET,
 	hostOf,
 	idOf,
@@ -43,6 +44,16 @@ const LOUD = join(FIXTURES, "loud.ts");
 const DESCRIBED = join(FIXTURES, "described.ts");
 const USES_ECHO = join(FIXTURES, "uses_echo.ts");
 const ESC = "\u001b";
+const SGR = new RegExp(`${ESC}\\[[\\d;]*m`);
+
+function expectPlainClosing(
+	text: string,
+	verb: string | undefined,
+	term: string | undefined,
+) {
+	if (verb === "wait" || term === "dumb") expect(text).not.toContain(ESC);
+	else expect(text).not.toMatch(SGR);
+}
 
 /** The keys of an `ls --json` listing row, the whole of it. */
 const LIST_ROW = [
@@ -938,7 +949,451 @@ describe("compose and config", () => {
 	});
 });
 
+const ESCAPE = "\u001b";
+const CURSOR_CODE = new RegExp(`(${ESCAPE}\\[\\d*[FJ])`);
+const CURSOR_UP = new RegExp(`^${ESCAPE}\\[(\\d*)F$`);
+
+/** What a terminal shows after `writes`, each ending in a newline: `ESC[nF` moves up n lines, `ESC[J` clears below. */
+function screenOf(writes: readonly string[]): string {
+	const screen: string[] = [""];
+	let row = 0;
+	const put = (text: string) => {
+		for (const [i, line] of text.split("\n").entries()) {
+			if (i > 0) row += 1;
+			screen[row] = line;
+		}
+	};
+	const apply = (part: string) => {
+		const up = CURSOR_UP.exec(part);
+		if (up) row = Math.max(0, row - Number(up[1] || 1));
+		else if (part === `${ESCAPE}[J`) {
+			screen.length = row;
+			screen[row] = "";
+		} else put(part);
+	};
+	for (const write of writes) {
+		for (const part of write.split(CURSOR_CODE).filter(Boolean)) apply(part);
+		row += 1;
+		screen[row] ??= "";
+	}
+	return screen.join("\n");
+}
+
+type Held = {
+	host: ReturnType<typeof hostOf>;
+	writes: string[];
+	running: Promise<{ code: number; out: string; err: string }>;
+	/** Lets the held first step finish and the concert settle. */
+	finish(): void;
+};
+
+/** Runs `args` on a stderr terminal with a concert whose first step waits for `finish`, once it has started. */
+async function held(
+	w: Awaited<ReturnType<typeof world>>,
+	args: readonly string[],
+	{
+		columns = 120,
+		env = { TERM: "xterm", NO_COLOR: "1" },
+		beforeHold,
+		writes = [],
+		text,
+		sharedTerminal = false,
+	}: {
+		sharedTerminal?: boolean;
+		writes?: string[];
+		text?: object;
+		columns?: number | (() => number);
+		env?: Record<string, string>;
+		beforeHold?: (ctx: {
+			emit: (event: object) => void;
+		}) => void | Promise<void>;
+	} = {},
+): Promise<Held> {
+	const step = Promise.withResolvers<typeof ECHO>();
+	const started = Promise.withResolvers<void>();
+	const base = hostOf(ECHO, {
+		steps: {
+			first: async (_instance: unknown, _inputs: unknown, ctx: never) => {
+				await beforeHold?.(ctx);
+				started.resolve();
+				return step.promise;
+			},
+			"echo/echo": [ECHO],
+		},
+	});
+	const host = text ? Object.create(base, { text: { value: text } }) : base;
+	const running = w.call([...args], {
+		hosts: [host],
+		...(sharedTerminal && { terminal: () => ({ columns: 120, rows: 40 }) }),
+		stderrTerminal: () => ({
+			columns: typeof columns === "number" ? columns : columns(),
+		}),
+		env,
+		stderr: (text) => writes.push(text),
+	});
+	await Promise.race([started.promise, running]);
+	await Bun.sleep(350);
+	return { host, writes, running, finish: () => step.resolve(ECHO) };
+}
+
 describe("perform", () => {
+	// Seam: stderr and stdout while a foreground command waits for a concert, and after it settles.
+	test("shows watch's header, now and last on stderr while a concert runs and redraws elapsed time", async () => {
+		const w = await world();
+		let progress = () => {};
+		const live = await held(w, ["perform", ...GREET, "--title", "Live test"], {
+			beforeHold: ({ emit }) => {
+				progress = () =>
+					emit({ kind: "tool", name: "bash", input: { command: "ls" } });
+			},
+		});
+		const { writes, running } = live;
+		const beforeProgress = stripVTControlCharacters(writes.join("\n"));
+		progress();
+		await Bun.sleep(1100);
+		const during = writes.join("\n");
+		const id = idOf({ code: 0, out: "", err: during });
+		const watched = await w.call(["watch", id, "--frames", "q", "--no-color"], {
+			hosts: [live.host],
+		});
+		live.finish();
+		const result = await running;
+		expect(result.code).toBe(0);
+		expect(during).toStartWith(
+			`concert ${id}\nFollow it: maestro watch ${shortOf(id)}`,
+		);
+		const lines = stripVTControlCharacters(during).split("\n");
+		const headers = lines.filter((line) => line.startsWith("● demo.greet"));
+		expect(headers.length).toBeGreaterThan(1);
+		expect(new Set(headers).size).toBeGreaterThan(1);
+		expect(headers.at(-1)).toContain('"Live test"');
+		expect(headers.at(-1)).toContain(shortOf(id));
+		expect(headers.at(-1)).toContain("running");
+		const watchLines = stripVTControlCharacters(watched.out).split("\n");
+		expect(watchLines[1]).toStartWith("now   ● first");
+		expect(lines.some((line) => line.startsWith("now   ● first"))).toBe(true);
+		expect(beforeProgress).not.toContain('tool bash {"command":"ls"}');
+		expect(stripVTControlCharacters(during)).toContain(
+			'tool bash {"command":"ls"}',
+		);
+		expect(lines).toContain(watchLines[2] ?? "");
+		expect(during).not.toMatch(SGR);
+	});
+
+	test("erases the live block before the closing block", async () => {
+		const w = await world();
+		const { writes, running, finish } = await held(w, ["perform", ...GREET]);
+		finish();
+		await running;
+		const text = screenOf(writes);
+		const id = idOf({ code: 0, out: "", err: text });
+		expect(text).not.toContain("now   ");
+		expect(text).toStartWith(
+			`concert ${id}\nFollow it: maestro watch ${shortOf(id)}\nconcert`,
+		);
+	});
+
+	test("prints what a code node prints below the concert line, with no live block left", async () => {
+		const w = await world();
+		const writes: string[] = [];
+		const log = spyOn(console, "log").mockImplementation((text) => {
+			writes.push(String(text));
+		});
+		try {
+			const live = await held(w, ["perform", ...GREET], {
+				writes,
+				beforeHold: async () => {
+					await Bun.sleep(250);
+					console.log("shout hey");
+				},
+			});
+			live.finish();
+			await live.running;
+			const text = screenOf(live.writes);
+			expect(text).toContain("shout hey");
+			expect(text).not.toContain("now   ");
+			expect(text).not.toContain("● demo.greet");
+		} finally {
+			log.mockRestore();
+		}
+	});
+
+	test("keeps output a code node writes to process.stdout below the concert line, with no live block left", async () => {
+		const w = await world();
+		const writes: string[] = [];
+		const write = spyOn(process.stdout, "write").mockImplementation(((
+			text: string,
+		) => {
+			writes.push(text.trimEnd());
+			return true;
+		}) as never);
+		try {
+			const live = await held(w, ["perform", ...GREET], {
+				writes,
+				sharedTerminal: true,
+				beforeHold: async () => {
+					await Bun.sleep(250);
+					process.stdout.write("shout hey\n");
+				},
+			});
+			live.finish();
+			await live.running;
+			const text = screenOf(live.writes);
+			expect(text).toContain("shout hey");
+			expect(text).not.toContain("● demo.greet");
+		} finally {
+			write.mockRestore();
+		}
+	});
+
+	test("redraws at the narrower width after the terminal shrinks, also after other output", async () => {
+		const w = await world();
+		const writes: string[] = [];
+		const log = spyOn(console, "log").mockImplementation((text) => {
+			writes.push(String(text));
+		});
+		let columns = 100;
+		try {
+			const live = await held(
+				w,
+				["perform", ...GREET, "--title", "a very long title"],
+				{
+					writes,
+					columns: () => columns,
+				},
+			);
+			columns = 20;
+			console.log("MARK");
+			const mark = writes.length;
+			await Bun.sleep(250);
+			const end = writes.length;
+			live.finish();
+			await live.running;
+			const after = stripVTControlCharacters(
+				writes.slice(mark, end).join("\n"),
+			);
+			expect(after).toContain("now   ");
+			for (const line of after.split("\n"))
+				expect(Bun.stringWidth(line)).toBeLessThanOrEqual(20);
+		} finally {
+			log.mockRestore();
+		}
+	});
+
+	test("keeps redrawing the elapsed time after a host's progress text throws", async () => {
+		const w = await world();
+		let progress = () => {};
+		const live = await held(w, ["perform", ...GREET], {
+			text: {
+				progress: () => {
+					throw new Error("bad text");
+				},
+			},
+			beforeHold: ({ emit }) => {
+				progress = () => emit({ kind: "tool", name: "bash", input: {} });
+			},
+		});
+		progress();
+		await Bun.sleep(300);
+		const mark = live.writes.length;
+		await Bun.sleep(1100);
+		const later = stripVTControlCharacters(live.writes.slice(mark).join("\n"));
+		live.finish();
+		await live.running;
+		expect(later).toContain("● demo.greet");
+	});
+
+	test("erases the live block and exits 130 with the resume hint on a Ctrl-C", async () => {
+		const w = await world();
+		const live = await held(w, ["perform", ...GREET]);
+		process.emit("SIGINT");
+		live.finish();
+		const result = await live.running;
+		const text = screenOf(live.writes);
+		expect(result.code).toBe(130);
+		expect(text).not.toContain("now   ");
+		expect(text).toContain("Resume it: maestro resume");
+	});
+
+	test("colors the live block on a color terminal", async () => {
+		const w = await world();
+		const live = await held(w, ["perform", ...GREET], {
+			env: { TERM: "xterm" },
+		});
+		const during = live.writes.join("\n");
+		live.finish();
+		await live.running;
+		expect(during).toMatch(SGR);
+	});
+
+	test("prints a code node's output while a host's text hook throws on redraw", async () => {
+		const w = await world();
+		const step = Promise.withResolvers<typeof ECHO>();
+		const started = Promise.withResolvers<void>();
+		const writes: string[] = [];
+		const log = spyOn(console, "log").mockImplementation((text) => {
+			writes.push(String(text));
+		});
+		let armed = false;
+		const base = hostOf(ECHO, {
+			steps: {
+				first: [{ ...FIRST, enrichment: { session: "s" } }],
+				"echo/echo": () => {
+					started.resolve();
+					return step.promise;
+				},
+			},
+		});
+		const host = Object.create(base, {
+			text: {
+				value: {
+					actor: () => {
+						if (armed) throw new Error("bad text");
+						return undefined;
+					},
+				},
+			},
+		});
+		try {
+			const running = w.call(["perform", ...GREET], {
+				hosts: [host],
+				stderrTerminal: () => ({ columns: 120 }),
+				env: { TERM: "xterm", NO_COLOR: "1" },
+				stderr: (text) => writes.push(text),
+			});
+			await Promise.race([started.promise, running]);
+			await Bun.sleep(250);
+			armed = true;
+			await Bun.sleep(250);
+			console.log("shout hey");
+			step.resolve(ECHO);
+			expect((await running).code).toBe(0);
+			expect(screenOf(writes)).toContain("shout hey");
+		} finally {
+			log.mockRestore();
+		}
+	});
+
+	test("leaves a piped stdout unread while the live block shows on stderr", async () => {
+		const w = await world();
+		const reads: string[] = [];
+		const own = Object.getOwnPropertyDescriptor(process, "stdout");
+		const value = process.stdout;
+		Object.defineProperty(process, "stdout", {
+			configurable: true,
+			get: () => {
+				reads.push("read");
+				return value;
+			},
+		});
+		try {
+			const live = await held(w, ["perform", ...GREET]);
+			live.finish();
+			await live.running;
+		} finally {
+			if (own) Object.defineProperty(process, "stdout", own);
+		}
+		expect(reads).toEqual([]);
+	});
+
+	test("erases the live block and exits 130 when Ctrl-C is pressed twice", async () => {
+		const w = await world();
+		const live = await held(w, ["perform", ...GREET]);
+		process.emit("SIGINT");
+		live.finish();
+		process.emit("SIGINT");
+		const result = await live.running;
+		expect(result.code).toBe(130);
+		expect(screenOf(live.writes)).not.toContain("now   ");
+	});
+
+	test("fits the live block to the stderr terminal width", async () => {
+		const w = await world();
+		const { writes, running, finish } = await held(
+			w,
+			["perform", ...GREET, "--title", "a very long title"],
+			{ columns: 20 },
+		);
+		const lines = stripVTControlCharacters(writes.join("\n")).split("\n");
+		finish();
+		await running;
+		const header = lines.find((line) => line.startsWith("● demo.greet"));
+		const now = lines.find((line) => line.startsWith("now   "));
+		const last = lines.find((line) => line.startsWith("last  "));
+		expect(header).toBeDefined();
+		expect(now).toBeDefined();
+		expect(last).toBeDefined();
+		for (const line of [header, now, last])
+			expect(Bun.stringWidth(line ?? "")).toBeLessThanOrEqual(20);
+		expect(header).not.toContain("a very long title");
+	});
+
+	test.each([
+		["--json", ["--json"], { TERM: "xterm" }],
+		["TERM=dumb", [], { TERM: "dumb" }],
+	])(
+		"%s leaves the live block out while the concert runs",
+		async (_mode, flags, env) => {
+			const w = await world();
+			const { writes, running, finish } = await held(
+				w,
+				["perform", ...GREET, ...flags],
+				{ env },
+			);
+			const during = writes.join("\n");
+			const id = idOf({ code: 0, out: "", err: during });
+			finish();
+			const result = await running;
+			expect(result.code).toBe(0);
+			expect(id).not.toBe("");
+			expect(during).toBe(
+				flags.length
+					? `concert ${id}`
+					: `concert ${id}\nFollow it: maestro watch ${shortOf(id)}`,
+			);
+		},
+	);
+
+	test("--no-color leaves the live block uncolored", async () => {
+		const w = await world();
+		const { writes, running, finish } = await held(
+			w,
+			["perform", ...GREET, "--no-color"],
+			{ env: { TERM: "xterm" } },
+		);
+		const during = writes.join("\n");
+		finish();
+		await running;
+		expect(stripVTControlCharacters(during)).toContain("now   ● first");
+		expect(during).not.toMatch(SGR);
+	});
+
+	test.each(["resume", "encore"])(
+		"%s shows live progress on stderr while it waits",
+		async (verb) => {
+			const w = await world();
+			const failed = await w.call(["perform", ...GREET], {
+				hosts: [
+					hostOf(ECHO, {
+						steps: { first: [{ outcome: "failed", reason: "flaky" }] },
+					}),
+				],
+			});
+			const id = idOf(failed);
+			const args =
+				verb === "encore" ? [verb, id, "-c", "concurrency=2"] : [verb, id];
+			const live = await held(w, args);
+			const { running } = live;
+			const during = stripVTControlCharacters(live.writes.join("\n"));
+			live.finish();
+			const result = await running;
+			expect(result.code).toBe(0);
+			expect(during).toContain("● demo.greet");
+			expect(during).toContain("now   ● first");
+			expect(during).toContain("last  ");
+		},
+	);
+
 	test("a code node that prints prints once when performed, and never when composed", async () => {
 		const w = await world();
 		const log = spyOn(console, "log").mockImplementation(() => {});
@@ -1032,7 +1487,7 @@ describe("perform", () => {
 					stderrTerminal: terminal,
 					env: { ...env, ...off.env },
 				});
-				expect(plain.err + plain.out).not.toContain(ESC);
+				expectPlainClosing(plain.err + plain.out, verb[0], off.env.TERM);
 				expect(plain.out).toStartWith("file       ~/");
 			}
 

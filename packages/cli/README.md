@@ -106,7 +106,9 @@ prints the output as it is, the exit code staying the command's. A pipe is never
 ## Performing
 
 `perform` announces `concert <id>`, the full id, on stderr when it starts, and on a terminal adds
-`Follow it: maestro watch <id>`. It takes the tour from `--tour`, else `MAESTRO_TOUR`.
+`Follow it: maestro watch <id>`. On a stderr terminal it then redraws `watch`'s header, `now` and `last` lines under
+them, and erases them when the concert settles. `--json` and `TERM=dumb` turn that off. `resume` and `encore` do the
+same. It takes the tour from `--tour`, else `MAESTRO_TOUR`.
 
 With `--detach`, `perform`, `encore` and `resume` run the concert in a process of its own session and exit 0 once it
 starts, printing its id on stdout, or under `--json` `{"id": <id>, "status": "running"}`. A run that starts no concert

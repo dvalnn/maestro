@@ -71,6 +71,7 @@ import {
 	withLocated,
 	withRecord,
 } from "./session";
+import { headerBlock } from "./watch";
 
 /** The environment variable that puts a new concert on a tour when `--tour` is not given. */
 const TOUR_VARIABLE = "MAESTRO_TOUR";
@@ -303,9 +304,10 @@ const SIGNAL_EXITS = {
 	SIGTERM: EXIT.terminated,
 } as const;
 
-/** Cancels `concert` on SIGINT or SIGTERM, until it settles; `stopped` is the exit code of the first signal. */
+/** Cancels `concert` on SIGINT or SIGTERM, until it settles and `after` has run; `stopped` is the exit code of the first signal. */
 async function settled(
 	concert: Concert,
+	after: () => Promise<void>,
 ): Promise<{ result: ConcertResult; stopped?: number }> {
 	const signals = ["SIGINT", "SIGTERM"] as const;
 	let stopped: number | undefined;
@@ -314,14 +316,18 @@ async function settled(
 			stopped ??= SIGNAL_EXITS[signal];
 			void concert.cancel();
 		};
-		process.once(signal, stop);
+		process.on(signal, stop);
 		return [signal, stop] as const;
 	});
+	let result: ConcertResult;
 	try {
-		return { result: await concert.done, stopped };
+		result = await concert.done;
 	} finally {
+		// The handlers stay until `after` is done: a signal while it waits still counts and cancels rather than kills.
+		await after();
 		for (const [signal, stop] of stops) process.off(signal, stop);
 	}
+	return { result, stopped };
 }
 
 /** Prints how the concert ended and the outputs its result carries, and gives its exit code. */
@@ -404,8 +410,27 @@ async function conducted(
 		deps.stderr(
 			`Follow it: maestro watch ${shortIds(store.ids()).label(concert.id, false)}`,
 		);
-	const settledConcert = await settled(concert);
+	const stopBlock = liveBlock(deps, store, concert.id, color, json);
+	const settledConcert = await settled(concert, stopBlock);
 	return report(session, store, json, color, concert.id, settledConcert);
+}
+
+/** Draws the live block while a concert runs on a terminal stderr that moves its cursor, and gives what stops it. */
+function liveBlock(
+	deps: Deps,
+	store: Records,
+	id: string,
+	color: Colors,
+	json: boolean,
+): () => Promise<void> {
+	const row = store.find(id);
+	const terminal = deps.stderrTerminal;
+	if (!terminal || json || row === undefined || deps.env.TERM === "dumb")
+		return async () => {};
+	return headerBlock(deps, store, row, {
+		terminal,
+		color: color.err,
+	});
 }
 
 /** Pre-flights and performs what `started` makes in the record store of the data root, and gives the exit code. */

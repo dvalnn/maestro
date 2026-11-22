@@ -622,6 +622,13 @@ export const headSegs = (
 	lastSegs(graph, seen, view.concert.status !== "running"),
 ];
 
+/** The header, `now` and `last` as `frame` draws them, each within `columns - 1` terminal cells. */
+export function headBlock(ir: Ir, seen: Seen, view: View): string {
+	return headSegs(indexGraph(ir), seen, view)
+		.map((segs) => painted(segs, view.color, view.columns - 1))
+		.join("\n");
+}
+
 /** Lines the frame holds beside its rows: the header, `now`, `last` and the footer. */
 const CHROME_LINES = 4;
 /** The line the terminal keeps free below the frame. */

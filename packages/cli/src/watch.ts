@@ -6,6 +6,7 @@ import {
 	agentsOf,
 	eventLine,
 	frame,
+	headBlock,
 	type Seen,
 	seen,
 	shortIds,
@@ -154,6 +155,82 @@ function drawingOf(
 	};
 }
 
+/** What redraws text in place over the text before it, and takes it away. */
+type Redraw = {
+	draw(text: string): void;
+	erase(): void;
+	/**
+	 * Runs `output`, which prints elsewhere on the terminal, with the text taken away, and draws it again after: `fresh`'s
+	 * text when it gives one, none when it throws, else the text as it was.
+	 */
+	around<T>(output: () => T, fresh: () => string | undefined): T;
+};
+
+const freshOr = (fresh: () => string | undefined, text: string | undefined) => {
+	try {
+		return fresh() ?? text;
+	} catch {
+		// The block stays away until the next poll draws it at the width then.
+		return undefined;
+	}
+};
+
+/**
+ * Writes lines through `write`, each text drawn over the one before when it changed. `columns` is the terminal's
+ * current width, so a line that wrapped counts as the lines it took. `erase` leaves the cursor where the first text
+ * began.
+ */
+function redrawn(write: (text: string) => void, columns: () => number): Redraw {
+	let last: string | undefined;
+	let shown = false;
+	let printing = false;
+	const height = (text: string) => {
+		const width = columns();
+		return text
+			.split("\n")
+			.reduce(
+				(sum, line) =>
+					sum + Math.max(1, Math.ceil(Bun.stringWidth(line) / width)),
+				0,
+			);
+	};
+	const take = (text: string) => `${cursorUp(height(text))}${CLEAR_BELOW}`;
+	const self: Redraw = {
+		draw(text) {
+			if (text === last && shown) return;
+			const erase = last === undefined || !shown ? "" : take(last);
+			write(`${erase}${text}`);
+			last = text;
+			shown = true;
+		},
+		erase() {
+			if (last === undefined || !shown) return;
+			// `write` ends its text with a newline, so the cursor goes one line further up to land on the first line.
+			write(`${take(last)}${cursorUp(1)}`);
+			shown = false;
+		},
+		around(output, fresh) {
+			// One print can reach the terminal through several wrapped writers; only the outermost moves the block.
+			if (printing) return output();
+			printing = true;
+			const text = last;
+			self.erase();
+			try {
+				return output();
+			} finally {
+				// Cleared after the redraw, so a print the host's text hook makes meanwhile does not redraw again.
+				try {
+					const again = freshOr(fresh, text);
+					if (again !== undefined) self.draw(again);
+				} finally {
+					printing = false;
+				}
+			}
+		},
+	};
+	return self;
+}
+
 /** Redraws the frame in place, over the one before, when it changed. */
 function frames(
 	deps: Deps,
@@ -162,18 +239,84 @@ function frames(
 	color: boolean,
 ): Show {
 	const drawing = drawingOf(deps, store, terminal, color);
-	let last: string | undefined;
+	const screen = redrawn(deps.stdout, () => terminal().columns);
 	return (events, row) => {
 		const state = drawing.fold(events, row);
 		const { view, agents } = drawing.read(row);
-		const text = frame(row.ir, state, view, agents);
-		if (text === last) return;
-		const erase =
-			last === undefined
-				? ""
-				: `${cursorUp(last.split("\n").length)}${CLEAR_BELOW}`;
-		deps.stdout(`${erase}${text}`);
-		last = text;
+		screen.draw(frame(row.ir, state, view, agents));
+	};
+}
+
+const PRINTERS = ["log", "info", "debug", "warn", "error"] as const;
+
+/**
+ * Has what the process prints through `console`, and through `process.stdout` when `shared`, go through `around`, until
+ * the returned function restores them. `process.stdout` is read only when `shared`: reading it makes fd 1 non-blocking,
+ * which loses a large write to a slow pipe, and a pipe shares no terminal with the block.
+ */
+function guarded(
+	around: <T>(output: () => T) => T,
+	shared: boolean,
+): () => void {
+	const originals = PRINTERS.map((name) => [name, console[name]] as const);
+	for (const [name, print] of originals)
+		console[name] = (...args: unknown[]) =>
+			around(() => print.apply(console, args));
+	const stream = shared ? process.stdout : undefined;
+	const write = stream?.write;
+	if (stream && write)
+		stream.write = ((...args: unknown[]) =>
+			around(() => Reflect.apply(write, stream, args))) as typeof stream.write;
+	return () => {
+		for (const [name, print] of originals) console[name] = print;
+		if (stream && write) stream.write = write;
+	};
+}
+
+/**
+ * Draws the header, `now` and `last` of concert `first` on stderr, as wide as `terminal` says each time, redrawing as
+ * the record changes. Anything the process prints meanwhile goes where the block was. Gives a `stop` that ends the
+ * drawing, erases it and restores the printers. A tick whose redraw throws is skipped, and the next one tries again.
+ */
+export function headerBlock(
+	deps: Deps,
+	store: Records,
+	first: ConcertRecord,
+	{ terminal, color }: { terminal: () => { columns: number }; color: boolean },
+): () => Promise<void> {
+	const columns = () => terminal().columns;
+	const drawing = drawingOf(
+		deps,
+		store,
+		() => ({ columns: columns(), rows: 0 }),
+		color,
+	);
+	const screen = redrawn(deps.stderr, columns);
+	let latest: (() => string) | undefined;
+	const restore = guarded(
+		(output) => screen.around(output, () => latest?.()),
+		deps.terminal !== undefined,
+	);
+	const quit = Promise.withResolvers<void>();
+	const polling = polled(
+		store,
+		first,
+		(events, row) => {
+			try {
+				const state = drawing.fold(events, row);
+				latest = () => headBlock(row.ir, state, drawing.read(row).view);
+				screen.draw(latest());
+			} catch {
+				// A host's text hook threw: the block keeps its last text, and the next tick draws again.
+			}
+		},
+		quit.promise,
+	).catch(() => undefined);
+	return async () => {
+		quit.resolve();
+		await polling;
+		restore();
+		screen.erase();
 	};
 }
 
