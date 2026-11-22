@@ -1101,9 +1101,8 @@ for (const { gate, harness, model } of REAL_HARNESSES) {
 			);
 			const done = await w.call(["perform", join(REPO, "write.ts")]);
 			expect(done).toMatchObject({ code: 0 });
-			const { instances } = json(await w.call(["ls", idOf(done), "--json"]));
-			const agent = instances.find((i: { node: string }) => i.node === "write");
-			expect(agent.outputs.report.summary.toLowerCase()).toContain("kumquat");
+			const agent = json(await w.call(["ls", idOf(done), "write", "--json"]));
+			expect(agent.report.summary.toLowerCase()).toContain("kumquat");
 			expect(agent.metrics.tokens_in).toBeGreaterThan(0);
 			if (harness === "claude") {
 				const record = openRecord(join(w.root, "data/maestro/record.db"));
