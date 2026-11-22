@@ -22,10 +22,13 @@ export async function walk(dir: string): Promise<Dirent[]> {
 }
 
 /** `path` with the home directory `home` at its start shown as `~`. */
-export const tildeOf = (path: string, home: string | undefined) =>
-	home && (path === home || path.startsWith(`${home}/`))
-		? `~${path.slice(home.length)}`
-		: path;
+export const tildeOf = (path: string, home: string | undefined) => {
+	if (!home) return path;
+	// Trailing slashes go first; a HOME of only slashes leaves "", the root.
+	const root = home.replace(/\/+$/, "");
+	if (path === home || (root ? path === root : path === "/")) return "~";
+	return path.startsWith(`${root}/`) ? `~${path.slice(root.length)}` : path;
+};
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
