@@ -359,14 +359,22 @@ const lineSegs = (line: Fitted<Texted>, w: Widths): Seg[] =>
 		? rowSegs(line.row, line.row.t, w)
 		: hiddenSegs(line.depth, line.states);
 
-/** `text` cut to its first `room` terminal cells, by whole code points. */
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** Each grapheme cluster of `text` with its width in terminal cells. */
+function* clusters(text: string): Generator<[string, number]> {
+	for (const { segment } of GRAPHEMES.segment(text))
+		yield [segment, Bun.stringWidth(segment)];
+}
+
+/** `text` cut to its first `room` terminal cells, by whole grapheme clusters. */
 function fit(text: string, room: number): string {
 	let cut = "";
 	let left = room;
-	for (const point of text) {
-		left -= Bun.stringWidth(point);
+	for (const [cluster, width] of clusters(text)) {
+		left -= width;
 		if (left < 0) break;
-		cut += point;
+		cut += cluster;
 	}
 	return cut;
 }
@@ -875,13 +883,18 @@ const DETAIL_SEGS: ReadonlyMap<string, (detail: string) => Seg[]> = new Map([
 	["tool", headedSegs],
 ]);
 
-/** Where the row from `start` ends within `width` cells: at the last space that fits, else at the last cell that fits. */
-function breakOf(cells: readonly Seg[], start: number, width: number): number {
+/** A grapheme cluster, its width in cells and its style. */
+type Cell = [string, number, Style?];
+
+/** Where the row from `start` ends within `width` cells: at the last space that fits, else at the last cluster that fits, at least one cluster on. */
+function breakOf(cells: readonly Cell[], start: number, width: number): number {
 	let end = start;
 	for (let used = 0; end < cells.length; end++) {
-		used += Bun.stringWidth(cells[end]?.[0] ?? "");
+		used += cells[end]?.[1] ?? 0;
 		if (used > width) break;
 	}
+	// A row takes at least one cluster, so the wrap ends at any width.
+	if (end === start) end++;
 	if (end === cells.length) return end;
 	for (let space = end; space > start; space--)
 		if (cells[space]?.[0] === " ") return space;
@@ -899,16 +912,18 @@ function joined(cells: readonly Seg[]): Seg[] {
 	return segs;
 }
 
-/** `segs` in rows of at most `width` terminal cells, each broken at a space where it can be, without leading spaces. */
+/** `segs` in rows of at most `width` terminal cells except one cluster wider than it, each broken at a space where it can be, without leading spaces. */
 function wrapped(segs: readonly Seg[], width: number): Seg[][] {
 	const cells = segs.flatMap(([text, style]) =>
-		[...text].map((c): Seg => [c, style]),
+		[...clusters(text)].map(([c, w]): Cell => [c, w, style]),
 	);
 	const rows: Seg[][] = [];
 	let at = 0;
 	while (at < cells.length) {
 		const end = breakOf(cells, at, width);
-		rows.push(joined(cells.slice(at, end)));
+		rows.push(
+			joined(cells.slice(at, end).map(([c, , style]): Seg => [c, style])),
+		);
 		at = end;
 		while (cells[at]?.[0] === " ") at++;
 	}
@@ -1058,14 +1073,11 @@ export function cutTo(text: string, columns: number): string {
 	return text.includes("\u001b[") ? `${cut}${RESET}` : cut;
 }
 
-/** `text` in lines of at most `width` terminal cells, at least 2, an empty text one empty line, broken at spaces where it can be and by cells where it cannot. */
+/** `text` in lines of at most `width` terminal cells except one grapheme cluster wider than it, an empty text one empty line, broken at spaces where it can be and by cells where it cannot. */
 export const wrapText = (text: string, width: number): string[] =>
 	text === ""
 		? [""]
-		: // A cell is at most two wide, so a narrower width could never advance.
-			wrapped([[text]], Math.max(width, 2)).map((row) =>
-				row.map(([part]) => part).join(""),
-			);
+		: wrapped([[text]], width).map((row) => row.map(([part]) => part).join(""));
 
 export const hintLine = (text: string, color: boolean) =>
 	line([[text, "dim"]], color);

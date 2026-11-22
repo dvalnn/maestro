@@ -215,8 +215,7 @@ export const wrapping = (columns: number): Fit | undefined =>
 	columns > 0 ? { columns, wrap: true } : undefined;
 
 /**
- * The fewest cells a wrapped last column breaks at: a wide character is two cells, and a narrower break would never
- * advance. A narrow terminal wraps the text narrower rather than letting a line overrun it.
+ * The fewest cells a wrapped last column breaks at, a layout choice: a wide character is two cells. A narrow terminal wraps the text narrower rather than letting a line overrun it.
  */
 const MIN_WRAP = 2;
 

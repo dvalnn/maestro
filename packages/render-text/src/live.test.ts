@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { styleText } from "node:util";
 import type { ConcertEvent, EventBody, Ir } from "@maestro/ir";
 import { END_S, MID_S, PANEL_IR, panelEvents } from "./fixtures/panel";
@@ -6,14 +7,17 @@ import {
 	agentsOf,
 	agentText,
 	closingBlock,
+	cutTo,
 	eventLine,
 	frame,
 	inGraphOrder,
+	painted,
 	seen,
 	shortId,
 	shortIds,
 	stateWord,
 	type View,
+	wrapText,
 } from "./live";
 import { WIDE_GAP } from "./tree";
 
@@ -97,6 +101,49 @@ const drawn = (view: Partial<View> = {}) =>
 	frame(ir, seen(new Map(), EVENTS), { ...VIEW, ...view }, new Map());
 
 const CUT = "Full outputs: maestro wait kswoykny --json | jq .outputs";
+
+describe("wrapText", () => {
+	test("keeps a joined emoji whole at its exact width", () => {
+		expect(wrapText("👩‍💻", 2)).toEqual(["👩‍💻"]);
+		expect(wrapText("a👩‍💻b", 3)).toEqual(["a👩‍💻", "b"]);
+	});
+
+	test("returns rows at widths one and zero, overrunning for a wide cluster and dropping break spaces", () => {
+		const module = new URL("./live.ts", import.meta.url).href;
+		const result = spawnSync(
+			process.execPath,
+			[
+				"-e",
+				`import { wrapText } from ${JSON.stringify(module)};
+console.log(JSON.stringify([wrapText("漢字 abc", 1), wrapText("a b", 0)]));`,
+			],
+			{ encoding: "utf8", timeout: 5000 },
+		);
+		expect(result.status).toBe(0);
+		expect(result.stdout).toBe('[["漢","字","a","b","c"],["a","b"]]\n');
+	});
+});
+
+describe("cutTo", () => {
+	test("cuts beside a joined emoji without splitting it", () => {
+		expect(cutTo("👩‍💻yz", 3)).toBe("👩‍💻…");
+		expect(cutTo("👩‍💻yz", 2)).toBe("…");
+	});
+});
+
+describe("painted", () => {
+	test("keeps a line with a joined emoji whole at its terminal width", () => {
+		expect(painted([["/home/🧑‍💻/config.yaml"]], false, 20)).toBe(
+			"/home/🧑‍💻/config.yaml",
+		);
+	});
+
+	test("counts a joined emoji as two cells when cutting a styled segment", () => {
+		expect(painted([["👩‍💻yz", "yellow"]], true, 3)).toBe(
+			styleText("yellow", "👩‍💻y", { validateStream: false }),
+		);
+	});
+});
 
 describe("frame", () => {
 	test("draws a header, `now` and `last`, the authored rows with a parMap body aggregated, and a footer of counts", () => {
