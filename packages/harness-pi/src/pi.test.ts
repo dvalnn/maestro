@@ -14,7 +14,7 @@ import { join } from "node:path";
 import type { HarnessEvent, HarnessRequest } from "@maestro/host-repo/harness";
 import { declared, piHarness } from "./index";
 
-const FIXTURES = join(import.meta.dir, "../fixtures/1.5.0");
+const FIXTURES = join(import.meta.dir, "../fixtures/1.6.0");
 const dirs: string[] = [];
 const tmp = (name: string) => {
 	const d = mkdtempSync(join(tmpdir(), `pi-${name}-`));
@@ -63,7 +63,7 @@ async function drain(events: AsyncIterable<HarnessEvent>) {
 }
 
 describe("stand-in pi", () => {
-	test("the recorded 1.5.0 run is read into tools, their result sizes and errors, usage, prompt sizes and a reply", async () => {
+	test("the recorded 1.6.0 run is read into tools, their result sizes and errors, usage, prompt sizes and a reply", async () => {
 		const req = request("write hello.txt");
 		const unknown = '{"type":"future_event","extra":{"a":1}}';
 		const compactions = [
@@ -88,11 +88,11 @@ describe("stand-in pi", () => {
 			outcome: "ok",
 			reply: "done",
 			metrics: {
-				tokens_in: 4305,
-				tokens_out: 157,
+				tokens_in: 4319,
+				tokens_out: 174,
 				tokens_cache_read: 0,
 				tokens_cache_write: 0,
-				tokens_reasoning: 79,
+				tokens_reasoning: 96,
 			},
 		});
 		expect(seen.filter((e) => e.kind === "raw")).toHaveLength(1);
@@ -115,7 +115,7 @@ describe("stand-in pi", () => {
 			seen.filter((e) => e.kind === "context" || e.kind === "compaction"),
 		).toEqual([
 			{ kind: "context", used: 2075 },
-			{ kind: "context", used: 2230 },
+			{ kind: "context", used: 2244 },
 			{ kind: "compaction" },
 		]);
 		expect(seen.at(-1)).toEqual({
