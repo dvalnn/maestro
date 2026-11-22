@@ -356,7 +356,8 @@ flags and `-C` as `-c target.repo=<repo>`. `show` leaves the checkout untouched,
 resets its tracked files.
 
 - The changeset is the result node's when it made one, else the last `ok` instance's that did; `--node <id>` names one.
-  A concert that is not `ok` is warned of on stderr.
+  Only instances `maestro ls <concert>` lists count. A result it leaves out is passed over for the last listed `ok` one,
+  and `--node` refuses an instance it leaves out. A concert that is not `ok` is warned of on stderr.
 - `--partial` (with `--node`, else a usage error) takes the work a failed, blocked or cancelled agent kept, not a
   changeset; an instance with none is refused (exit 1).
 - `show` prints the changeset message before the diff. `apply` stages patch by patch with `git apply --index --3way`.

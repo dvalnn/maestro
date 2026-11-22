@@ -1135,6 +1135,16 @@ for (const { gate, harness, model, thinking } of REAL_HARNESSES) {
 	);
 }
 
+// Seams: changeset show/apply output and exit, and the instances and pointer in ls <concert> --json.
+function seedDroppedInstance(dataHome: string, id: string) {
+	const db = new Database(join(dataHome, "maestro/record.db"));
+	db.run(
+		"INSERT INTO instances (concert, node, expansion, status, stale) VALUES (?, ?, ?, 'ok', 1)",
+		[id, "rounds/gone/x", "[0][a]"],
+	);
+	db.close();
+}
+
 describe("changeset", () => {
 	/** Git `args` in `repo`, its stdout trimmed. */
 	const git = (repo: string, ...args: string[]) => {
@@ -1245,6 +1255,119 @@ export const ${name} = composition("${name}", { examples: [{}] }, () => {
 			writeFileSync(file, text.replace("+nested", `+${item}`));
 		}
 	}
+
+	test("changeset show resolves a listed instance beside a dropped group", async () => {
+		const w = await edited("fan.ts");
+		const name = "rounds[0]/fan[risk]/nestedSet";
+		const before = await w.cs("show", w.id, "--node", name);
+		const beforeListing = await w.call(["ls", w.id, "--json"]);
+		expect(beforeListing.code).toBe(0);
+		expect(json(beforeListing).changeset).toBeDefined();
+		expect(before.code).toBe(0);
+		expect(before.out).toContain("+nested");
+		seedDroppedInstance(w.env.XDG_DATA_HOME, w.id);
+
+		const listed = await w.call(["ls", w.id, "--json"]);
+		expect(listed.code).toBe(0);
+		expect(
+			json(listed).instances.map((i: { name: string }) => i.name),
+		).toContain(name);
+		expect(json(listed).changeset).toEqual(json(beforeListing).changeset);
+		const shown = await w.cs("show", w.id, "--node", name);
+		expect(shown.code).toBe(0);
+		expect(shown.out).toBe(before.out);
+		expect(shown.err).toContain(`(node ${name}, concert ok)`);
+	});
+
+	test("changeset apply stages a listed instance beside a dropped group", async () => {
+		const w = await edited("fan.ts");
+		const name = "rounds[0]/fan[risk]/nestedSet";
+		seedDroppedInstance(w.env.XDG_DATA_HOME, w.id);
+		const applied = await w.cs("apply", w.id, "--node", name);
+		expect(applied.code).toBe(0);
+		expect(applied.err).toContain(`(node ${name}, concert ok)`);
+		expect(a(w.target)).toBe("nested\n");
+		expect(git(w.target, "diff", "--cached", "--name-only")).toBe("a.txt");
+	});
+
+	test("a dropped instance is unknown to changeset --node", async () => {
+		const w = await edited("fan.ts");
+		seedDroppedInstance(w.env.XDG_DATA_HOME, w.id);
+		const name = "rounds[0]/gone[a]/x";
+		for (const action of ["show", "apply"]) {
+			const refused = await w.cs(action, w.id, "--node", name);
+			expect(refused.code).toBe(2);
+			expect(refused.out).toBe("");
+			expect(refused.err.split(/[\s'"`,:;()]+/)).toContain(name);
+		}
+	});
+
+	test("equal settle times choose the changeset recorded last", async () => {
+		const w = await edited();
+		const id = await twoSets(w, "tiedsets");
+		recordInOrder(w, id, ["laterSet", "firstSet"]);
+		settle(w, id, "firstSet", 1000);
+		settle(w, id, "laterSet", 1000);
+		const shown = await w.cs("show", id);
+		expect(shown.code).toBe(0);
+		expect(shown.out).toContain("+first");
+		const { path } = await artifactPath(w, id, "firstSet");
+		expect(json(await w.call(["ls", id, "--json"])).changeset).toEqual({
+			name: "firstSet",
+			path,
+		});
+	});
+
+	test("default changesets exclude an instance the listing cannot reach", async () => {
+		const w = await edited();
+		const file = join(await scratch(), "nestedfans.ts");
+		await Bun.write(
+			file,
+			`import { changeset, check, fresh } from "@maestro/host-repo-sdk";
+import { composition, iter } from "@maestro/sdk";
+export const nestedfans = composition("nestedfans", { examples: [{}] }, () => {
+	iter.parMap(["lens", "risk"], () => iter.parMap(["a", "b"], () =>
+		changeset(check(fresh(), { run: "echo nested > a.txt" }).out.lane, { label: "nestedSet" }),
+		{ label: "inner", onError: "stop" }), { label: "outer", onError: "stop" });
+	return check(fresh(), { run: "true" }, { label: "result" });
+});
+`,
+		);
+		const performed = await w.call(["perform", file]);
+		expect(performed).toMatchObject({ code: 0 });
+		const id = idOf(performed);
+		amend(
+			w,
+			`INSERT INTO instances (concert, node, expansion, status, outputs, settled_at, stale)
+			SELECT concert, node, '[ghost][a]', 'ok', outputs, 9999999999999, 1 FROM instances
+			WHERE concert = ? AND node = 'outer/inner/nestedSet' AND expansion = '[risk][a]'`,
+			[id],
+		);
+		const listed = await w.call(["ls", id, "--json"]);
+		expect(listed.code).toBe(0);
+		const listing = json(listed);
+		expect(
+			listing.instances.map((i: { name: string }) => i.name),
+		).not.toContain("outer[ghost]/inner[a]/nestedSet");
+		expect(listing.instances.map((i: { name: string }) => i.name)).toContain(
+			listing.changeset.name,
+		);
+		const shown = await w.cs("show", id);
+		const named = await w.cs("show", id, "--node", listing.changeset.name);
+		expect(shown.code).toBe(0);
+		expect(named.code).toBe(0);
+		expect(shown.out).toBe(named.out);
+		expect(shown.err).toContain(`(node ${listing.changeset.name}, concert ok)`);
+		amend(
+			w,
+			"UPDATE instances SET status = 'failed' WHERE concert = ? AND expansion != '[ghost][a]'",
+			[id],
+		);
+		const none = await w.call(["ls", id, "--json"]);
+		expect(none.code).toBe(0);
+		expect(json(none)).not.toHaveProperty("changeset");
+		expect((await w.cs("show", id)).code).toBe(1);
+	});
 
 	// Seam: ls <concert> --json's changeset pointer, compared with art ls and cs show.
 	test("ls names the result node's changeset even when another settles later", async () => {
@@ -1778,6 +1901,14 @@ describe("changeset --partial", () => {
 		const cs = (...args: string[]) => w.call(["cs", ...args], { env: GIT_ENV });
 		return { ...w, id: idOf(done), cs };
 	}
+
+	test("partial show resolves a live instance beside a dropped group", async () => {
+		const w = await failed();
+		seedDroppedInstance(w.env.XDG_DATA_HOME, w.id);
+		const shown = await w.cs("show", w.id, "--node", "build", "--partial");
+		expect(shown.code).toBe(0);
+		expect(shown.out).toContain("+lost");
+	});
 
 	test("show and apply take the work a failed agent left", async () => {
 		const w = await failed();

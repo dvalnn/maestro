@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { instanceKey } from "@maestro/core";
 import { ConfigError } from "@maestro/core/config";
 import type {
 	ConcertRecord,
@@ -13,7 +14,7 @@ import {
 	MESSAGE_FILE,
 	patchFiles,
 } from "@maestro/host-repo";
-import { type Ir, indexGraph, isPlainObject } from "@maestro/ir";
+import { type Ir, isPlainObject } from "@maestro/ir";
 import { type Changes, shortIds, stateWord } from "@maestro/render-text/live";
 import {
 	type Command,
@@ -46,6 +47,7 @@ import {
 	artifactsOf,
 	composeProblem,
 	concertOf,
+	instancesInOrder,
 	openRecorded,
 	openSession,
 	overridesOf,
@@ -204,10 +206,7 @@ function named(
 	node: string,
 	partial: boolean,
 ) {
-	const graph = indexGraph(row.ir);
-	const names = new Map(
-		store.instances(row.id).map((i) => [graph.instanceName(i), i]),
-	);
+	const names = new Map(instancesInOrder(store, row).map((i) => [i.name, i]));
 	const name = resolveInstanceName(node, names.keys(), row.id);
 	const instance = names.get(name);
 	const kept = instance && partialOf(instance);
@@ -226,11 +225,21 @@ function named(
 	return { instance, dir: join(artifacts, ref.path) };
 }
 
-/** The instance `cs show` takes by default, and its changeset artifact: the result's when it made one, else the last `ok` one that did. */
+/**
+ * The instance `cs show` takes by default, with its name and changeset artifact: the result's when it made one, else
+ * the last `ok` one that did. Only instances `maestro ls` lists are considered; ties settle in record order.
+ */
 function defaultChoice(store: Records, row: ConcertRecord) {
 	const result = store.result(row.id);
+	const listed = new Map(
+		instancesInOrder(store, row).map((i) => [instanceKey(i), i]),
+	);
 	const ok = store
 		.instances(row.id)
+		.flatMap((i) => {
+			const found = listed.get(instanceKey(i));
+			return found ? [found] : [];
+		})
 		.filter((i) => i.status === "ok" && changesetOf(row.ir, i))
 		.sort((a, b) => (a.settledAt ?? 0) - (b.settledAt ?? 0));
 	const instance =
@@ -247,9 +256,7 @@ function defaultChoice(store: Records, row: ConcertRecord) {
  */
 export function changesetPointer(store: Records, row: ConcertRecord) {
 	const found = defaultChoice(store, row);
-	if (!found) return undefined;
-	const name = indexGraph(row.ir).instanceName(found.instance);
-	return { name, path: found.ref.path };
+	return found && { name: found.instance.name, path: found.ref.path };
 }
 
 /**
@@ -386,7 +393,7 @@ async function picked(stored: StoredRead, prefix: string): Promise<Picked> {
 		checkout: await recordedCheckout(stored, row, short),
 		row,
 		short,
-		instance: indexGraph(row.ir).instanceName(instance),
+		instance: instance.name,
 	};
 }
 
