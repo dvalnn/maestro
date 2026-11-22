@@ -408,7 +408,12 @@ flowchart TD
   and packs all come from `main`; its lane is still cut at its own base, the `revisionBase` for a revision or the epic's
   `base` for a stack review. An encore runs in the tree of its first concert's commit, rebuilt when removed; one whose
   tree names no commit the repository has halts as a failed start does. Each start removes the other trees, except those
-  a running concert performs in. A tree that cannot be made fails the tick without a halt issue.
+  a running factory concert performs in, whatever its milestone. A tree that cannot be made fails the tick without a
+  halt issue.
+- **Trees kept.** A tree outside the trees root saves none under it. When a running concert's tree cannot be read, the
+  tick logs that concert and the reason. It removes no tree but the one it makes, and still starts. Landing rebuilds
+  that tree when it is no workspace. An encore whose own concert's tree cannot be read halts as a failed start does.
+  Running concerts that cannot be listed fail the tick without a halt issue.
 - **Landing.** An ok slice lands in a fresh jj workspace on the tick's `main` commit, or on its `revisionBase` for a
   revision: `maestro cs apply`, then `jj describe` with the spec's subject and `Refs: #N`, or for a revision `jj squash`
   into the `revisionBase` with that description. It runs no check of its own: the slice's gate passed in its lane, and

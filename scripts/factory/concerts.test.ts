@@ -1,4 +1,16 @@
 import { describe, expect, test } from "bun:test";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	busySlots,
@@ -13,7 +25,8 @@ import {
 	startTriage,
 } from "./concerts";
 import type { Issue } from "./forge";
-import type { Concert } from "./maestro";
+import { landing } from "./land";
+import { type Concert, maestro } from "./maestro";
 import {
 	BOT,
 	fakeForge,
@@ -374,25 +387,285 @@ test("a start keeps the trees of the running concerts, of any kind, and not thos
 	expect(t.kept).toEqual([[busy], [busy]]);
 });
 
-test("a start whose running concert's tree cannot be read makes no tree and throws", async () => {
-	const t = setup({
-		concerts: [
-			{
-				id: "run",
-				tour: MILESTONE,
-				status: "running",
-				pack: "slice",
-				composition: "slice",
+type RecordRow = Concert & { dir?: string; error?: string };
+
+// The start seam uses the real reader and landing; only the maestro process and forge are external boundaries.
+function treeFixture() {
+	const home = mkdtempSync(join(tmpdir(), "factory-start-"));
+	const repo = join(home, "repo");
+	const cache = join(home, "cache");
+	const root = join(cache, "trees");
+	const bin = join(home, "maestro");
+	const records = join(home, "records.json");
+	const calls = join(home, "calls");
+	const command = (cwd: string, ...args: string[]) => {
+		const result = Bun.spawnSync(args, {
+			cwd,
+			env: {
+				...process.env,
+				JJ_USER: "Owner",
+				JJ_EMAIL: "owner@example.com",
+				JJ_CONFIG: "",
 			},
-		],
-	});
-	t.tick.maestro.tree = async () => {
-		throw new Error("ls failed");
+		});
+		if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+		return result.stdout.toString().trim();
 	};
-	await expect(startTriage(t.tick, issue, TRIAGE_INPUT)).rejects.toThrow(
-		"ls failed",
+	command(home, "mkdir", repo);
+	command(repo, "jj", "git", "init");
+	writeFileSync(
+		join(repo, "package.json"),
+		'{"name":"fixture","private":true}\n',
 	);
-	expect(t.trees).toEqual([]);
+	command(repo, "bun", "install");
+	const commits: string[] = [];
+	for (let i = 0; i < 6; i++) {
+		writeFileSync(join(repo, "version"), `${i}\n`);
+		command(repo, "jj", "commit", "-m", `version ${i}`);
+		commits.push(
+			command(repo, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"),
+		);
+	}
+	writeFileSync(
+		bin,
+		`#!${process.execPath}
+const fs = require('node:fs');
+const rows = JSON.parse(fs.readFileSync(${JSON.stringify(records)}, 'utf8'));
+const args = process.argv.slice(2);
+const value = flag => args[args.indexOf(flag) + 1];
+if (args[0] === 'ls') {
+  if (rows === null) {
+    if (args.includes('--tour')) { console.log('[]'); process.exit(0); }
+    console.log(JSON.stringify({ok:false,error:'listing unavailable'})); process.exit(1);
+  }
+  let found = rows.filter(r => !args.includes('--tour') || r.tour === value('--tour') || r.tour?.startsWith(value('--tour') + '.'));
+  if (args.includes('--status')) found = found.filter(r => r.status === value('--status'));
+  if (args.includes('--composition')) found = found.filter(r => r.pack + '.' + r.composition === value('--composition'));
+  if (!args.includes('--all')) found = found.slice(0, args.includes('--limit') ? Number(value('--limit')) : 20);
+  console.log(JSON.stringify(found));
+} else if (args[0] === 'config') {
+  const row = rows?.find(r => r.id === args[1]);
+  console.log(JSON.stringify(row?.error ? {ok:false,error:row.error} : {values:[],moduleDir:row?.dir}));
+  if (row?.error) process.exit(1);
+} else if (args[0] === 'perform') {
+  fs.writeFileSync(${JSON.stringify(calls)}, JSON.stringify({cwd:process.cwd(),args}));
+  console.log(JSON.stringify({id:'started'}));
+}
+`,
+	);
+	chmodSync(bin, 0o755);
+	const t = setup();
+	t.tick.cache = cache;
+	t.tick.main = commits[5] ?? "";
+	t.tick.maestro = maestro(bin);
+	t.tick.landing = landing(repo, {
+		login: BOT,
+		name: BOT,
+		email: "bot@example.com",
+	});
+	return { home, root, commits, records, calls, t };
+}
+
+async function existingTrees(f: ReturnType<typeof treeFixture>, count: number) {
+	const kept: string[] = [];
+	for (const commit of f.commits.slice(0, count)) {
+		await f.t.tick.landing.tree(commit, f.root, kept);
+		kept.push(commit);
+	}
+}
+
+const row = (
+	id: string,
+	pack: string,
+	dir: string,
+	status = "running",
+): RecordRow => ({
+	id,
+	pack,
+	composition: pack,
+	status,
+	tour: "v0.2.0.i1",
+	dir,
+});
+
+test("a start keeps every milestone's running factory trees and removes settled trees", async () => {
+	const f = treeFixture();
+	try {
+		await existingTrees(f, 5);
+		const dirs = f.commits.map((c) => join(f.root, c, ".maestro"));
+		const rows = [
+			...Array.from({ length: 21 }, (_, i) =>
+				row(`slice${i}`, "slice", dirs[1] ?? ""),
+			),
+			row("last-slice", "slice", dirs[0] ?? ""),
+			row("triage", "triage", dirs[1] ?? ""),
+			row("review", "review", dirs[2] ?? ""),
+			{
+				...row("masterclass", "masterclass", dirs[3] ?? ""),
+				tour: "v0.2.0.masterclass",
+			},
+			row("settled", "slice", dirs[4] ?? "", "ok"),
+			{ ...row("unrelated", "other", ""), error: "unrelated record is broken" },
+		];
+		writeFileSync(f.records, JSON.stringify(rows));
+		expect(
+			await startTriage(f.t.tick, issue, TRIAGE_INPUT).catch(() => undefined),
+		).toBe("started");
+		expect(readdirSync(f.root).sort()).toEqual(
+			[...f.commits.slice(0, 4), f.t.tick.main].sort(),
+		);
+	} finally {
+		rmSync(f.home, { recursive: true, force: true });
+	}
+});
+
+test("a running concert outside the root does not save a same-named tree", async () => {
+	const f = treeFixture();
+	try {
+		await existingTrees(f, 1);
+		const outside = join(f.home, "elsewhere", f.commits[0] ?? "", ".maestro");
+		writeFileSync(
+			f.records,
+			JSON.stringify([
+				{ ...row("manual", "slice", outside), tour: `${MILESTONE}.i1` },
+			]),
+		);
+		expect(
+			await startTriage(f.t.tick, issue, TRIAGE_INPUT).catch(() => undefined),
+		).toBe("started");
+		expect(readdirSync(f.root)).toEqual([f.t.tick.main]);
+	} finally {
+		rmSync(f.home, { recursive: true, force: true });
+	}
+});
+
+test("an unreadable running concert leaves all trees, logs its reason and still starts", async () => {
+	const f = treeFixture();
+	try {
+		await existingTrees(f, 2);
+		const half = join(f.root, f.commits[5] ?? "", "half");
+		mkdirSync(join(f.root, f.commits[5] ?? ""));
+		writeFileSync(half, "unfinished");
+		writeFileSync(
+			f.records,
+			JSON.stringify([
+				{
+					...row("broken", "slice", ""),
+					tour: `${MILESTONE}.i1`,
+					error: "snapshot does not compose",
+				},
+				{
+					...row(
+						"healthy",
+						"triage",
+						join(f.root, f.commits[0] ?? "", ".maestro"),
+					),
+					tour: `${MILESTONE}.i2`,
+				},
+			]),
+		);
+		expect(
+			await startTriage(f.t.tick, issue, TRIAGE_INPUT).catch(() => undefined),
+		).toBe("started");
+		expect(readdirSync(f.root).sort()).toEqual(
+			[...f.commits.slice(0, 2), f.t.tick.main].sort(),
+		);
+		const matching = f.t.said.filter(
+			(line) =>
+				line.includes("broken") && line.includes("snapshot does not compose"),
+		);
+		expect(matching).toHaveLength(1);
+		expect(matching[0]).not.toContain("\n");
+		expect(existsSync(half)).toBe(false);
+		expect(existsSync(f.calls)).toBe(true);
+		expect(JSON.parse(readFileSync(f.calls, "utf8")).cwd).toBe(
+			join(f.root, f.commits[5] ?? ""),
+		);
+		expect(f.t.writes).toEqual([]);
+	} finally {
+		rmSync(f.home, { recursive: true, force: true });
+	}
+});
+
+test("a multiline read failure is logged on one line", async () => {
+	const f = treeFixture();
+	try {
+		writeFileSync(
+			f.records,
+			JSON.stringify([
+				{ ...row("broken", "slice", ""), error: "first line\nsecond line" },
+			]),
+		);
+		await startTriage(f.t.tick, issue, TRIAGE_INPUT).catch(() => undefined);
+		const lines = f.t.said.filter((l) => l.includes("broken"));
+		expect(lines).toHaveLength(1);
+		expect(lines[0]).toContain("first line second line");
+	} finally {
+		rmSync(f.home, { recursive: true, force: true });
+	}
+});
+
+test("a running concert recorded through a symlink to the cache, or deeper in its tree, keeps its tree", async () => {
+	const f = treeFixture();
+	try {
+		await existingTrees(f, 3);
+		const link = join(f.home, "link");
+		symlinkSync(join(f.home, "cache"), link);
+		writeFileSync(
+			f.records,
+			JSON.stringify([
+				row(
+					"linked",
+					"slice",
+					join(link, "trees", f.commits[0] ?? "", ".maestro"),
+				),
+				row("nested", "triage", join(f.root, f.commits[1] ?? "", "a", "b")),
+			]),
+		);
+		await startTriage(f.t.tick, issue, TRIAGE_INPUT).catch(() => undefined);
+		expect(readdirSync(f.root).sort()).toEqual(
+			[...f.commits.slice(0, 2), f.t.tick.main].sort(),
+		);
+	} finally {
+		rmSync(f.home, { recursive: true, force: true });
+	}
+});
+
+test("a running concert recorded by its real path keeps its tree when the cache is reached through a symlink", async () => {
+	const f = treeFixture();
+	try {
+		await existingTrees(f, 2);
+		const link = join(f.home, "link");
+		symlinkSync(join(f.home, "cache"), link);
+		f.t.tick.cache = link;
+		writeFileSync(
+			f.records,
+			JSON.stringify([
+				row("real", "slice", join(f.root, f.commits[0] ?? "", ".maestro")),
+			]),
+		);
+		await startTriage(f.t.tick, issue, TRIAGE_INPUT).catch(() => undefined);
+		expect(readdirSync(f.root).sort()).toEqual(
+			[f.commits[0] ?? "", f.t.tick.main].sort(),
+		);
+	} finally {
+		rmSync(f.home, { recursive: true, force: true });
+	}
+});
+
+test("a failed running concert listing makes no tree and files no halt", async () => {
+	const f = treeFixture();
+	try {
+		writeFileSync(f.records, "null");
+		await expect(startTriage(f.t.tick, issue, TRIAGE_INPUT)).rejects.toThrow(
+			"listing unavailable",
+		);
+		expect(existsSync(f.root)).toBe(false);
+		expect(existsSync(f.calls)).toBe(false);
+		expect(f.t.writes).toEqual([]);
+	} finally {
+		rmSync(f.home, { recursive: true, force: true });
+	}
 });
 
 describe("recognising a concert", () => {

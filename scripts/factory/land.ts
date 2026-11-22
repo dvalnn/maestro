@@ -35,13 +35,13 @@ export type Landing = {
 	 * A jj workspace of the repository at the commit `revision` names, at `root/<commit>`, with its dependencies
 	 * installed, and returns its directory. It reuses the tree there, installs again to heal a half install, rebuilds a
 	 * directory that is no workspace and removes every other tree under `root` except those of the commits in `keep`,
-	 * which running concerts perform in.
+	 * which running concerts perform in; `"all"` keeps every tree.
 	 * @throws Error when `revision` names no single commit, or the workspace or its install fails.
 	 */
 	tree(
 		revision: string,
 		root: string,
-		keep: readonly string[],
+		keep: readonly string[] | "all",
 	): Promise<string>;
 	/**
 	 * Merges commit `head` onto commit `onto` and, when they conflict only in ways a builder can be told, commits the
@@ -273,7 +273,7 @@ export function landing(
 			const dir = join(root, commit);
 			mkdirSync(root, { recursive: true });
 			for (const other of readdirSync(root).filter(
-				(n) => n !== commit && !keep.includes(n),
+				(n) => n !== commit && keep !== "all" && !keep.includes(n),
 			))
 				await close(join(root, other), treeName(other));
 			if (!existsSync(join(dir, ".jj")))

@@ -198,6 +198,15 @@ test("a tree is a workspace of its commit with its dependencies installed, reuse
 	expect(readdirSync(root).sort()).toEqual([main, next].sort());
 });
 
+test("a tree made with every tree kept removes none", async () => {
+	const { dir, main, next } = treeRepository();
+	const root = join(mkdtempSync(join(tmpdir(), "factory-trees-")), "trees");
+	const lands = landing(dir, account);
+	await lands.tree(main, root, []);
+	await lands.tree(next, root, "all");
+	expect(readdirSync(root).sort()).toEqual([main, next].sort());
+});
+
 test("a tree directory that is no workspace is rebuilt, and a revision naming no single commit is refused", async () => {
 	const { dir, main } = treeRepository();
 	const root = join(mkdtempSync(join(tmpdir(), "factory-trees-")), "trees");

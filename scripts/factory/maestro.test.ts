@@ -36,6 +36,7 @@ case "$1 $2 $3" in
 	"ls c5 --json") echo '{"instances":[{"name":"tester","node":"tester","harness":"stub"}]}' ;;
 esac
 case "$1 $2" in
+	"ls --status") echo '[{"id":"r1","status":"running","pack":"slice","composition":"slice","tour":"v1.i1"},{"id":"r2","status":"running","pack":"triage","composition":"triage","tour":"v2.i3"}]' ;;
 	"ls --tour") [ "$6" = "--composition" ] && by="-$7"; echo '[{"id":"l'"$5$by"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1","startedAt":10,"settledAt":25}]' ;;
 	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"draft":true,"delivered":2,"notice":{"path":"notice.md"},"pr":{"path":"pr.md"}}}' ;;
 	"wait c4") echo '{"status":"rejected","artifacts":"${dir}","outputs":{"review":{"path":"review.md"},"upheld":[{"id":"F1","lens":"spec","where":"a.ts:3","issue":"A seam breaks","cites":"R1"}]}}' ;;
@@ -136,6 +137,13 @@ test("lists a tour's concerts up to the limit, the tick's window by default, eac
 	const kind = { pack: "triage", composition: "triage" };
 	expect((await fake.concerts("v", 20, kind)).map((c) => c.id)).toEqual([
 		"l20-triage.triage",
+	]);
+});
+
+test("running lists every running concert on every tour", async () => {
+	expect((await fake.running()).map((c) => [c.id, c.tour])).toEqual([
+		["r1", "v1.i1"],
+		["r2", "v2.i3"],
 	]);
 });
 

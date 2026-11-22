@@ -231,6 +231,7 @@ export function fakeMaestro(
 							(c.pack === kind.pack && c.composition === kind.composition)),
 				)
 				.slice(0, limit),
+		running: async () => concerts.filter((c) => c.status === "running"),
 		result: async (id) => {
 			const result = results[id];
 			if (!result) throw new Error(`no result for ${id}`);
@@ -274,7 +275,7 @@ export function fakeLanding(failAt?: keyof Landing, output = "") {
 	const compared: string[] = [];
 	const steps: string[] = [];
 	const trees: string[] = [];
-	const kept: string[][] = [];
+	const kept: (string[] | "all")[] = [];
 	const conflicting: Record<
 		string,
 		Omit<Conflicts, "commit"> | { untold: string[] }
@@ -313,7 +314,7 @@ export function fakeLanding(failAt?: keyof Landing, output = "") {
 			return paths.filter((p) => changed.includes(p));
 		},
 		tree: async (revision, root, keep) => {
-			kept.push([...keep]);
+			kept.push(keep === "all" ? keep : [...keep]);
 			if (failing === "tree") throw new Error(output);
 			trees.push(revision);
 			return join(root, revision);

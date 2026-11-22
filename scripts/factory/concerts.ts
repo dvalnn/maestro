@@ -1,6 +1,7 @@
 // Starting the tick's concerts and recognising them: each kind is named once here, with the argv its start builds
 // (factory.md, Rules, Policy: Tick base, Tour and title).
-import { basename, dirname, join } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Risk } from "../../.maestro/triage/risk";
 import type { Issue } from "./forge";
 import type { Concert, Maestro } from "./maestro";
@@ -33,6 +34,9 @@ const STACK_REVIEW_PRESET = "high";
 /** The longest issue title a concert's title carries whole. */
 const TITLE_CHARS = 60;
 
+/** The kinds the factory starts. */
+const FACTORY_KINDS = [SLICE, TRIAGE, STACK_REVIEW, MASTERCLASS];
+
 const is = (kind: Kind) => (c: Concert) =>
 	c.pack === kind.pack && c.composition === kind.composition;
 export const isTriage = is(TRIAGE);
@@ -63,9 +67,7 @@ export async function listConcerts(
 	milestone: string,
 ): Promise<Concert[]> {
 	const lists = await Promise.all(
-		[SLICE, TRIAGE, STACK_REVIEW, MASTERCLASS].map((k) =>
-			maestro.concerts(milestone, undefined, k),
-		),
+		FACTORY_KINDS.map((k) => maestro.concerts(milestone, undefined, k)),
 	);
 	// Equal start times order by descending id, as maestro's own list does.
 	return lists
@@ -145,16 +147,52 @@ async function encoreCommit(tick: Tick, id: string) {
 	}
 }
 
+/** The real path of `path`, or of its nearest existing ancestor with the rest of its spelling after. */
+function located(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		const up = dirname(resolve(path));
+		return up === resolve(path)
+			? up
+			: join(located(up), basename(resolve(path)));
+	}
+}
+
+/** The name of the tree under `root` that holds `dir`, whatever its depth or spelling; undefined outside `root`. */
+function treeNameUnder(root: string, dir: string) {
+	const [name, ...rest] = relative(located(root), located(dir)).split(sep);
+	return name && name !== ".." && rest.length > 0 ? name : undefined;
+}
+
 /**
- * The commits whose trees a running concert performs in, which no tree being made may remove.
- * @throws Error when a running concert's record cannot be read, so no tree is removed on a guess.
+ * The commits whose trees a running factory concert of any milestone performs in, which no tree being made may remove;
+ * "all" when a concert's tree cannot be read, each such concert logged, so no tree is removed on a guess. A tree
+ * outside `root` saves none under it.
+ * @throws Error when the running concerts cannot be listed.
  */
-async function busyTrees(tick: Tick) {
-	const running = (await listConcerts(tick.maestro, tick.milestone)).filter(
-		(c) => c.status === "running",
+async function busyTrees(tick: Tick, root: string) {
+	const running = (await tick.maestro.running()).filter((c) =>
+		FACTORY_KINDS.some((k) => is(k)(c)),
 	);
-	const dirs = await Promise.all(running.map((c) => tick.maestro.tree(c.id)));
-	return dirs.map((d) => basename(dirname(d)));
+	const reads = await Promise.allSettled(
+		running.map((c) => tick.maestro.tree(c.id)),
+	);
+	let unreadable = false;
+	const keep: string[] = [];
+	reads.forEach((read, i) => {
+		if (read.status === "fulfilled") {
+			const name = treeNameUnder(root, read.value);
+			if (name) keep.push(name);
+			return;
+		}
+		unreadable = true;
+		const reason = message(read.reason).replace(/\s+/g, " ").trim();
+		tick.say(
+			`kept every tree: cannot read ${running[i]?.id}'s tree: ${reason}`,
+		);
+	});
+	return unreadable ? "all" : keep;
 }
 
 /**
@@ -165,7 +203,7 @@ async function busyTrees(tick: Tick) {
  */
 async function treeOf(tick: Tick, run: Run) {
 	const root = join(tick.cache, "trees");
-	const keep = await busyTrees(tick);
+	const keep = await busyTrees(tick, root);
 	if (!run.encore) return tick.landing.tree(tick.main, root, keep);
 	let commit: string;
 	try {

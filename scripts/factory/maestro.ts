@@ -87,6 +87,8 @@ export type Maestro = {
 		limit?: number,
 		kind?: { pack: string; composition: string },
 	): Promise<Concert[]>;
+	/** Every running concert on every tour, with no `base`. */
+	running(): Promise<Concert[]>;
 	result(id: string): Promise<Result>;
 	/**
 	 * Starts `maestro <args>` in the background and returns its concert's id; what it printed is written to `log`,
@@ -341,6 +343,16 @@ const agentsOf = (bin: string, id: string, doc: Json) =>
 			.map((i) => json(bin, ["ls", id, String(i.name)])),
 	).then((docs) => docs.filter(isJson));
 
+/**
+ * The rows of an `ls --json` list.
+ * @throws Error with maestro's own message when it answered with an error document, else that it is not a list.
+ */
+function listOf(doc: unknown): unknown[] {
+	if (Array.isArray(doc)) return doc;
+	const error = isJson(doc) ? doc.error : undefined;
+	throw new Error(typeof error === "string" ? error : "maestro ls: not a list");
+}
+
 export function maestro(bin = "maestro"): Maestro {
 	return {
 		concerts: async (tour, limit = WINDOW, kind) => {
@@ -352,17 +364,17 @@ export function maestro(bin = "maestro"): Maestro {
 				`${limit}`,
 				...(kind ? ["--composition", `${kind.pack}.${kind.composition}`] : []),
 			]);
-			if (!Array.isArray(rows)) {
-				const error = (rows as { ok?: unknown; error?: unknown } | null)?.error;
-				if (typeof error === "string") throw new Error(error);
-				throw new Error("maestro ls: not a list");
-			}
+			const list = listOf(rows);
 			return Promise.all(
-				rows.map(async (row) => {
+				list.map(async (row) => {
 					const concert = concertOf(row);
 					return { ...concert, base: await baseOf(bin, concert.id) };
 				}),
 			);
+		},
+		running: async () => {
+			const rows = await json(bin, ["ls", "--status", "running", "--all"]);
+			return listOf(rows).map(concertOf);
 		},
 		result: async (id) => resultOf(await json(bin, ["wait", id])),
 		report: async (id) => {
