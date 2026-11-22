@@ -607,6 +607,19 @@ describe("stand-in claude", () => {
 		},
 	);
 
+	test("a provider connection reset is transient", async () => {
+		const line = JSON.stringify({
+			type: "result",
+			subtype: "success",
+			is_error: true,
+			result: "ECONNRESET",
+		});
+		const result = await claudeHarness(standIn([line])).run(request("x"))
+			.result;
+		expect(result.outcome).toBe("failed");
+		expect(result.transient).toBe(true);
+	});
+
 	test("a result that is not a success fails, naming its subtype", async () => {
 		const line = JSON.stringify({ type: "result", subtype: "error_max_turns" });
 		const result = await claudeHarness(standIn([line])).run(request("x"))

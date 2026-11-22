@@ -516,6 +516,14 @@ describe("stand-in pi", () => {
 
 	test.each([
 		["529: overloaded_error", true],
+		["ECONNRESET", true],
+		["econnrefused", true],
+		["EPIPE", true],
+		["Socket Hang Up", true],
+		["fetch failed", true],
+		["CONNECTION ERROR", true],
+		["connection reset", true],
+		["fetch failed: ECONNRESET", true],
 		["401: Incorrect API key", false],
 	])(
 		"an error stop's transient mark follows its message: %s",

@@ -142,6 +142,20 @@ test("a run that exits cleanly without settling fails as transient", async () =>
 	});
 });
 
+test("a non-zero exit with a network fault on stderr is not transient", async () => {
+	const crashing = subprocessHarness({
+		name: "crashing",
+		spec: () => ({
+			argv: ["sh", "-c", "printf 'ECONNRESET\\n' >&2; exit 1"],
+		}),
+		parser: () => () => [],
+	});
+	const result = await crashing.run(request("x")).result;
+	expect(result.outcome).toBe("failed");
+	expect(result.reason).toContain("ECONNRESET");
+	expect(result.transient).toBeUndefined();
+});
+
 test("cancel ends a hung run as failed/cancelled", async () => {
 	const run = stubHarness([{ hang: true }]).run(request("x"));
 	const it = run.events[Symbol.asyncIterator]();

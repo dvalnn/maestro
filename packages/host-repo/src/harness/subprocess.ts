@@ -60,7 +60,8 @@ export const finite = (v: unknown): number =>
 const transientStatus = (status: number) =>
 	status === 408 || status === 429 || (status >= 500 && status <= 599);
 
-const TRANSIENT_TEXT = /overloaded|rate.?limit|timed?[ -]?out/i;
+const TRANSIENT_TEXT =
+	/overloaded|rate.?limit|timed?[ -]?out|ECONNRESET|ECONNREFUSED|EPIPE|socket hang up|fetch failed|connection (?:error|reset)/i;
 const LEADING_STATUS = /^(?:API Error:?\s*)?(\d{3})\b/i;
 
 /** Whether a provider error with API status `status`, if known, and message `text` may pass. */
