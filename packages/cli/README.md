@@ -260,8 +260,9 @@ documents a field with no value is left out:
 - **Graph.** On a terminal, the graph redrawn in place: a header (status, elapsed time and short id), `now` and `last`
   lines naming the latest running and failed instances, the composition as authored with each loop at its latest round
   and each fan-out's items on one row, and a footer of counts and the concert's tokens. Rows that don't fit fold into
-  count lines, and the footer then points at `maestro ls`. With stdin a terminal too, the graph is a tree to browse: see
-  [Browsing a concert](#browsing-a-concert).
+  count lines, and the footer then points at `maestro ls`. A narrow header cuts its label and title. The short id,
+  status and elapsed time stay while they fit. With every row shown, the footer then points at `maestro ls <id> --json`.
+  With stdin a terminal too, the graph is a tree to browse: see [Browsing a concert](#browsing-a-concert).
 - **Events.** `--events` prints one line per event, tool calls, results with their sizes and `ok` or `error`, and the
   agent's context total and thinking, token counts in `k` and `M`, among them: the time, the instance, a word for what
   happened and its detail, a multi-line detail cut to its first line. The host words a model call's usage on its

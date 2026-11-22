@@ -10,8 +10,7 @@ last  ! topics[c] › draft   failed   flaky
 
 ## watch, 100 columns, a newline in the label
 ───────────────────────────────────────────────────────────────────────────────────────────────────┐
-● first
-second  "greeting"  kswoykny   running  1m04s
+● first second  "greeting"  kswoykny   running  1m04s
 now   ● topics[b] › draft   1m02s   tool bash {"command":"ls"}
 last  ! topics[c] › draft   failed   flaky
 ▾ ✓ topics      parMap     ok       12s    3/3 items · 1 running · 1 ok · 1 failed
@@ -31,68 +30,68 @@ last  ! topics[c] › draft   failed   flaky
 
 ## watch, 40 columns, a long title
 ───────────────────────────────────────┐
-● fixtures.fanout-fanin-loop  "a very l
+● fixtures.…  kswoykny   running  1m04s
 now   ● topics[b] › draft   1m02s   too
 last  ! topics[c] › draft   failed   fl
 ▾ ✓ topics      parMap     ok       12s
   ▸ ● draft ×3  fake.task  running  1m0
 ▸ ○ refine      scope      pending     
-── 1 running · 1 ok · 1 failed ────────
+── title: maestro ls kswoykny --json ──
 
 ## watch, 33 columns
 ────────────────────────────────┐
-● fixtures.fanout-fanin-loop  "g
+● fi…  kswoykny   running  1m04s
 now   ● topics[b] › draft   1m02
 last  ! topics[c] › draft   fail
 ▾ ✓ topics      parMap     ok   
   ▸ ● draft ×3  fake.task  runni
 ▸ ○ refine      scope      pendi
-── 1 running · 1 ok · 1 failed ─
+title: maestro ls kswoykny --jso
 
 ## watch, 32 columns
 ───────────────────────────────┐
-● fixtures.fanout-fanin-loop  "
+● f…  kswoykny   running  1m04s
 now   ● topics[b] › draft   1m0
 last  ! topics[c] › draft   fai
 ▾ ✓ topics      parMap     ok  
   ▸ ● draft ×3  fake.task  runn
 ▸ ○ refine      scope      pend
-── 1 running · 1 ok · 1 failed 
+title: maestro ls kswoykny --js
 
 ## watch, 30 columns
 ─────────────────────────────┐
-● fixtures.fanout-fanin-loop 
+●…  kswoykny   running  1m04s
 now   ● topics[b] › draft   1
 last  ! topics[c] › draft   f
 ▾ ✓ topics      parMap     ok
   ▸ ● draft ×3  fake.task  ru
 ▸ ○ refine      scope      pe
-── 1 running · 1 ok · 1 faile
+title: maestro ls kswoykny --
 
 ## watch, 29 columns
 ────────────────────────────┐
-● fixtures.fanout-fanin-loop
+kswoykny   running  1m04s
 now   ● topics[b] › draft   
 last  ! topics[c] › draft   
 ▾ ✓ topics      parMap     o
   ▸ ● draft ×3  fake.task  r
 ▸ ○ refine      scope      p
-── 1 running · 1 ok · 1 fail
+title: maestro ls kswoykny -
 
 ## watch, 19 columns
 ──────────────────┐
-● fixtures.fanout-
+kswoykny   running
 now   ● topics[b] 
 last  ! topics[c] 
 ▾ ✓ topics      pa
   ▸ ● draft ×3  fa
 ▸ ○ refine      sc
-── 1 running · 1 o
+title: maestro ls 
 
 ## watch, 21 columns and 3 rows
 ────────────────────┐
-● fixtures.fanout-fa
+kswoykny   running  
 now   ● topics[b] › 
 last  ! topics[c] › 
   … 1 running · 1 ok
-── 1 running · 1 ok 
+every row: maestro l

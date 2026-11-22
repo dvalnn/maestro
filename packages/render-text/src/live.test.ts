@@ -194,7 +194,83 @@ describe("cutting styled text", () => {
 	});
 });
 
+// Seam: the rendered frame's header and footer at the terminal width.
 describe("frame", () => {
+	test("keeps the concert identity and the title hint when the header is cut", () => {
+		const lines = drawn({
+			columns: 40,
+			tokens: 39_300,
+			concert: { ...VIEW.concert, title: "a very long concert title" },
+		}).split("\n");
+		expect(lines[0]).toEndWith("…  kswoykny   running  1m04s");
+		expect(Bun.stringWidth(lines[0] ?? "")).toBeLessThanOrEqual(39);
+		expect(lines.at(-1)).toContain("maestro ls kswoykny --json");
+		expect(lines.at(-1)).not.toContain("1 running · 1 ok · 1 failed");
+		expect(Bun.stringWidth(lines.at(-1) ?? "")).toBeLessThanOrEqual(39);
+	});
+
+	test("draws a header that exactly fits whole and adds no hint", () => {
+		const whole =
+			'● fixtures.fanout-fanin-loop  "greeting"  kswoykny   running  1m04s';
+		const lines = drawn({ columns: whole.length + 1 }).split("\n");
+		expect(lines[0]).toBe(whole);
+		expect(lines.at(-1)).not.toContain("--json");
+	});
+
+	test("keeps the whole title hint at a width where the rule decoration would cut it", () => {
+		const last = drawn({
+			columns: 36,
+			concert: { ...VIEW.concert, title: "a very long concert title" },
+		})
+			.split("\n")
+			.at(-1);
+		expect(last).toContain("maestro ls kswoykny --json");
+	});
+
+	test("omits the label and its gap when less than two cells remain", () => {
+		for (const columns of [28, 29]) {
+			const header = drawn({ columns }).split("\n")[0];
+			expect(header).toBe("kswoykny   running  1m04s");
+		}
+	});
+
+	test("keeps a cut label when two cells remain", () => {
+		const header = drawn({ columns: 30 }).split("\n")[0];
+		expect(header).toBe("●…  kswoykny   running  1m04s");
+	});
+
+	test("cuts a footer whose hint alone is too wide from the right", () => {
+		const last = drawn({ columns: 21, rows: 3 }).split("\n").at(-1);
+		expect(last).toBe("every row: maestro l");
+	});
+
+	test("starts with the short id when the fixed header does not fit", () => {
+		const header = drawn({ columns: 21 }).split("\n")[0];
+		expect(header).toStartWith("kswoykny");
+		expect(Bun.stringWidth(header ?? "")).toBeLessThanOrEqual(20);
+	});
+
+	test("shows a label's newline as a space in the header", () => {
+		const lines = drawn({
+			concert: { ...VIEW.concert, label: "first\nsecond" },
+		}).split("\n");
+		expect(lines[0]).toBe(
+			'● first second  "greeting"  kswoykny   running  1m04s',
+		);
+	});
+
+	test("keeps the every-row hint instead of the cut-title hint when rows are hidden", () => {
+		const lines = drawn({
+			columns: 40,
+			rows: 3,
+			concert: { ...VIEW.concert, title: "a very long concert title" },
+		}).split("\n");
+		expect(lines[0]).toEndWith("…  kswoykny   running  1m04s");
+		expect(lines.at(-1)).toContain("every row: maestro ls kswoykny");
+		expect(lines.at(-1)).not.toContain("--json");
+		expect(Bun.stringWidth(lines.at(-1) ?? "")).toBeLessThanOrEqual(39);
+	});
+
 	// Transcript: the frame as a terminal shows it, at the widths where its header and footer change shape.
 	test("draws a header, `now` and `last`, the authored rows with a parMap body aggregated, and a footer of counts", async () => {
 		const long = { ...VIEW.concert, title: "a very long concert title" };
