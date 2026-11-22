@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
 import {
 	chmodSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	realpathSync,
+	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -202,4 +204,136 @@ test.each([
 	],
 ])("a perform that starts no concert throws %s", async (_, arg, thrown) => {
 	await expect(fake.start(["perform", arg])).rejects.toThrow(thrown);
+});
+
+/** The checkout's real CLI entry, which the test performs one concert with. */
+const CLI = join(import.meta.dir, "../../packages/cli/src/maestro.ts");
+/** The code-only fixture the real CLI performs: its default name is "you", and `exclaim` adds a "!". */
+const HELLO = join(import.meta.dir, "../../packages/cli/src/fixtures/hello.ts");
+/** The directory the CLI reports as the fixture's `moduleDir`. */
+const FIXTURES = join(import.meta.dir, "../../packages/cli/src/fixtures");
+/** An id no record holds: the readers' "not in the record" case. */
+const ABSENT = "00000000-0000-0000-0000-000000000000";
+const BASE = "abc123";
+const TOUR = "v.i1";
+
+/** Single-quotes a path for a POSIX shell. */
+const quote = (path: string) => `'${path.replaceAll("'", "'\\''")}'`;
+
+test("reads each field the factory's maestro readers need from a concert the real CLI performs offline", async () => {
+	const root = mkdtempSync(join(tmpdir(), "factory-real-"));
+	try {
+		const repo = join(root, "repo");
+		mkdirSync(repo);
+		// The CLI runs in `root`, which is also its home and XDG directory, so it writes nothing beyond `root`. The
+		// wrapper sits in `bin/`, since the CLI keeps its own `maestro/` directory under `root`.
+		// `TMPDIR` too: a detached perform writes its output under the system temp directory.
+		mkdirSync(join(root, "bin"));
+		mkdirSync(join(root, "tmp"));
+		const cli = join(root, "bin", "maestro");
+		writeFileSync(
+			cli,
+			`#!/bin/sh\ncd ${quote(root)} || exit 1\nexec env HOME=${quote(root)} XDG_CONFIG_HOME=${quote(root)} XDG_DATA_HOME=${quote(root)} TMPDIR=${quote(join(root, "tmp"))} ${quote(process.execPath)} ${quote(CLI)} "$@"\n`,
+		);
+		chmodSync(cli, 0o755);
+		const run = async (args: string[]) => {
+			const child = Bun.spawn([cli, ...args], {
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			const [out] = await Promise.all([
+				new Response(child.stdout).text(),
+				new Response(child.stderr).text(),
+				child.exited,
+			]);
+			return JSON.parse(out);
+		};
+		// The raw `--json` document, for the keys a reader hides when they are absent.
+		const document = (args: string[]) => run([...args, "--json"]);
+		const reader = maestro(cli);
+
+		const { id } = await run([
+			"perform",
+			HELLO,
+			"--tour",
+			TOUR,
+			"-c",
+			`target.repo=${repo}`,
+			"-c",
+			`target.base=${BASE}`,
+			"--detach",
+			"--json",
+		]);
+
+		// `wait` blocks until the concert settles, so every reader below reads a settled record.
+		const settled = await reader.result(id);
+		expect(settled.status).toBe("ok");
+		expect(settled.outputs).toEqual({ text: "you!" });
+		expect(await document(["wait", id])).toEqual(
+			expect.objectContaining({
+				status: "ok",
+				outputs: { text: "you!" },
+				artifacts: expect.any(String),
+			}),
+		);
+
+		expect(await reader.concerts("v")).toEqual([
+			{
+				id,
+				status: "ok",
+				pack: "hello",
+				composition: "hello",
+				tour: TOUR,
+				base: BASE,
+				startedAt: expect.any(Number),
+				settledAt: expect.any(Number),
+			},
+		]);
+		// The reader drops a missing time or tour without a sign, so the list's raw rows are read too.
+		expect(await document(["ls", "--tour", "v"])).toEqual([
+			expect.objectContaining({
+				tour: TOUR,
+				startedAt: expect.any(Number),
+				settledAt: expect.any(Number),
+			}),
+		]);
+
+		expect(await document(["config", id])).toEqual(
+			expect.objectContaining({
+				values: expect.arrayContaining([
+					expect.objectContaining({ key: "target.base", value: BASE }),
+				]),
+			}),
+		);
+		expect(await reader.tree(id)).toBe(realpathSync(FIXTURES));
+
+		expect(await document(["ls", id])).toEqual(
+			expect.objectContaining({
+				short: expect.any(String),
+				elapsedMs: expect.any(Number),
+				instances: expect.any(Array),
+			}),
+		);
+		expect(await reader.spend(id)).toEqual({
+			short: expect.any(String),
+			elapsedMs: expect.any(Number),
+			// hello spends no tokens, runs no fix round and is no encore
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			fixes: 0,
+			encore: false,
+		});
+		expect(await reader.report(id)).toMatchObject({
+			obstacles: [],
+			lessons: [],
+			sightings: [],
+		});
+
+		expect(await reader.has(id)).toBe(true);
+		expect(await reader.has(ABSENT)).toBe(false);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
