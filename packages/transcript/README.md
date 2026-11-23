@@ -58,9 +58,17 @@ makes.
 ## Pictures
 
 `just pictures <out>` runs the tests that hold a transcript with their color kept, and draws each transcript as a PNG in
-`<out>`. `just pictures <out> <base>` also runs revision `<base>` in a worktree of its own and draws only the sections
-that differ, the base's beside this tree's. A section only one side has counts as differing, and so does one whose width
-changed. A failing test on this tree is an error; the base's run may fail. A PNG needs `rsvg-convert`; without it the
-SVG is left.
+`<out>`. `just pictures <out> <base>` also draws revision `<base>` and keeps only the sections that differ, the base's
+beside this tree's. `<out>/<name>.diff` holds the same sections as a text diff. A section only one side has counts as
+differing, and so does one whose width changed. A failing test on this tree is an error; the base's run may fail. A PNG
+needs `rsvg-convert`; without it the SVG is left.
+
+The base is drawn twice, from a copy of its files: by its own tests, then by this tree's transcript tests over its
+source. So a section new in this tree shows what the base drew for the same input. The copy comes from `git archive`, so
+the command also runs where the git directory is read-only, as in a lane's sandbox.
+
+The second drawing runs under this tree's `packages/transcript`, so that its tests load. A change to this package itself
+therefore shows no before and after. A test of this tree may still not load on the base's source. The sections the
+base's own tests drew then stand, and a new section has no before.
 
 The palette is the picture's own. Bold, dim, italic, reverse video and which color a cell takes are the program's.

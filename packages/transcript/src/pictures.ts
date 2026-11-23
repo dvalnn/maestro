@@ -1,7 +1,8 @@
 // Draws the transcripts as pictures: bun packages/transcript/src/pictures.ts <out> [<base rev>]
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { differing, picture, sectionsOf } from "./picture";
 
 /** Runs `command` in `cwd`; a failure throws with the command's output, unless it `mayFail`. */
@@ -12,10 +13,8 @@ function run(cwd: string, command: string[], env = {}, mayFail = false) {
 	return ran.stdout.toString();
 }
 
-/** Leaves in a fresh `dir` the colored sections of every transcript the tree at `cwd` holds. */
-async function colored(cwd: string, dir: string, mayFail = false) {
-	await rm(dir, { recursive: true, force: true });
-	await mkdir(dir, { recursive: true });
+/** The test files of the tree at `cwd` that hold a transcript. */
+async function transcriptTests(cwd: string) {
 	const tests: string[] = [];
 	for (const path of new Bun.Glob(
 		"{packages,packs,.maestro}/**/*.test.ts",
@@ -26,6 +25,12 @@ async function colored(cwd: string, dir: string, mayFail = false) {
 		)
 			tests.push(`./${path}`);
 	}
+	return tests;
+}
+
+/** Leaves in `dir` the colored sections of every transcript the tree at `cwd` holds, over what `dir` held. */
+async function colored(cwd: string, dir: string, mayFail = false) {
+	const tests = await transcriptTests(cwd);
 	if (tests.length > 0)
 		run(cwd, ["bun", "test", ...tests], { TRANSCRIPTS_COLOR: dir }, mayFail);
 }
@@ -38,18 +43,53 @@ const read = async (path: string) =>
 const names = (dir: string) =>
 	[...new Bun.Glob("*.ansi").scanSync(dir)].map((f) => basename(f, ".ansi"));
 
-/** Leaves in `dir` the colored sections of the tree at revision `base`, run in a worktree of its own. */
+/** The path of this package, which a base's source is run under so that this tree's tests load on it. */
+const TRANSCRIPT_PACKAGE = "packages/transcript";
+
+/**
+ * Leaves in `dir` the colored sections of revision `base`: those its own tests draw, then those this tree's
+ * transcript tests draw from its source, so a section new in this tree has a before too.
+ */
 async function coloredAt(base: string, dir: string) {
+	const cwd = process.cwd();
 	const tree = await mkdtemp(join(tmpdir(), "maestro-transcripts-"));
 	try {
-		run(process.cwd(), ["git", "worktree", "add", "--detach", tree, base]);
+		// An archive and no worktree: a sandboxed lane's git directory is read-only.
+		const archive = join(tree, "base.tar");
+		run(cwd, ["git", "archive", "-o", archive, base]);
+		run(tree, ["tar", "-xf", archive]);
 		run(tree, ["bun", "install", "--frozen-lockfile"]);
 		// The base's transcript can differ from its own tests' output, so its run may fail and still leave its sections.
 		await colored(tree, dir, true);
+		// A test written for this tree may not load on the base's source: the base's own sections then stand.
+		for (const path of [TRANSCRIPT_PACKAGE, ...(await transcriptTests(cwd))])
+			await cp(join(cwd, path), join(tree, path), {
+				recursive: true,
+				verbatimSymlinks: true,
+			});
+		await colored(tree, dir, true);
 	} finally {
-		Bun.spawnSync(["git", "worktree", "remove", "--force", tree]);
 		await rm(tree, { recursive: true, force: true });
 	}
+}
+
+/** Leaves `<out>/<name>.diff`: the sections of `name` as text, the base's against this tree's. */
+async function diff(out: string, name: string) {
+	for (const side of ["before", "after"]) {
+		const drawn = Bun.file(join(out, side, `${name}.ansi`));
+		await Bun.write(
+			join(out, side, `${name}.txt`),
+			(await drawn.exists())
+				? stripVTControlCharacters(await drawn.text())
+				: "",
+		);
+	}
+	// git's diff exits 1 when the files differ.
+	const sides = ["before", "after"].map((side) => `${side}/${name}.txt`);
+	await Bun.write(
+		join(out, `${name}.diff`),
+		run(out, ["git", "diff", "--no-index", "--no-color", ...sides], {}, true),
+	);
 }
 
 async function draw(out: string, name: string, base: string | undefined) {
@@ -63,6 +103,7 @@ async function draw(out: string, name: string, base: string | undefined) {
 				{ label: "after", sections: now },
 			]
 		: [{ label: name, sections: now }];
+	if (base) await diff(out, name);
 	const svg = join(out, `${name}.svg`);
 	await Bun.write(svg, picture(panels, drawn));
 	const png = join(out, `${name}.png`);
@@ -75,6 +116,10 @@ async function draw(out: string, name: string, base: string | undefined) {
 async function main(out: string, base: string | undefined) {
 	const after = resolve(out, "after");
 	const before = resolve(out, "before");
+	for (const dir of [after, before]) {
+		await rm(dir, { recursive: true, force: true });
+		await mkdir(dir, { recursive: true });
+	}
 	await colored(process.cwd(), after);
 	if (base) await coloredAt(base, before);
 	const found = new Set([...names(after), ...(base ? names(before) : [])]);
