@@ -1665,6 +1665,25 @@ describe("a build", () => {
 		},
 	);
 
+	test("a picture the forge refuses is left out with its reason, and the slice still lands with the others, uploaded one at a time", async () => {
+		const seen = mkdtempSync(join(tmpdir(), "factory-seen-"));
+		for (const f of ["a.png", "b.png", "b.diff", "c.png"])
+			writeFileSync(join(seen, f), "- old\n+ new\n");
+		const t = setup(
+			[specced(7, "in-progress", { slice: "s1" })],
+			[sliceConcert("s1", 7)],
+			{ s1: { status: "ok", outputs: {} } },
+			"attach #30 a.png",
+			{ reports: { s1: { ...NO_REPORT, draft: true, notice: NOTICE, seen } } },
+		);
+		await t.run();
+		const body = t.pulls.find((p) => p.number === FIRST_PULL)?.body ?? "";
+		expect(body).toContain("forge: cut at attach #30 a.png");
+		expect(body).toContain("![b](");
+		expect(body).toContain("![c](");
+		expect(t.find(7).labels).toContain("state/in-review");
+	});
+
 	test.each([
 		[
 			"a rulings edit",

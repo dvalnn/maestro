@@ -969,8 +969,15 @@ export function pullBody(landed: Landed) {
 	return [landed.notice, landed.userSees, body].filter(Boolean).join("\n\n");
 }
 
-/** A transcript the change moved: its text `diff` and the URL of its `picture`, each when the sandbox drew it. */
-export type Moved = { name: string; diff?: string; picture?: string };
+/**
+ * A transcript the change moved: its text `diff` and its `picture`, each when the sandbox drew it. The picture is the
+ * URL the forge serves it at, or why the forge refused it.
+ */
+export type Moved = {
+	name: string;
+	diff?: string;
+	picture?: string | { refused: string };
+};
 
 const SEEN_DIFF_MAX = 200;
 
@@ -992,6 +999,17 @@ function seenText({ name, diff }: Moved) {
 	];
 }
 
+/** A moved transcript's picture, or the forge's reason where it refused it; none when the sandbox drew none. */
+function pictureLines({ name, picture }: Moved) {
+	if (!picture) return [];
+	return typeof picture === "string"
+		? [`![${name}](${picture})`, ""]
+		: [
+				`The forge refused the picture of ${name}: ${oneLine(picture.refused)}`,
+				"",
+			];
+}
+
 /** The "What the user sees" section for the `moved` transcripts, by name; empty when none moved. */
 export function seenSection(moved: readonly Moved[]) {
 	if (!moved.length) return "";
@@ -1000,11 +1018,7 @@ export function seenSection(moved: readonly Moved[]) {
 		"## What the user sees",
 		"",
 		"The transcripts this change moved, the base's on the left, drawn in the concert's sandbox by `just pictures`.",
-		...shown.flatMap((m) => [
-			"",
-			...(m.picture ? [`![${m.name}](${m.picture})`, ""] : []),
-			...seenText(m),
-		]),
+		...shown.flatMap((m) => ["", ...pictureLines(m), ...seenText(m)]),
 	]
 		.join("\n")
 		.trimEnd();

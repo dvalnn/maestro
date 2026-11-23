@@ -30,6 +30,7 @@ export function fakeForge(
 	milestone = MILESTONE,
 ) {
 	const writes: string[] = [];
+	let uploading = false;
 	const depends = new Set<string>();
 	const opened: NewPull[] = [];
 	const blocking: Record<number, number[]> = {};
@@ -155,6 +156,11 @@ export function fakeForge(
 		},
 		attach: async (n, path) => {
 			write(`attach #${n} ${basename(path)}`);
+			// The forge answers 500 to two uploads to one PR at once.
+			if (uploading) throw new Error("forge: two uploads at once");
+			uploading = true;
+			await Promise.resolve();
+			uploading = false;
 			return `https://forge.example/attachments/${basename(path)}`;
 		},
 		arm: async (n) => write(`arm #${n}`),

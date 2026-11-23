@@ -238,7 +238,8 @@ async function publish(
 
 /**
  * The transcripts in the `seen` directory `dir`, each picture attached to PR `pull`. A sandbox wrote `dir`, so only its
- * regular files are read: a link there could name any file of the host.
+ * regular files are read: a link there could name any file of the host. The pictures go up one at a time, and one the
+ * forge refuses is left out with its reason: a picture never costs the landing.
  */
 async function attachMoved(forge: Forge, dir: string, pull: number) {
 	const files = readdirSync(dir, { withFileTypes: true })
@@ -247,21 +248,23 @@ async function attachMoved(forge: Forge, dir: string, pull: number) {
 	const names = new Set(
 		files.flatMap((f) => /^(.+)\.(?:diff|png)$/.exec(f)?.[1] ?? []),
 	);
-	return Promise.all(
-		[...names].map(async (name): Promise<Moved> => {
-			const png = `${name}.png`;
-			const diff = `${name}.diff`;
-			return {
-				name,
-				picture: files.includes(png)
-					? await forge.attach(pull, join(dir, png))
-					: undefined,
-				diff: files.includes(diff)
-					? readFileSync(join(dir, diff), "utf8")
-					: undefined,
-			};
-		}),
-	);
+	const moved: Moved[] = [];
+	for (const name of names) {
+		const png = `${name}.png`;
+		const diff = `${name}.diff`;
+		moved.push({
+			name,
+			picture: files.includes(png)
+				? await forge
+						.attach(pull, join(dir, png))
+						.catch((error) => ({ refused: message(error) }))
+				: undefined,
+			diff: files.includes(diff)
+				? readFileSync(join(dir, diff), "utf8")
+				: undefined,
+		});
+	}
+	return moved;
 }
 
 /** Writes `entry`'s landed slice `concert` back: `in-review` with its PR `pull`. */
