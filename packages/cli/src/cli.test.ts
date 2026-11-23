@@ -1176,6 +1176,18 @@ async function held(
 	return { host, writes, running, finish: () => step.resolve(ECHO) };
 }
 
+/** The shape of JSON `value`: a line per leaf with its path and type, an array's items under `[]`, in order. */
+function shapeOf(value: unknown, path = ""): string[] {
+	const under = (key: string) => (path ? `${path}.${key}` : key);
+	const lines = Array.isArray(value)
+		? value.flatMap((item) => shapeOf(item, `${path}[]`))
+		: value && typeof value === "object"
+			? Object.entries(value).flatMap(([k, v]) => shapeOf(v, under(k)))
+			: [`${path}: ${value === null ? "null" : typeof value}`];
+	const empty = Array.isArray(value) ? "[]" : "{}";
+	return lines.length ? [...new Set(lines)].sort() : [`${path}: ${empty}`];
+}
+
 const START = Date.UTC(2026, 0, 5, 9);
 
 /** The commands a plain root help lists. */
@@ -2453,6 +2465,37 @@ describe("usage errors", () => {
 			new URL("./transcripts/help.txt", import.meta.url),
 			sections,
 		);
+	});
+
+	// Transcript: the shape of the --json documents a script reads, and the config keys.
+	test("prints --json documents of these shapes, and these config keys", async () => {
+		const w = await world();
+		const hosts = [hostOf()];
+		const id = json(
+			await w.call(["perform", ...GREET, "--json"], { hosts }),
+		).id;
+		const shape = async (shown: string, ...args: string[]) => ({
+			name: `the shape of maestro ${shown} --json`,
+			columns: 100,
+			shown: shapeOf(json(await w.call([...args, "--json"], { hosts }))).join(
+				"\n",
+			),
+		});
+		const config = await w.call(["config", "demo.greet", "--json"], { hosts });
+		await transcript(new URL("./transcripts/json.txt", import.meta.url), [
+			await shape("perform demo.greet --name x", "perform", ...GREET),
+			await shape("wait <concert>", "wait", id),
+			await shape("ls", "ls"),
+			await shape("ls <concert>", "ls", id),
+			await shape("ls <concert> first", "ls", id, "first"),
+			await shape("config <concert>", "config", id),
+			await shape("ls nope", "ls", "nope"),
+			{
+				name: "the config keys of maestro config demo.greet --json",
+				columns: 100,
+				shown: Object.keys(configValues(config)).join("\n"),
+			},
+		]);
 	});
 
 	// Seam: root help's terminal and piped stdout.

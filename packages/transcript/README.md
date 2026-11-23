@@ -24,6 +24,9 @@ now   ● topics[b] › draft   1
 
 The file holds no color, so its diff reads. The test draws with color on, and the color is kept for the picture.
 
+A section may hold what a script reads, not what a terminal shows: the shape of a `--json` document. That is a line per
+field with its type. Its values vary between runs, so the document itself cannot be held.
+
 ## Writing one
 
 A test draws each section through the code's real entry point and passes them to `transcript(file, sections)`.

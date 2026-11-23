@@ -1,0 +1,113 @@
+## the shape of maestro perform demo.greet --name x --json
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+artifacts: string
+id: string
+metrics: {}
+outputs.text: string
+resultExpansion: string
+resultNode: string
+status: string
+tokens: number
+
+## the shape of maestro wait <concert> --json
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+artifacts: string
+id: string
+metrics: {}
+outputs.text: string
+resultExpansion: string
+resultNode: string
+status: string
+tokens: number
+
+## the shape of maestro ls --json
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+[].composition: string
+[].diskUse: number
+[].elapsedMs: number
+[].facts.fake: {}
+[].id: string
+[].notes: {}
+[].pack: string
+[].settledAt: number
+[].short: string
+[].startedAt: number
+[].status: string
+[].tokens: number
+[].workspace: string
+
+## the shape of maestro ls <concert> --json
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+composition: string
+diskUse: number
+elapsedMs: number
+facts.fake: {}
+id: string
+instances[].elapsedMs: number
+instances[].expansion: string
+instances[].kind: string
+instances[].name: string
+instances[].node: string
+instances[].settledAt: number
+instances[].stale: boolean
+instances[].startedAt: number
+instances[].status: string
+instances[].tokens: number
+metrics: {}
+notes: {}
+pack: string
+pending: []
+settledAt: number
+short: string
+startedAt: number
+status: string
+tokens: number
+workspace: string
+
+## the shape of maestro ls <concert> first --json
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+elapsedMs: number
+expansion: string
+inputs: {}
+kind: string
+metrics: {}
+name: string
+node: string
+outputs.text: string
+settledAt: number
+stale: boolean
+startedAt: number
+status: string
+tokens: number
+
+## the shape of maestro config <concert> --json
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+flags: []
+moduleDir: string
+params.name: string
+presets: []
+values[].file: string
+values[].key: string
+values[].layer: string
+values[].line: number
+values[].value: number
+values[].value: string
+values[].value: {}
+values[].value[]: string
+
+## the shape of maestro ls nope --json
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+error: string
+exit: number
+ok: boolean
+
+## the config keys of maestro config demo.greet --json
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+concurrency
+caps
+dataRoot
+workspace
+limits
+packs
+demo.greet
+demo.greet.name
