@@ -334,7 +334,7 @@ function highlighted(
 
 /** The empty list: `[]` under `--json`, else what matched nothing and what to do about it on stderr. */
 function none({ session: { deps }, json }: Stored, filtered: boolean) {
-	if (json) deps.stdout(jsonOf([]));
+	if (json) deps.stdout(jsonOf([], deps));
 	else if (filtered) {
 		deps.stderr("no concerts match");
 		deps.stderr("Drop a filter, or run 'maestro ls --all' for all");
@@ -414,7 +414,7 @@ function listed(stored: Stored, query: ConcertFilter) {
 		fetched.length > limit
 			? `\n${olderHint(values, limit, color)}`
 			: "";
-	session.deps.stdout(json ? jsonOf(rows) : shown + more);
+	session.deps.stdout(json ? jsonOf(rows, session.deps) : shown + more);
 	return EXIT.ok;
 }
 
@@ -544,6 +544,7 @@ async function instancesOf(stored: Stored, prefix: string, which?: string) {
 				step
 					? stepDetail(row, step, hostText)
 					: concertListing(stored, row, every, hostText),
+				session.deps,
 			),
 		);
 		return EXIT.ok;
@@ -613,7 +614,7 @@ async function waited(
 	const { status } = resultDoc(id, result);
 	if (json)
 		deps.stdout(
-			jsonOf(concertDoc(store, id, result, artifactsOf(session, id))),
+			jsonOf(concertDoc(store, id, result, artifactsOf(session, id)), deps),
 		);
 	else if (result)
 		printClosing(deps, store, concertOf(store, id), result, {
@@ -672,7 +673,7 @@ async function killed({ session, store, json }: Stored, prefix: string) {
 	const { id, status, pid } = concertOf(store, prefix);
 	if (status !== "running") {
 		deps.stderr(`concert ${id} already settled ${status}`);
-		if (json) deps.stdout(jsonOf(resultDoc(id, store.result(id))));
+		if (json) deps.stdout(jsonOf(resultDoc(id, store.result(id)), deps));
 		return EXIT.ok;
 	}
 	if (!isMaestro(pid)) {
@@ -686,7 +687,7 @@ async function killed({ session, store, json }: Stored, prefix: string) {
 		throw new CliError(
 			`concert ${id} did not settle within ${KILL_GRACE_S}s of stopping process ${pid}\nCheck on it with 'maestro wait ${id} --timeout 1m'`,
 		);
-	if (json) deps.stdout(jsonOf(resultDoc(id, store.result(id))));
+	if (json) deps.stdout(jsonOf(resultDoc(id, store.result(id)), deps));
 	else deps.stderr(`concert ${id} stopped`);
 	return EXIT.ok;
 }
@@ -747,7 +748,7 @@ async function toured(
 ) {
 	const ids = concertsOf(store, prefixes).map((c) => c.id);
 	for (const id of ids) store.setTour(id, slug);
-	if (json) deps.stdout(jsonOf({ tour: slug ?? null, concerts: ids }));
+	if (json) deps.stdout(jsonOf({ tour: slug ?? null, concerts: ids }, deps));
 	else deps.stderr(`${slug ?? "no tour"}: ${ids.join(" ")}`);
 	return EXIT.ok;
 }

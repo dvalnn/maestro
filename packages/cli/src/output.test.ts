@@ -1,6 +1,45 @@
 import { describe, expect, test } from "bun:test";
 import type { Diagnostic } from "@maestro/ir";
-import { diagnosedExit, EXIT, paint, table, wrapping } from "./output";
+import type { Deps } from "./command";
+import { diagnosedExit, EXIT, jsonOf, paint, table, wrapping } from "./output";
+
+// Seam: the one-document JSON text the shared formatter returns for the command's stdout.
+const formatJson: (value: unknown, deps: Deps) => string = jsonOf;
+const jsonDeps: Deps = {
+	hosts: [],
+	cwd: "/",
+	env: {},
+	stdout: () => {},
+	stdoutBytes: () => {},
+	stderr: () => {},
+	self: [],
+};
+const jsonValue = { outputs: { text: "first\nsecond", count: 2 }, ok: true };
+
+test("a JSON document off a terminal is compact and keeps its value", () => {
+	const shown = formatJson(jsonValue, jsonDeps);
+	expect(shown).toBe(
+		'{"outputs":{"text":"first\\nsecond","count":2},"ok":true}',
+	);
+	expect(JSON.parse(shown)).toEqual({
+		outputs: { text: "first\nsecond", count: 2 },
+		ok: true,
+	});
+});
+
+test("a JSON document on a terminal is indented by two spaces and keeps its value", () => {
+	const shown = formatJson(jsonValue, {
+		...jsonDeps,
+		terminal: () => ({ columns: 20, rows: 24 }),
+	});
+	expect(shown).toBe(
+		'{\n  "outputs": {\n    "text": "first\\nsecond",\n    "count": 2\n  },\n  "ok": true\n}',
+	);
+	expect(JSON.parse(shown)).toEqual({
+		outputs: { text: "first\nsecond", count: 2 },
+		ok: true,
+	});
+});
 
 const diagnostic = (extra: Partial<Diagnostic>): Diagnostic => ({
 	code: "CFG.param",

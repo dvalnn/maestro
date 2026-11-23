@@ -271,7 +271,7 @@ async function ls(setup: Setup, deps: Deps, values: Values): Promise<number> {
 		await Promise.all(held.map((n) => listedOf(n, setup)))
 	).flat();
 	if (isSet(values, "json"))
-		deps.stdout(jsonOf({ profiles: listed.map(listedJson) }));
+		deps.stdout(jsonOf({ profiles: listed.map(listedJson) }, deps));
 	else if (listed.length) {
 		deps.stdout(lsText(listed, colorOf(deps, values).out));
 	} else
@@ -414,11 +414,14 @@ async function show(
 	const { out: color, err: errColor } = colorOf(deps, values);
 	if (isSet(values, "json"))
 		deps.stdout(
-			jsonOf({
-				...s,
-				window: window ?? null,
-				environment: environmentJson(declared, checks, report),
-			}),
+			jsonOf(
+				{
+					...s,
+					window: window ?? null,
+					environment: environmentJson(declared, checks, report),
+				},
+				deps,
+			),
 		);
 	else
 		deps.stdout(
@@ -500,7 +503,9 @@ async function promptOf(
 	);
 	const text = prompt(await resolveUnsettled(binding.profile, setup));
 	if (isSet(values, "json")) {
-		deps.stdout(jsonOf({ node, seat: { key, ...binding }, prompt: text }));
+		deps.stdout(
+			jsonOf({ node, seat: { key, ...binding }, prompt: text }, deps),
+		);
 		return EXIT.ok;
 	}
 	const words = binding.source && sourceWords(binding.source);

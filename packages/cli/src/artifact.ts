@@ -210,7 +210,7 @@ function listed(
 	artifacts: Listed[],
 ) {
 	const { deps } = session;
-	if (json) deps.stdout(jsonOf(artifacts));
+	if (json) deps.stdout(jsonOf(artifacts, deps));
 	else if (artifacts.length === 0) {
 		const id = shortIds(store.ids()).label(row.id, false);
 		deps.stderr(`no artifacts in concert ${id}`);

@@ -271,7 +271,7 @@ function printDiagnostics(
 	json: boolean,
 	color: boolean,
 ) {
-	if (json) deps.stdout(jsonOf({ ok: false, diagnostics }));
+	if (json) deps.stdout(jsonOf({ ok: false, diagnostics }, deps));
 	else
 		for (const line of renderDiagnostics(diagnostics, color)) deps.stderr(line);
 }
@@ -298,7 +298,9 @@ function report(
 	const exit = error instanceof CliError ? error.exit : EXIT.failed;
 	const debug = isSet(early, "debug");
 	if (json)
-		deps.stdout(jsonOf({ ok: false, error: plain(error, debug, at), exit }));
+		deps.stdout(
+			jsonOf({ ok: false, error: plain(error, debug, at), exit }, deps),
+		);
 	else deps.stderr(describe(error, debug, color, at));
 	return exit;
 }

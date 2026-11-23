@@ -276,7 +276,7 @@ async function pruneAll(
 }
 
 function report({ session: { deps }, json }: Stored, outcome: Outcome) {
-	if (json) return deps.stdout(jsonOf(outcome));
+	if (json) return deps.stdout(jsonOf(outcome, deps));
 	for (const id of outcome.pruned) deps.stdout(id);
 	deps.stderr(
 		`pruned ${outcome.pruned.length}, freed ${formatBytes(outcome.freed)}`,
@@ -302,13 +302,16 @@ function rehearsed(
 ) {
 	if (json)
 		deps.stdout(
-			jsonOf({
-				pruned: [],
-				wouldPrune: targets.map((c, i) => ({ id: c.id, bytes: sizes[i] })),
-				freed: 0,
-				wouldFree: total,
-				failures: [],
-			}),
+			jsonOf(
+				{
+					pruned: [],
+					wouldPrune: targets.map((c, i) => ({ id: c.id, bytes: sizes[i] })),
+					freed: 0,
+					wouldFree: total,
+					failures: [],
+				},
+				deps,
+			),
 		);
 	else {
 		if (targets.length > 0)
@@ -340,7 +343,9 @@ async function pruned(stored: Stored, selection: Selection) {
 		!(await confirmed(session, isSet(values, "yes"), targets.length, total))
 	) {
 		if (json)
-			session.deps.stdout(jsonOf({ pruned: [], freed: 0, failures: [] }));
+			session.deps.stdout(
+				jsonOf({ pruned: [], freed: 0, failures: [] }, session.deps),
+			);
 		else session.deps.stderr("nothing pruned");
 		return EXIT.ok;
 	}

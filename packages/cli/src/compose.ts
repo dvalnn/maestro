@@ -214,6 +214,7 @@ async function planShown(
 				isSet(values, "plan")
 					? leanPlan(plan, agents)
 					: { ok: true, plan, agents },
+				deps,
 			),
 		);
 		return EXIT.ok;
@@ -347,7 +348,7 @@ function printConfig(
 	invocation: Invocation | undefined,
 ): number {
 	if (json) {
-		deps.stdout(jsonOf({ values: rows, ...invocation }));
+		deps.stdout(jsonOf({ values: rows, ...invocation }, deps));
 		return EXIT.ok;
 	}
 	const dim = (text: string) => paint("dim", text, color);

@@ -1941,6 +1941,29 @@ describe("perform", () => {
 });
 
 describe("usage errors", () => {
+	// Seam: error documents and exit codes returned by the CLI under --json.
+	test.each([
+		["refusals", ["compose", "missing.ts", "--json"]],
+		["diagnostics", ["compose", ...GREET, "-c", "concurrency=wrong", "--json"]],
+	] satisfies [string, string[]][])(
+		"JSON errors use stdout's terminal layout for %s",
+		async (_, args) => {
+			const w = await world();
+			const terminal = () => ({ columns: 80, rows: 24 });
+			const piped = await w.call(args, { stderrTerminal: terminal });
+			const shown = await w.call(args, { terminal });
+			expect(piped.code).not.toBe(0);
+			expect(shown.code).toBe(piped.code);
+			expect(piped.err).toBe("");
+			expect(shown.err).toBe("");
+			const document = json(piped);
+			expect(document.ok).toBe(false);
+			expect(json(shown)).toEqual(document);
+			expect(piped.out).toBe(JSON.stringify(document));
+			expect(shown.out).toBe(JSON.stringify(document, null, 2));
+		},
+	);
+
 	// Seam: usage exits and the exact flag tokens named in operator-facing diagnostics.
 	test("ls refuses --all with --limit and names both flags", async () => {
 		const w = await world();

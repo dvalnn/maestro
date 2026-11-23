@@ -93,6 +93,29 @@ const inspecting = (lines: readonly string[]) =>
 const cursorAt = (lines: readonly string[] = []) =>
 	lines.findIndex((l) => CURSOR.test(l));
 
+// Seam: watch's JSON Lines on stdout, including its final concert document.
+test("watch JSON stays compact for every event on and off a terminal", async () => {
+	const w = await world();
+	const performed = await w.call(["perform", ...GREET], { hosts: [hostOf()] });
+	expect(performed.code).toBe(0);
+	const id = idOf(performed);
+	for (const terminal of [undefined, TERMINAL]) {
+		for (const flags of [["--json"], ["--events", "--json"]]) {
+			const watched = await w.call(["watch", id, ...flags], { terminal });
+			expect(watched.code).toBe(0);
+			const lines = watched.out.split("\n");
+			expect(lines.length).toBeGreaterThan(1);
+			for (const line of lines)
+				expect(line).toBe(JSON.stringify(JSON.parse(line)));
+			expect(linesOf(watched.out).at(-1)).toMatchObject({
+				type: "concert",
+				id,
+				status: "ok",
+			});
+		}
+	}
+});
+
 describe("watch without a terminal", () => {
 	test.each([
 		["ok", ECHO, 0, ECHO.outputs],

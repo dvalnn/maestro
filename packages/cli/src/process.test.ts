@@ -73,6 +73,20 @@ async function until(done: () => Promise<boolean>) {
 }
 
 describe("a concert in another process", () => {
+	// Seam: a detached run's refusal document forwarded to the parent's terminal stdout.
+	test("a detached perform refusal stays compact on a terminal before any concert is announced", async () => {
+		const w = await world();
+		const refused = await w.call(
+			["perform", "missing.ts", "--detach", "--json"],
+			{ terminal: () => ({ columns: 80, rows: 24 }) },
+		);
+		expect(refused.code).not.toBe(0);
+		expect(refused.err).toBe("");
+		const document = json(refused);
+		expect(document.ok).toBe(false);
+		expect(refused.out).toBe(JSON.stringify(document));
+	});
+
 	test("--detach prints the id of a concert it leaves running in its own session, or its document under --json, for perform and resume, and passes a refusal through", async () => {
 		const w = await world();
 		const self = [process.execPath, await hanging()];

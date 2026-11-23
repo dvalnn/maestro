@@ -420,8 +420,9 @@ export function diffColored(text: string): string {
 		.join("\n");
 }
 
-/** `value` as the one JSON document a command prints with `--json`. */
-export const jsonOf = (value: unknown) => JSON.stringify(value, null, 2);
+/** `value` as the one JSON document a command prints with `--json`: indented by two on a terminal stdout, else on one line. */
+export const jsonOf = (value: unknown, { terminal }: Deps) =>
+	JSON.stringify(value, null, terminal ? 2 : undefined);
 
 /** The exit code of a concert with `status`: `running` is a wait that gave up. */
 export const exitOf = (status: ConcertStatus) =>

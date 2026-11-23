@@ -182,7 +182,9 @@ async function detach(
 		if (started.err) deps.stderr(started.err.trimEnd());
 		return started.exit;
 	}
-	deps.stdout(json ? jsonOf(resultDoc(started.id, undefined)) : started.id);
+	deps.stdout(
+		json ? jsonOf(resultDoc(started.id, undefined), deps) : started.id,
+	);
 	if (deps.stderrTerminal && !json) await followHint(deps, started.id);
 	return EXIT.ok;
 }
@@ -345,7 +347,7 @@ async function report(
 	const { deps } = session;
 	if (json)
 		deps.stdout(
-			jsonOf(concertDoc(store, id, result, artifactsOf(session, id))),
+			jsonOf(concertDoc(store, id, result, artifactsOf(session, id)), deps),
 		);
 	else
 		printClosing(deps, store, concertOf(store, id), result, {

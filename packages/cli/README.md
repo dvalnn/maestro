@@ -16,8 +16,8 @@ maestro wait <concert> --timeout 15m
 - The common flags may come before the command, as in `maestro --preset stub compose <composition>`. A mistyped command
   or flag is met with `Did you mean '<name>'?`.
 - Every command but `changeset` takes `--json`: one JSON document on stdout, no `warning:` lines on stderr, never
-  colored. Primary output goes to stdout, messages to stderr. An unexpected error prints `error: unexpected:` and
-  exits 1.
+  colored. The document is indented by two on a terminal and compact on one line when piped or redirected. Primary
+  output goes to stdout, messages to stderr. An unexpected error prints `error: unexpected:` and exits 1.
 - `compose <composition> --help` and `perform <composition> --help` add the composition's params.
 
 ### Compositions and params
@@ -115,11 +115,13 @@ same. It takes the tour from `--tour`, else `MAESTRO_TOUR`.
 
 With `--detach`, `perform`, `encore` and `resume` run the concert in a process of its own session and exit 0 once it
 starts, printing its id on stdout, or under `--json` `{"id": <id>, "status": "running"}`. A run that starts no concert
-within 2 minutes is stopped; a run that refuses passes its output and exit code through. A concert stopped by Ctrl-C
-(130) or SIGTERM (143) can be resumed. The first signal cancels the concert and waits for it to settle; a second kills
-the process at once. `kill` stops a running concert and waits for it to settle. `kill` of a concert that already settled
-exits 0 and says `concert <id> already settled <status>` on stderr; `--json` prints the concert's result document, as it
-does for one just stopped.
+within 2 minutes is stopped. A run that refuses passes its output and exit code through, its `--json` document compact
+even on a terminal. A concert stopped by Ctrl-C (130) or SIGTERM (143) can be resumed. The first signal cancels the
+concert and waits for it to settle; a second kills the process at once.
+
+`kill` stops a running concert and waits for it to settle. `kill` of a concert that already settled exits 0 and says
+`concert <id> already settled <status>` on stderr; `--json` prints the concert's result document, as it does for one
+just stopped.
 
 ### The closing block
 
@@ -156,9 +158,10 @@ Stdout holds a row per output port of the result node.
   is `Details: maestro ls <concert> --json`, or for a concert that is not ok and ended at a step
   `Details: maestro ls <concert> <instance> --json`, naming the step, which holds its report.
 - Piped or redirected, stdout is a `<port>  <value>` line per output and nothing else, with no color or wrapping, values
-  as they are and paths absolute. On a terminal a path in the home directory starts with `~`.
-- With `--json`, stdout holds the document instead, and the id of a `perform` stays on its stderr line. A one-line
-  string, a number, a boolean or `null` prints as is, anything else as compact JSON, and an artifact as its path.
+  as they are and paths absolute. A one-line string, a number, a boolean or `null` prints as is, anything else as
+  compact JSON, and an artifact as its path. On a terminal a path in the home directory starts with `~`.
+- With `--json`, stdout holds the document instead, laid out as [Conventions](#conventions) says, and the id of a
+  `perform` stays on its stderr line.
 
 A rejected concert shows its root cause's rejection outputs; a failed one has none. In the `--json` document they are as
 stored, under `outputs`, an artifact's `path` relative to `artifacts`; its other field names are the record's columns in

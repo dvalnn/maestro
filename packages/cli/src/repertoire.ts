@@ -305,7 +305,8 @@ export const repertoire: Command = {
 		const { packs: dirs, packsDir } = session.config;
 		const all = await loadAll(dirs, deps);
 		const shown = selected(all, positionals[0], packsDir);
-		if (isSet(values, "json")) deps.stdout(jsonOf({ packs: shown.entries }));
+		if (isSet(values, "json"))
+			deps.stdout(jsonOf({ packs: shown.entries }, deps));
 		else
 			printed(
 				deps,
