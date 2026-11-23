@@ -675,7 +675,7 @@ test("a PR body from the writer keeps its sections, then the risk, the spend fol
 	expect(body).toContain(
 		"**Risk:** low\n\n<details><summary>Spend: 1m, 10 tokens</summary>",
 	);
-	expect(body).toEndWith("</details>\n\nCloses #5 · relates to #7");
+	expect(body).toEndWith("<br>\n\n</details>\n\nCloses #5 · relates to #7");
 	expect(body).not.toContain("## Evidence");
 	expect(body).not.toContain("Review:");
 });
@@ -712,6 +712,8 @@ test("a PR body folds the last review's record above the spend: its agents as ro
 		"",
 		"- **C1**: holds",
 		"",
+		"<br>",
+		"",
 		"</details>",
 		"",
 		"",
@@ -725,7 +727,7 @@ test("a PR body folds the last review's record above the spend: its agents as ro
 	// A record of the agents alone, or of the review alone, still shows.
 	const agentsOnly = pullBody({ ...landed, review: undefined });
 	expect(agentsOnly).toContain(
-		"| consolidator | claude · m | ok |\n\n</details>",
+		"| consolidator | claude · m | ok |\n\n<br>\n\n</details>",
 	);
 	const reviewOnly = pullBody({ ...landed, reviewers: [] });
 	expect(reviewOnly).toContain(
@@ -733,7 +735,7 @@ test("a PR body folds the last review's record above the spend: its agents as ro
 	);
 });
 
-test("a PR body folds the change held against the plan above the review's record: planned paths left alone, and touched ones not planned", () => {
+test("a PR body folds the change held against the plan above the review's record: planned paths left alone, and touched ones not planned, tests apart", () => {
 	const planned = (touches: string[], touched?: string[]) =>
 		pullBody({
 			issue: 5,
@@ -744,7 +746,20 @@ test("a PR body folds the change held against the plan above the review's record
 			reviewers: [{ name: "lens", runtime: "stub", status: "ok" }],
 			touched,
 		});
-	expect(planned(["a.ts", "b.ts"], ["b.ts", "c.ts", "d.ts"])).toContain(
+	// A test and the transcript it writes are the tester's to choose: no spec plans them.
+	expect(
+		planned(
+			["a.ts", "b.ts"],
+			[
+				"b.ts",
+				"b.test.ts",
+				"c.ts",
+				"d.ts",
+				"src/transcripts/b.txt",
+				"transcripts/b.txt",
+			],
+		),
+	).toContain(
 		[
 			"**Risk:** low",
 			"",
@@ -752,6 +767,8 @@ test("a PR body folds the change held against the plan above the review's record
 			"",
 			"- Planned, not touched: `a.ts`",
 			"- Touched, not planned: `c.ts`, `d.ts`",
+			"",
+			"<br>",
 			"",
 			"</details>",
 			"",

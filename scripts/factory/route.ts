@@ -800,15 +800,22 @@ const cell = (text: string) => oneLine(text).replaceAll("|", "\\|");
 const paths = (found: readonly string[]) =>
 	found.map((p) => `\`${p}\``).join(", ");
 
+/** The end of a folded record on a PR: a blank line when open, since the forge draws none between two folds. */
+const FOLD_END = ["<br>", "", "</details>", ""];
+
+/** A test file, or a transcript a test writes: the tester's to choose, so no spec plans it. */
+const isTest = (path: string) =>
+	/\.test\.[a-z]+$|(^|\/)transcripts\//.test(path);
+
 /**
  * The change held against the plan, folded: the paths the spec planned that it left alone, and those it touches that
- * the spec did not plan. None when the spec planned no path or the concert's record names none touched.
+ * the spec did not plan, tests apart. None when the spec planned no path or the concert's record names none touched.
  */
 function planRecord({ result, touched }: Landed) {
 	const planned = result.spec?.touches ?? [];
 	if (!planned.length || !touched) return [];
 	const left = planned.filter((p) => !touched.includes(p));
-	const added = touched.filter((p) => !planned.includes(p));
+	const added = touched.filter((p) => !planned.includes(p) && !isTest(p));
 	const kept = planned.length - left.length;
 	return [
 		`<details><summary>Plan: touches ${kept} of ${planned.length} planned ${planned.length === 1 ? "path" : "paths"}, ${added.length} unplanned</summary>`,
@@ -816,8 +823,7 @@ function planRecord({ result, touched }: Landed) {
 		`- Planned, not touched: ${left.length ? paths(left) : "none"}`,
 		`- Touched, not planned: ${added.length ? paths(added) : "none"}`,
 		"",
-		"</details>",
-		"",
+		...FOLD_END,
 	];
 }
 
@@ -846,8 +852,7 @@ function reviewRecord(landed: Landed) {
 				]
 			: []),
 		...(review ? [review.replace(/^## (.*)$/gm, "**$1**"), ""] : []),
-		"</details>",
-		"",
+		...FOLD_END,
 	];
 }
 
@@ -932,8 +937,7 @@ function writtenBody(landed: Landed, pr: string) {
 		"",
 		...spendLines(spend),
 		"",
-		"</details>",
-		"",
+		...FOLD_END,
 		closing(landed),
 	].join("\n");
 }
