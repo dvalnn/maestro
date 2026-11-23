@@ -949,6 +949,36 @@ describe("profiles", () => {
 		);
 	});
 
+	// Seam: compose's JSON for a plan with a resolved agent.
+	test("compose --plan --json includes resolved agents in the lean plan", async () => {
+		const w = await repoWorld(
+			"profiles:\n  smoke:\n    runtime:\n      harness: stub\n      model: none\n      thinking: low\n",
+		);
+		const shown = await w.call([
+			"compose",
+			await smokeFile(),
+			"--plan",
+			"--json",
+			"-c",
+			"profiles.smoke.runtime.model=big",
+		]);
+		expect(shown.code).toBe(0);
+		const document = json(shown);
+		expect(document.agents).toEqual([
+			{
+				node: "a",
+				seat: "smoke/smoke/smoke",
+				profile: "smoke",
+				harness: "stub",
+				model: "big",
+				thinking: "low",
+			},
+		]);
+		expect(document.plan.nodes).toEqual(
+			expect.arrayContaining([{ id: "a", kind: "repo.agent" }]),
+		);
+	});
+
 	test("--plan with a profile that leaves its harness and model unset prints the plan, then the diagnostics, and exits 1", async () => {
 		const w = await repoWorld();
 		const file = await smokeFile();

@@ -187,6 +187,17 @@ function printDiagnostics(
 	for (const line of renderDiagnostics(diagnostics, err)) deps.stderr(line);
 }
 
+/** The `--plan --json` document: bounds, expansion, diagnostics and each node's id and kind, with no ports, edges or scopes. */
+function leanPlan(plan: Plan, agents: unknown) {
+	const { bounds, expansion, diagnostics, ir } = plan;
+	const nodes = ir.nodes.map(({ id, kind }) => ({ id, kind }));
+	return {
+		ok: true,
+		plan: { bounds, expansion, diagnostics, nodes },
+		agents,
+	};
+}
+
 /** Saves what `saving` gives with `--out`, and prints `plan` as the flags of `shown` say. */
 async function planShown(
 	shown: Shown,
@@ -197,8 +208,13 @@ async function planShown(
 	const out = textOf(values, "out");
 	if (out) await save(await saving(), out);
 	if (isSet(values, "json")) {
+		const agents = await agentsIn(shown, plan);
 		deps.stdout(
-			jsonOf({ ok: true, plan, agents: await agentsIn(shown, plan) }),
+			jsonOf(
+				isSet(values, "plan")
+					? leanPlan(plan, agents)
+					: { ok: true, plan, agents },
+			),
 		);
 		return EXIT.ok;
 	}

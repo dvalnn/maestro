@@ -37,7 +37,10 @@ optional ones. A boolean takes `--name` and `--no-name`.
   own. A pack's modules are made relative to the IR.
 - `compose --plan` lists each agent in an `agents:` table: its node, its `seat` (`<pack>/<composition>/<seat>`, the key
   a `seats` entry rebinds), its profile and the harness, model and thinking it resolves to, as `compose --json` does in
-  `agents`. [render-text](../render-text/README.md) holds the drawing rules of `--flow`, which sets `--graph`.
+  `agents`. With `--json`, `--plan` prints the lean
+  `{ ok, plan: { bounds, expansion, diagnostics, nodes: [{ id, kind }] }, agents }`, with no ports, literals, edges,
+  scopes or config; `--json` alone prints the full plan. [render-text](../render-text/README.md) holds the drawing rules
+  of `--flow`, which sets `--graph`.
 - `compose --concert <id>` shows the plan the concert recorded, under its
   [config snapshot](../../docs/architecture.md#config-snapshot), with no pre-flight and no composition code loaded. It
   takes no composition, param flags, `--preset` or `-c`. `--out` saves that graph as an IR file. A concert recorded

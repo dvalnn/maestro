@@ -455,6 +455,133 @@ describe("compose and config", () => {
 		});
 	});
 
+	// Seams: compose's JSON and exit code for a file and a recorded concert, and the --out file.
+	const loopFanPlan = {
+		bounds: {
+			instances: { upTo: 16 },
+			nodes: {
+				init: { exact: 1 },
+				rounds: { exact: 1 },
+				"rounds/fan": { upTo: 2 },
+				"rounds/fan/worker": { upTo: 4 },
+				"rounds/firstOk": { upTo: 2 },
+				"rounds/firstOk_text": { upTo: 2 },
+				"rounds/finish": { upTo: 2 },
+				"rounds/finish_not": { upTo: 2 },
+			},
+			counts: {},
+		},
+		expansion: { rounds: { "": { upTo: 2 } } },
+		diagnostics: [],
+		nodes: [
+			{ id: "init", kind: "fake.task" },
+			{ id: "rounds", kind: "loop" },
+			{ id: "rounds/fan", kind: "parMap" },
+			{ id: "rounds/fan/worker", kind: "fake.task" },
+			{ id: "rounds/firstOk", kind: "code" },
+			{ id: "rounds/firstOk_text", kind: "code" },
+			{ id: "rounds/finish", kind: "fake.task" },
+			{ id: "rounds/finish_not", kind: "code" },
+		],
+	};
+
+	test("compose --plan --json prints a lean plan for a file, including its groups", async () => {
+		const w = await world();
+		const shown = await w.call([
+			"compose",
+			join(FIXTURES, "loop-fan.ts"),
+			"--plan",
+			"--json",
+		]);
+		expect(shown.code).toBe(0);
+		expect(json(shown)).toEqual({ ok: true, plan: loopFanPlan, agents: [] });
+	});
+
+	test("compose --concert --plan --json prints the recorded lean plan", async () => {
+		const w = await world();
+		const done = { outcome: "ok", outputs: { text: "done" } } as const;
+		const hosts = [
+			fakeHost({
+				steps: {
+					init: [done],
+					"rounds/fan/worker": [done],
+					"rounds/finish": [done],
+				},
+			}),
+		];
+		const performed = await w.call(["perform", join(FIXTURES, "loop-fan.ts")], {
+			hosts,
+		});
+		expect(performed.code).toBe(0);
+		const shown = await w.call(
+			["compose", "--concert", idOf(performed), "--plan", "--json"],
+			{ hosts },
+		);
+		expect(shown.code).toBe(0);
+		expect(json(shown)).toEqual({ ok: true, plan: loopFanPlan, agents: [] });
+	});
+
+	test("compose --json without --plan prints the full document", async () => {
+		const w = await world();
+		const shown = await w.call([
+			"compose",
+			join(FIXTURES, "loop-fan.ts"),
+			"--json",
+		]);
+		expect(shown.code).toBe(0);
+		const document = json(shown);
+		expect(Object.keys(document).sort()).toEqual(["agents", "ok", "plan"]);
+		expect(document).toMatchObject({
+			ok: true,
+			agents: [],
+			plan: {
+				bounds: loopFanPlan.bounds,
+				expansion: loopFanPlan.expansion,
+				diagnostics: [],
+				ir: {
+					nodes: expect.arrayContaining([
+						expect.objectContaining({ id: "rounds", kind: "loop" }),
+						expect.objectContaining({ id: "rounds/fan", kind: "parMap" }),
+					]),
+					edges: expect.any(Array),
+					scopes: expect.any(Array),
+				},
+			},
+		});
+	});
+
+	test("compose --plan --json saves --out before printing the lean plan", async () => {
+		const w = await world();
+		const file = join(FIXTURES, "loop-fan.ts");
+		const out = join(w.root, "plan.json");
+		const shown = await w.call([
+			"compose",
+			file,
+			"--plan",
+			"--json",
+			"--out",
+			out,
+		]);
+		expect(shown.code).toBe(0);
+		expect(await Bun.file(out).json()).toMatchObject({
+			nodes: expect.arrayContaining([
+				expect.objectContaining({ id: "rounds", kind: "loop" }),
+			]),
+			edges: expect.any(Array),
+		});
+		const refused = await w.call([
+			"compose",
+			file,
+			"--plan",
+			"--json",
+			"--out",
+			w.root,
+		]);
+		expect(refused.code).not.toBe(0);
+		if (refused.out !== "") expect(json(refused).ok).toBe(false);
+		expect(json(shown)).toEqual({ ok: true, plan: loopFanPlan, agents: [] });
+	});
+
 	test("compose highlights the composition name on a terminal and leaves piped output plain", async () => {
 		const w = await world();
 		const args = ["compose", ...GREET];
