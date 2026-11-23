@@ -10,5 +10,8 @@
 - Human output is held to `CODING_STANDARDS.md` (Terminal look). Its color and fitting show only on a terminal.
 - A transcript pins how human output looks. Read `packages/transcript/README.md` before testing output. Draw it with a
   `terminal` dep and color on, at the widths a user meets.
+- A change to what a command prints moves a transcript, whether a person or a script reads that output. The owner
+  reviews the change by the transcript that moved, so one that moves none shows them nothing. Where no section holds the
+  output yet, as with the layout of a `--json` document, add one.
 - A change to human output adds no assertion on how it looks. It moves the assertions that describe that output into the
   transcript, and leaves the tests of output it does not change as they are.

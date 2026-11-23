@@ -17,6 +17,9 @@ it asserts a look that a transcript holds or could hold. An assertion left on th
 blocks too, though the change leaves that test alone: it moves into the transcript. Color, a rule over every input and
 what is not output stay assertions.
 
+A change that alters what a command prints, to a terminal or to a pipe, and moves no transcript blocks. The owner
+reviews the change by the transcript that moved. Name the command and the output that changed.
+
 Never raise a test, present or missing, that these grounds make unnecessary:
 
 - a test for trivial logic;
