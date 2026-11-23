@@ -71,7 +71,7 @@ import {
 	withLocated,
 	withRecord,
 } from "./session";
-import { headerBlock } from "./watch";
+import { drawLiveBlock } from "./watch";
 
 /** The environment variable that puts a new concert on a tour when `--tour` is not given. */
 const TOUR_VARIABLE = "MAESTRO_TOUR";
@@ -304,7 +304,10 @@ const SIGNAL_EXITS = {
 	SIGTERM: EXIT.terminated,
 } as const;
 
-/** Cancels `concert` on SIGINT or SIGTERM, until it settles and `after` has run; `stopped` is the exit code of the first signal. */
+/**
+ * Cancels `concert` on the first SIGINT or SIGTERM, until it settles and `after` has run; `stopped` is that signal's exit
+ * code. A second one finds no handler and kills the process, which is the way out of a cancel that hangs.
+ */
 async function settled(
 	concert: Concert,
 	after: () => Promise<void>,
@@ -316,14 +319,14 @@ async function settled(
 			stopped ??= SIGNAL_EXITS[signal];
 			void concert.cancel();
 		};
-		process.on(signal, stop);
+		process.once(signal, stop);
 		return [signal, stop] as const;
 	});
 	let result: ConcertResult;
 	try {
 		result = await concert.done;
 	} finally {
-		// The handlers stay until `after` is done: a signal while it waits still counts and cancels rather than kills.
+		// The handlers stay until `after` is done: a first signal while it waits still counts.
 		await after();
 		for (const [signal, stop] of stops) process.off(signal, stop);
 	}
@@ -427,7 +430,7 @@ function liveBlock(
 	const terminal = deps.stderrTerminal;
 	if (!terminal || json || row === undefined || deps.env.TERM === "dumb")
 		return async () => {};
-	return headerBlock(deps, store, row, {
+	return drawLiveBlock(deps, store, row, {
 		terminal,
 		color: color.err,
 	});

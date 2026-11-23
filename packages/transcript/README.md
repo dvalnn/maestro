@@ -4,10 +4,10 @@ For anyone changing what maestro prints, and for whoever reviews that change. A 
 what a terminal shows, held to the code by a test. A change to the output changes the file, so the file's diff in a pull
 request is the output before and after. The package is used by tests alone and imports no other package.
 
-| Entry point                   | Gives                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------------ |
-| `@maestro/transcript`         | `transcript`, which holds what a test drew to the committed file               |
-| `@maestro/transcript/picture` | `picture`, `sectionsOf` and `differing`, which draw colored sections as an SVG |
+| Entry point                   | Gives                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `@maestro/transcript`         | `transcript`, which holds what a test drew to the committed file; `fixedRun` and `until`, which fix and await a run |
+| `@maestro/transcript/picture` | `picture`, `sectionsOf` and `differing`, which draw colored sections as an SVG                                      |
 
 ## The file
 
@@ -34,6 +34,9 @@ A test draws each section through the code's real entry point and passes them to
 - **Nothing that varies.** A section holds no id, time or path that differs between two runs. Give the code a fixed
   clock and fixed ids; never replace them in the text after, since that changes the widths.
 - **No real waiting.** A section that needs time to pass moves the clock.
+
+`fixedRun(start)` gives both: the clock stands still until `at(ms)` moves it, and concert ids follow a fixed sequence.
+`until(seen)` waits for a redraw by what it shows, never by a sleep. Neither reaches a process the code starts.
 
 ## A transcript or a test
 

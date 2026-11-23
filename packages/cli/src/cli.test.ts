@@ -10,6 +10,7 @@ import { IR_VERSION } from "@maestro/ir";
 import { shortId, shortIds, stateWord } from "@maestro/render-text/live";
 import { SDK_VERSION, STDLIB_HASH } from "@maestro/sdk/loader";
 import { fakeHost } from "@maestro/testkit";
+import { fixedRun, transcript, until } from "@maestro/transcript";
 import pkg from "../package.json";
 import {
 	cleanup,
@@ -949,9 +950,8 @@ describe("compose and config", () => {
 	});
 });
 
-const ESCAPE = "\u001b";
-const CURSOR_CODE = new RegExp(`(${ESCAPE}\\[\\d*[FJ])`);
-const CURSOR_UP = new RegExp(`^${ESCAPE}\\[(\\d*)F$`);
+const CURSOR_CODE = new RegExp(`(${ESC}\\[\\d*[FJ])`);
+const CURSOR_UP = new RegExp(`^${ESC}\\[(\\d*)F$`);
 
 /** What a terminal shows after `writes`, each ending in a newline: `ESC[nF` moves up n lines, `ESC[J` clears below. */
 function screenOf(writes: readonly string[]): string {
@@ -966,7 +966,7 @@ function screenOf(writes: readonly string[]): string {
 	const apply = (part: string) => {
 		const up = CURSOR_UP.exec(part);
 		if (up) row = Math.max(0, row - Number(up[1] || 1));
-		else if (part === `${ESCAPE}[J`) {
+		else if (part === `${ESC}[J`) {
 			screen.length = row;
 			screen[row] = "";
 		} else put(part);
@@ -987,7 +987,14 @@ type Held = {
 	finish(): void;
 };
 
-/** Runs `args` on a stderr terminal with a concert whose first step waits for `finish`, once it has started. */
+/** Whether `writes` hold `text`, color codes aside. */
+const wrote = (writes: readonly string[], text: string) =>
+	stripVTControlCharacters(writes.join("\n")).includes(text);
+
+/**
+ * Runs `args` on a stderr terminal with a concert whose first step waits for `finish`, once it has started and, unless
+ * `block` is false, the live block shows it running.
+ */
 async function held(
 	w: Awaited<ReturnType<typeof world>>,
 	args: readonly string[],
@@ -998,7 +1005,9 @@ async function held(
 		writes = [],
 		text,
 		sharedTerminal = false,
+		block = true,
 	}: {
+		block?: boolean;
 		sharedTerminal?: boolean;
 		writes?: string[];
 		text?: object;
@@ -1032,187 +1041,252 @@ async function held(
 		stderr: (text) => writes.push(text),
 	});
 	await Promise.race([started.promise, running]);
-	await Bun.sleep(350);
+	if (block) await until(() => wrote(writes, "now   ● first"));
 	return { host, writes, running, finish: () => step.resolve(ECHO) };
+}
+
+const START = Date.UTC(2026, 0, 5, 9);
+
+/** Runs `body` with the clock and the concert ids fixed. */
+async function fixed<T>(
+	body: (run: ReturnType<typeof fixedRun>) => Promise<T>,
+): Promise<T> {
+	const run = fixedRun(START);
+	try {
+		return await body(run);
+	} finally {
+		run.restore();
+	}
+}
+
+/** A concert whose code node prints through `console.log`, or through `process.stdout`, while the first step runs. */
+async function printed(via: "console" | "stdout") {
+	const w = await world();
+	const writes: string[] = [];
+	const log = spyOn(console, "log").mockImplementation((text) => {
+		writes.push(String(text));
+	});
+	const out = spyOn(process.stdout, "write").mockImplementation(((
+		text: string,
+	) => {
+		writes.push(text.trimEnd());
+		return true;
+	}) as never);
+	try {
+		let during = "";
+		const live = await held(w, ["perform", ...GREET], {
+			writes,
+			sharedTerminal: via === "stdout",
+			env: { TERM: "xterm" },
+			beforeHold: async () => {
+				await until(() => wrote(writes, "● demo.greet"));
+				if (via === "console") console.log("shout hey");
+				else process.stdout.write("shout hey\n");
+			},
+		});
+		during = screenOf(writes);
+		live.finish();
+		await live.running;
+		return { during, settled: screenOf(writes) };
+	} finally {
+		log.mockRestore();
+		out.mockRestore();
+	}
+}
+
+/** A concert on a 100-column terminal that shrinks to 20 after other output, drawn up to the redraw at 20. */
+async function shrunk(run: ReturnType<typeof fixedRun>) {
+	const w = await world();
+	const writes: string[] = [];
+	const log = spyOn(console, "log").mockImplementation((text) => {
+		writes.push(String(text));
+	});
+	let columns = 100;
+	try {
+		const live = await held(
+			w,
+			["perform", ...GREET, "--title", "a very long title"],
+			{ writes, columns: () => columns, env: { TERM: "xterm" } },
+		);
+		const drawn = writes.length;
+		columns = 20;
+		const before = writes.length;
+		console.log("MARK");
+		const mark = writes.length;
+		// The redraw the print itself makes, before any poll tick.
+		const screen = screenOf(writes.slice(before + 1, mark));
+		run.at(1000);
+		await until(() => wrote(writes.slice(mark), "now   "));
+		const end = writes.length;
+		live.finish();
+		await live.running;
+		return { writes, drawn, mark, end, screen };
+	} finally {
+		log.mockRestore();
+	}
+}
+
+/** A concert on a 100-column terminal that gets a Ctrl-C while its first step runs. */
+async function interrupted() {
+	const w = await world();
+	const before = process.listenerCount("SIGINT");
+	const live = await held(w, ["perform", ...GREET], {
+		env: { TERM: "xterm" },
+	});
+	const during = process.listenerCount("SIGINT") - before;
+	process.emit("SIGINT");
+	const left = process.listenerCount("SIGINT") - before;
+	live.finish();
+	const result = await live.running;
+	return { code: result.code, during, left, screen: screenOf(live.writes) };
 }
 
 describe("perform", () => {
 	// Seam: stderr and stdout while a foreground command waits for a concert, and after it settles.
-	test("shows watch's header, now and last on stderr while a concert runs and redraws elapsed time", async () => {
-		const w = await world();
-		let progress = () => {};
-		const live = await held(w, ["perform", ...GREET, "--title", "Live test"], {
-			beforeHold: ({ emit }) => {
-				progress = () =>
-					emit({ kind: "tool", name: "bash", input: { command: "ls" } });
+	// Transcript: what a stderr terminal shows while `perform` waits, and after the concert settles.
+	test("draws the live block over itself as time passes, and the closing block in its place", async () => {
+		const sections = [];
+		for (const columns of [100, 40, 20]) {
+			await fixed(async (run) => {
+				const w = await world();
+				let progress = () => {};
+				const live = await held(
+					w,
+					["perform", ...GREET, "--title", "Live test"],
+					{
+						columns,
+						env: { TERM: "xterm" },
+						beforeHold: ({ emit }) => {
+							progress = () =>
+								emit({ kind: "tool", name: "bash", input: { command: "ls" } });
+						},
+					},
+				);
+				const drawn = live.writes.length;
+				run.at(64_000);
+				progress();
+				await until(() => live.writes.length > drawn);
+				const during = screenOf(live.writes);
+				run.at(95_000);
+				live.finish();
+				await live.running;
+				sections.push(
+					{
+						name: `perform on a ${columns}-column terminal, 1m04s in, while the first step runs`,
+						columns,
+						shown: during,
+					},
+					{
+						name: `the same ${columns}-column terminal, after the concert settles at 1m35s`,
+						columns,
+						shown: screenOf(live.writes),
+					},
+				);
+			});
+		}
+		const console_ = await fixed(() => printed("console"));
+		const stdout = await fixed(() => printed("stdout"));
+		const shrink = await fixed(shrunk);
+		const ctrlC = await fixed(interrupted);
+		sections.push(
+			{
+				name: "perform on a 100-column terminal while a code node prints: the block moves below it",
+				columns: 100,
+				shown: console_.during,
 			},
-		});
-		const { writes, running } = live;
-		const beforeProgress = stripVTControlCharacters(writes.join("\n"));
-		progress();
-		await Bun.sleep(1100);
-		const during = writes.join("\n");
-		const id = idOf({ code: 0, out: "", err: during });
-		const watched = await w.call(["watch", id, "--frames", "q", "--no-color"], {
-			hosts: [live.host],
-		});
-		live.finish();
-		const result = await running;
-		expect(result.code).toBe(0);
-		expect(during).toStartWith(
-			`concert ${id}\nFollow it: maestro watch ${shortOf(id)}`,
+			{
+				name: "the same terminal after the concert settles: the printed line stays, the block is gone",
+				columns: 100,
+				shown: console_.settled,
+			},
+			{
+				name: "a code node writing to process.stdout, after the concert settles",
+				columns: 100,
+				shown: stdout.settled,
+			},
+			{
+				name: "the block redrawn at 20 columns by other output printing, after the terminal shrinks from 100",
+				columns: 20,
+				shown: shrink.screen,
+			},
+			{
+				name: "perform on a 100-column terminal after a Ctrl-C",
+				columns: 100,
+				shown: ctrlC.screen,
+			},
 		);
-		const lines = stripVTControlCharacters(during).split("\n");
-		const headers = lines.filter((line) => line.startsWith("● demo.greet"));
-		expect(headers.length).toBeGreaterThan(1);
-		expect(new Set(headers).size).toBeGreaterThan(1);
-		expect(headers.at(-1)).toContain('"Live test"');
-		expect(headers.at(-1)).toContain(shortOf(id));
-		expect(headers.at(-1)).toContain("running");
-		const watchLines = stripVTControlCharacters(watched.out).split("\n");
-		expect(watchLines[1]).toStartWith("now   ● first");
-		expect(lines.some((line) => line.startsWith("now   ● first"))).toBe(true);
-		expect(beforeProgress).not.toContain('tool bash {"command":"ls"}');
-		expect(stripVTControlCharacters(during)).toContain(
-			'tool bash {"command":"ls"}',
+		await transcript(
+			new URL("./transcripts/perform-live.txt", import.meta.url),
+			sections,
 		);
-		expect(lines).toContain(watchLines[2] ?? "");
-		expect(during).not.toMatch(SGR);
-	});
-
-	test("erases the live block before the closing block", async () => {
-		const w = await world();
-		const { writes, running, finish } = await held(w, ["perform", ...GREET]);
-		finish();
-		await running;
-		const text = screenOf(writes);
-		const id = idOf({ code: 0, out: "", err: text });
-		expect(text).not.toContain("now   ");
-		expect(text).toStartWith(
-			`concert ${id}\nFollow it: maestro watch ${shortOf(id)}\nconcert`,
-		);
-	});
-
-	test("prints what a code node prints below the concert line, with no live block left", async () => {
-		const w = await world();
-		const writes: string[] = [];
-		const log = spyOn(console, "log").mockImplementation((text) => {
-			writes.push(String(text));
-		});
-		try {
-			const live = await held(w, ["perform", ...GREET], {
-				writes,
-				beforeHold: async () => {
-					await Bun.sleep(250);
-					console.log("shout hey");
-				},
-			});
-			live.finish();
-			await live.running;
-			const text = screenOf(live.writes);
-			expect(text).toContain("shout hey");
-			expect(text).not.toContain("now   ");
-			expect(text).not.toContain("● demo.greet");
-		} finally {
-			log.mockRestore();
-		}
-	});
-
-	test("keeps output a code node writes to process.stdout below the concert line, with no live block left", async () => {
-		const w = await world();
-		const writes: string[] = [];
-		const write = spyOn(process.stdout, "write").mockImplementation(((
-			text: string,
-		) => {
-			writes.push(text.trimEnd());
-			return true;
-		}) as never);
-		try {
-			const live = await held(w, ["perform", ...GREET], {
-				writes,
-				sharedTerminal: true,
-				beforeHold: async () => {
-					await Bun.sleep(250);
-					process.stdout.write("shout hey\n");
-				},
-			});
-			live.finish();
-			await live.running;
-			const text = screenOf(live.writes);
-			expect(text).toContain("shout hey");
-			expect(text).not.toContain("● demo.greet");
-		} finally {
-			write.mockRestore();
-		}
 	});
 
 	test("redraws at the narrower width after the terminal shrinks, also after other output", async () => {
-		const w = await world();
-		const writes: string[] = [];
-		const log = spyOn(console, "log").mockImplementation((text) => {
-			writes.push(String(text));
-		});
-		let columns = 100;
-		try {
-			const live = await held(
-				w,
-				["perform", ...GREET, "--title", "a very long title"],
-				{
-					writes,
-					columns: () => columns,
-				},
-			);
-			columns = 20;
-			console.log("MARK");
-			const mark = writes.length;
-			await Bun.sleep(250);
-			const end = writes.length;
-			live.finish();
-			await live.running;
-			const after = stripVTControlCharacters(
-				writes.slice(mark, end).join("\n"),
-			);
-			expect(after).toContain("now   ");
-			for (const line of after.split("\n"))
-				expect(Bun.stringWidth(line)).toBeLessThanOrEqual(20);
-		} finally {
-			log.mockRestore();
-		}
+		const { writes, drawn, mark, end } = await fixed(shrunk);
+		// The block drawn at 100 columns wraps at 20, so erasing it moves up past its own lines.
+		const wide = stripVTControlCharacters(writes[drawn - 1] ?? "").split(
+			"\n",
+		).length;
+		const up = new RegExp(`${ESC}\\[(\\d+)F`).exec(writes[drawn] ?? "");
+		expect(Number(up?.[1])).toBeGreaterThan(wide);
+		const after = stripVTControlCharacters(writes.slice(mark, end).join("\n"));
+		for (const line of after.split("\n"))
+			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(20);
 	});
 
 	test("keeps redrawing the elapsed time after a host's progress text throws", async () => {
-		const w = await world();
-		let progress = () => {};
-		const live = await held(w, ["perform", ...GREET], {
-			text: {
-				progress: () => {
-					throw new Error("bad text");
+		await fixed(async (run) => {
+			const w = await world();
+			let progress = () => {};
+			let threw = false;
+			const live = await held(w, ["perform", ...GREET], {
+				text: {
+					progress: () => {
+						threw = true;
+						throw new Error("bad text");
+					},
 				},
-			},
-			beforeHold: ({ emit }) => {
-				progress = () => emit({ kind: "tool", name: "bash", input: {} });
-			},
+				beforeHold: ({ emit }) => {
+					progress = () => emit({ kind: "tool", name: "bash", input: {} });
+				},
+			});
+			progress();
+			await until(() => threw);
+			const mark = live.writes.length;
+			run.at(5000);
+			await until(() => wrote(live.writes.slice(mark), "● demo.greet"));
+			live.finish();
+			await live.running;
 		});
-		progress();
-		await Bun.sleep(300);
-		const mark = live.writes.length;
-		await Bun.sleep(1100);
-		const later = stripVTControlCharacters(live.writes.slice(mark).join("\n"));
-		live.finish();
-		await live.running;
-		expect(later).toContain("● demo.greet");
 	});
 
-	test("erases the live block and exits 130 with the resume hint on a Ctrl-C", async () => {
-		const w = await world();
-		const live = await held(w, ["perform", ...GREET]);
-		process.emit("SIGINT");
-		live.finish();
-		const result = await live.running;
-		const text = screenOf(live.writes);
-		expect(result.code).toBe(130);
-		expect(text).not.toContain("now   ");
-		expect(text).toContain("Resume it: maestro resume");
+	test("a Ctrl-C ends the foreground perform with exit 130 and leaves a second one to kill", async () => {
+		const { code, during, left } = await interrupted();
+		expect(during).toBe(1);
+		expect(left).toBe(0);
+		expect(code).toBe(130);
+	});
+
+	test("ends the live block's poll wait at once when the concert settles", async () => {
+		const sleep = Bun.sleep;
+		let hung = false;
+		let waiting = false;
+		// Once `hung`, a poll's wait never ends by itself, so only a quit can end it; other sleeps run as they are.
+		const wait = spyOn(Bun, "sleep").mockImplementation(((ms: number) => {
+			if (!hung || ms !== 100) return sleep(ms);
+			waiting = true;
+			return new Promise(() => {});
+		}) as never);
+		try {
+			const w = await world();
+			const live = await held(w, ["perform", ...GREET]);
+			hung = true;
+			await until(() => waiting);
+			live.finish();
+			expect((await live.running).code).toBe(0);
+		} finally {
+			wait.mockRestore();
+		}
 	});
 
 	test("colors the live block on a color terminal", async () => {
@@ -1226,7 +1300,7 @@ describe("perform", () => {
 		expect(during).toMatch(SGR);
 	});
 
-	test("prints a code node's output while a host's text hook throws on redraw", async () => {
+	test("prints a code node's output while a host's text hook prints and throws on redraw", async () => {
 		const w = await world();
 		const step = Promise.withResolvers<typeof ECHO>();
 		const started = Promise.withResolvers<void>();
@@ -1235,6 +1309,7 @@ describe("perform", () => {
 			writes.push(String(text));
 		});
 		let armed = false;
+		let threw = false;
 		const base = hostOf(ECHO, {
 			steps: {
 				first: [{ ...FIRST, enrichment: { session: "s" } }],
@@ -1248,8 +1323,11 @@ describe("perform", () => {
 			text: {
 				value: {
 					actor: () => {
-						if (armed) throw new Error("bad text");
-						return undefined;
+						if (!armed) return undefined;
+						threw = true;
+						// A print made while the block redraws goes straight out; it does not move the block again.
+						console.log("hook says hi");
+						throw new Error("bad text");
 					},
 				},
 			},
@@ -1262,13 +1340,14 @@ describe("perform", () => {
 				stderr: (text) => writes.push(text),
 			});
 			await Promise.race([started.promise, running]);
-			await Bun.sleep(250);
+			await until(() => wrote(writes, "● demo.greet"));
 			armed = true;
-			await Bun.sleep(250);
+			await until(() => threw);
 			console.log("shout hey");
 			step.resolve(ECHO);
 			expect((await running).code).toBe(0);
 			expect(screenOf(writes)).toContain("shout hey");
+			expect(screenOf(writes)).toContain("hook says hi");
 		} finally {
 			log.mockRestore();
 		}
@@ -1296,38 +1375,6 @@ describe("perform", () => {
 		expect(reads).toEqual([]);
 	});
 
-	test("erases the live block and exits 130 when Ctrl-C is pressed twice", async () => {
-		const w = await world();
-		const live = await held(w, ["perform", ...GREET]);
-		process.emit("SIGINT");
-		live.finish();
-		process.emit("SIGINT");
-		const result = await live.running;
-		expect(result.code).toBe(130);
-		expect(screenOf(live.writes)).not.toContain("now   ");
-	});
-
-	test("fits the live block to the stderr terminal width", async () => {
-		const w = await world();
-		const { writes, running, finish } = await held(
-			w,
-			["perform", ...GREET, "--title", "a very long title"],
-			{ columns: 20 },
-		);
-		const lines = stripVTControlCharacters(writes.join("\n")).split("\n");
-		finish();
-		await running;
-		const header = lines.find((line) => line.startsWith("● demo.greet"));
-		const now = lines.find((line) => line.startsWith("now   "));
-		const last = lines.find((line) => line.startsWith("last  "));
-		expect(header).toBeDefined();
-		expect(now).toBeDefined();
-		expect(last).toBeDefined();
-		for (const line of [header, now, last])
-			expect(Bun.stringWidth(line ?? "")).toBeLessThanOrEqual(20);
-		expect(header).not.toContain("a very long title");
-	});
-
 	test.each([
 		["--json", ["--json"], { TERM: "xterm" }],
 		["TERM=dumb", [], { TERM: "dumb" }],
@@ -1338,7 +1385,7 @@ describe("perform", () => {
 			const { writes, running, finish } = await held(
 				w,
 				["perform", ...GREET, ...flags],
-				{ env },
+				{ env, block: false },
 			);
 			const during = writes.join("\n");
 			const id = idOf({ code: 0, out: "", err: during });
@@ -1351,6 +1398,7 @@ describe("perform", () => {
 					? `concert ${id}`
 					: `concert ${id}\nFollow it: maestro watch ${shortOf(id)}`,
 			);
+			expect(wrote(writes, "now   ")).toBe(false);
 		},
 	);
 
@@ -1364,12 +1412,11 @@ describe("perform", () => {
 		const during = writes.join("\n");
 		finish();
 		await running;
-		expect(stripVTControlCharacters(during)).toContain("now   ● first");
 		expect(during).not.toMatch(SGR);
 	});
 
 	test.each(["resume", "encore"])(
-		"%s shows live progress on stderr while it waits",
+		"%s draws the live block on stderr while it waits",
 		async (verb) => {
 			const w = await world();
 			const failed = await w.call(["perform", ...GREET], {
@@ -1383,14 +1430,8 @@ describe("perform", () => {
 			const args =
 				verb === "encore" ? [verb, id, "-c", "concurrency=2"] : [verb, id];
 			const live = await held(w, args);
-			const { running } = live;
-			const during = stripVTControlCharacters(live.writes.join("\n"));
 			live.finish();
-			const result = await running;
-			expect(result.code).toBe(0);
-			expect(during).toContain("● demo.greet");
-			expect(during).toContain("now   ● first");
-			expect(during).toContain("last  ");
+			expect((await live.running).code).toBe(0);
 		},
 	);
 
@@ -4567,14 +4608,9 @@ describe("exit codes and error states", () => {
 		);
 	});
 
-	test("perform on a terminal stderr prints how to follow the concert under its id line, not piped and not under --json", async () => {
+	test("perform leaves the follow hint out when stderr is piped and under --json", async () => {
 		const w = await world();
 		const stderrTerminal = () => ({ columns: 80 });
-		const on = await w.call(["perform", ...GREET], { stderrTerminal });
-		expect(on.err.split("\n").slice(0, 2)).toEqual([
-			`concert ${idOf(on)}`,
-			`Follow it: maestro watch ${shortOf(idOf(on))}`,
-		]);
 		expect((await w.call(["perform", ...GREET])).err).not.toContain(
 			"Follow it",
 		);

@@ -1,0 +1,90 @@
+## perform on a 100-column terminal, 1m04s in, while the first step runs
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+concert 01a154df-b99f-7ad8-8887-8772f0ceca8e
+Follow it: maestro watch rrsrssxk
+● demo.greet  "Live test"  rrsrssxk   running  1m04s
+now   ● first   1m04s   tool bash {"command":"ls"}
+last  no failure yet
+
+
+## the same 100-column terminal, after the concert settles at 1m35s
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+concert 01a154df-b99f-7ad8-8887-8772f0ceca8e
+Follow it: maestro watch rrsrssxk
+concert    rrsrssxk  ok  1m35s
+
+
+## perform on a 40-column terminal, 1m04s in, while the first step runs
+───────────────────────────────────────┐
+concert 01a154df-b99f-7ad8-8887-8772f0ceca8e
+Follow it: maestro watch rrsrssxk
+● demo.gree…  rrsrssxk   running  1m04s
+now   ● first   1m04s   tool bash {"com
+last  no failure yet
+
+
+## the same 40-column terminal, after the concert settles at 1m35s
+───────────────────────────────────────┐
+concert 01a154df-b99f-7ad8-8887-8772f0ceca8e
+Follow it: maestro watch rrsrssxk
+concert    rrsrssxk  ok  1m35s
+
+
+## perform on a 20-column terminal, 1m04s in, while the first step runs
+───────────────────┐
+concert 01a154df-b99f-7ad8-8887-8772f0ceca8e
+Follow it: maestro watch rrsrssxk
+rrsrssxk   running 
+now   ● first   1m0
+last  no failure ye
+
+
+## the same 20-column terminal, after the concert settles at 1m35s
+───────────────────┐
+concert 01a154df-b99f-7ad8-8887-8772f0ceca8e
+Follow it: maestro watch rrsrssxk
+concert    rrsrssxk  ok  1m35s
+
+
+## perform on a 100-column terminal while a code node prints: the block moves below it
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+concert 01a154df-b99f-7ad8-8887-8772f0ceca8e
+Follow it: maestro watch rrsrssxk
+shout hey
+● demo.greet  rrsrssxk   running  0.0s
+now   ● first   0.0s
+last  no failure yet
+
+
+## the same terminal after the concert settles: the printed line stays, the block is gone
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+concert 01a154df-b99f-7ad8-8887-8772f0ceca8e
+Follow it: maestro watch rrsrssxk
+shout hey
+concert    rrsrssxk  ok  0.0s
+
+
+## a code node writing to process.stdout, after the concert settles
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+concert 01a154df-b99f-7ad8-8887-8772f0ceca8e
+Follow it: maestro watch rrsrssxk
+shout hey
+concert    rrsrssxk  ok  0.0s
+
+
+## the block redrawn at 20 columns by other output printing, after the terminal shrinks from 100
+───────────────────┐
+MARK
+rrsrssxk   running 
+now   ● first   0.0
+last  no failure ye
+
+
+## perform on a 100-column terminal after a Ctrl-C
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+concert 01a154df-b99f-7ad8-8887-8772f0ceca8e
+Follow it: maestro watch rrsrssxk
+concert    rrsrssxk  failed  0.0s
+reason     the concert was cancelled
+Resume it: maestro resume rrsrssxk
+

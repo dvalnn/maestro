@@ -278,7 +278,7 @@ function guarded(
  * the record changes. Anything the process prints meanwhile goes where the block was. Gives a `stop` that ends the
  * drawing, erases it and restores the printers. A tick whose redraw throws is skipped, and the next one tries again.
  */
-export function headerBlock(
+export function drawLiveBlock(
 	deps: Deps,
 	store: Records,
 	first: ConcertRecord,

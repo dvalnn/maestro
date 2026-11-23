@@ -35,3 +35,5 @@ export async function transcript(file: URL, sections: readonly Section[]) {
 	const committed = Bun.file(file);
 	expect(text).toBe((await committed.exists()) ? await committed.text() : "");
 }
+
+export { fixedRun, until } from "./fixed";
