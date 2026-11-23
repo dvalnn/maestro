@@ -74,6 +74,8 @@ export type Report = {
 	seen?: string;
 	/** The last review, as its consolidator ruled it, and for a review concert the findings it upheld. */
 	review?: string;
+	/** The paths the slice's change touches, when its result names them. */
+	touched?: string[];
 	/** The agents of the last review round, none when the concert ran no review. */
 	reviewers?: Reviewer[];
 	blocking?: string[];
@@ -306,6 +308,12 @@ function deliveredOf(doc: unknown) {
 		: undefined;
 }
 
+/** The `touched` output of a `wait <concert> --json` document, when it has one. */
+function touchedOf(doc: unknown) {
+	const touched = outputOf(doc, "touched");
+	return Array.isArray(touched) ? strings(touched) : undefined;
+}
+
 /** The writer's PR body in the `pr` output of a `wait <concert> --json` document, when it wrote one. */
 const prOf = (doc: unknown) => outputText(doc, "pr") || undefined;
 
@@ -514,6 +522,7 @@ export function maestro(bin = "maestro"): Maestro {
 				seen: outputPath(result, "seen"),
 				review: outputText(result, "review"),
 				reviewers: reviewersOf(instancesOf(doc)),
+				touched: touchedOf(result),
 				blocking: blockingOf(result),
 				tests: testsOf(agents),
 			};

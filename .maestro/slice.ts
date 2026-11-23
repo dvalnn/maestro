@@ -18,6 +18,7 @@ import {
 	composition,
 	Dir,
 	Int,
+	List,
 	Markdown,
 	reject,
 	type Settled,
@@ -70,21 +71,16 @@ const DIFF_HEADER = /^diff --git "?a\/(.+?)"? "?b\/(.+?)"?$/gm;
 const patchesOf = (dir: string) =>
 	readdirSync(dir).filter((f) => f.endsWith(PATCH_EXT));
 
-/** The held paths the patches in the changeset at `dir` touch, each once. */
-function heldTouched(dir: string, patches: string[]) {
-	const touched = patches.flatMap((f) =>
+/** The paths the patches in the changeset at `dir` touch, a rename's both. */
+const touchedIn = (dir: string, patches: string[]) =>
+	patches.flatMap((f) =>
 		[...readFileSync(join(dir, f), "utf8").matchAll(DIFF_HEADER)].flatMap(
 			([, from, to]) => [from, to] as string[],
 		),
 	);
-	return [
-		...new Set(
-			touched.filter((p): p is string =>
-				HELD_PATHS.some((h) => (h.endsWith("/") ? p.startsWith(h) : p === h)),
-			),
-		),
-	];
-}
+
+const isHeld = (path: string) =>
+	HELD_PATHS.some((h) => (h.endsWith("/") ? path.startsWith(h) : path === h));
 
 const NO_REVIEW_NOTICE = "Draft: no lens delivered a review of this change.";
 
@@ -107,7 +103,8 @@ const noticeLines = (upheld: number, held: string[], unreviewed: boolean) => [
  * The changeset, the last round's upheld findings as `upheld.md`, whether the PR is a draft with its notice, the
  * writer's PR body, unchanged, the `delivered` count, the last `review` and the `seen` directory of transcript
  * pictures, when the changeset holds a patch; the body is empty when the writer delivered none, and `seen` empty when
- * the check that draws it did not settle ok, as `review` is when no consolidator ruled.
+ * the check that draws it did not settle ok, as `review` is when no consolidator ruled. `touched` holds each path the
+ * patches touch, those of the PR `revised` included, sorted.
  * A rejection when the changeset holds no patch, so the slice settles `rejected`.
  * - `draft` is true when the last review's `delivered` is 0, findings remain upheld, or the patches, or those
  *   of the PR `revised`, touch `docs/rulings.md` or `docs/adr/`.
@@ -137,12 +134,13 @@ export function requirePatch(
 	const patches = patchesOf(dir);
 	if (!patches.length) return reject(NOTHING_CHANGED);
 	const revisedDir = revised && ctx.path(revised);
-	const held = [
+	const touched = [
 		...new Set([
-			...heldTouched(dir, patches),
-			...(revisedDir ? heldTouched(revisedDir, patchesOf(revisedDir)) : []),
+			...touchedIn(dir, patches),
+			...(revisedDir ? touchedIn(revisedDir, patchesOf(revisedDir)) : []),
 		]),
-	];
+	].sort();
+	const held = touched.filter(isHeld);
 	const lines = noticeLines(upheld.length, held, delivered === 0);
 	const file = join(ctx.scratch, "upheld.md");
 	writeFileSync(file, upheldMarkdown(upheld));
@@ -162,6 +160,7 @@ export function requirePatch(
 		notice,
 		delivered,
 		review: review ?? unruled,
+		touched,
 	};
 	const body = written[0];
 	if (body?.outcome === "ok") return { ...outputs, pr: body.value };
@@ -187,7 +186,7 @@ export const slice = composition(
 			"Each round repairs until the target's checks pass, then reviews; up to maxFixes fix rounds follow.",
 			"Leaves the changeset, the findings the last review upheld, whether the PR is a draft with its notice, and a",
 			"writer's PR body: over the PR it revises when given, empty when the writer failed, how many lenses the last",
-			"review delivered, that review, and the transcript pictures `just pictures` draws of the change in the review's sandbox, an empty",
+			"review delivered, that review, the paths the change touches, and the transcript pictures `just pictures` draws of the change in the review's sandbox, an empty",
 			"directory when that failed. Fails when the changeset holds no patch.",
 		].join("\n"),
 		params: {
@@ -276,6 +275,7 @@ export const slice = composition(
 				pr: Markdown(),
 				delivered: Int(),
 				review: Markdown(),
+				touched: List(Text()),
 				seen: Dir(),
 			},
 			label: "result",

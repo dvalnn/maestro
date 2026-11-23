@@ -90,7 +90,7 @@ esac
 case "$1 $2" in
 	"ls --status") echo '[{"id":"r1","status":"running","pack":"slice","composition":"slice","tour":"v1.i1"},{"id":"r2","status":"running","pack":"triage","composition":"triage","tour":"v2.i3"}]' ;;
 	"ls --tour") [ "$6" = "--composition" ] && by="-$7"; echo '[{"id":"l'"$5$by"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1","startedAt":10,"settledAt":25}]' ;;
-	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"draft":true,"delivered":2,"notice":{"path":"notice.md"},"pr":{"path":"pr.md"},"seen":{"path":"seen"}}}' ;;
+	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"draft":true,"delivered":2,"touched":["a.ts"],"notice":{"path":"notice.md"},"pr":{"path":"pr.md"},"seen":{"path":"seen"}}}' ;;
 	"wait c4") echo '{"status":"rejected","artifacts":"${dir}","outputs":{"review":{"path":"review.md"},"upheld":[{"id":"F1","lens":"spec","where":"a.ts:3","issue":"A seam breaks","cites":"R1"}]}}' ;;
 	"wait c6") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"}}}' ;;
 	"wait c3"|"wait c5") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"},"pr":{"path":"empty.md"},"seen":{"path":"gone"}}}' ;;
@@ -126,7 +126,7 @@ test("reads a settled concert's result whatever wait exits with", async () => {
 	});
 });
 
-test("reads a concert's report: each agent's obstacles, lessons and well-formed sightings, the upheld findings, how many lenses delivered, the PR body, the agents of the review round that started last, and a review's text and upheld findings", async () => {
+test("reads a concert's report: each agent's obstacles, lessons and well-formed sightings, the upheld findings, how many lenses delivered, the paths touched, the PR body, the agents of the review round that started last, and a review's text and upheld findings", async () => {
 	expect(await fake.report("c2")).toEqual({
 		obstacles: ["no rg"],
 		lessons: ["run just fmt first"],
@@ -138,6 +138,7 @@ test("reads a concert's report: each agent's obstacles, lessons and well-formed 
 		pr: "## Summary\n\nx",
 		seen: join(dir, "seen"),
 		tests: { pinned: 3, deferred: 1, untestable: 0 },
+		touched: ["a.ts"],
 		reviewers: [
 			{
 				name: "lens/lens",

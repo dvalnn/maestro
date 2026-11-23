@@ -1516,7 +1516,7 @@ describe("a build", () => {
 	const NOTICE =
 		"Draft: 1 finding remains upheld after the last fix round; see Unresolved review.";
 
-	test("lands an ok slice in a fresh workspace and opens its draft PR, unarmed, with its notice first and its review's record", async () => {
+	test("lands an ok slice in a fresh workspace and opens its draft PR, unarmed, with its notice first, the plan held against the change and its review's record", async () => {
 		const t = setup(
 			[specced(7, "in-progress", { slice: "s1" })],
 			[sliceConcert("s1", 7)],
@@ -1533,6 +1533,7 @@ describe("a build", () => {
 						notice: NOTICE,
 						review: "## Met\n\n- **C1**: holds",
 						reviewers: [{ name: "lens", runtime: "stub", status: "ok" }],
+						touched: ["greet.sh", "x.sh"],
 					},
 				},
 			},
@@ -1565,6 +1566,13 @@ describe("a build", () => {
 				"",
 				"- Gate: green",
 				"- Review: findings upheld",
+				"",
+				"<details><summary>Plan: touches 1 of 1 planned path, 1 unplanned</summary>",
+				"",
+				"- Planned, not touched: none",
+				"- Touched, not planned: `x.sh`",
+				"",
+				"</details>",
 				"",
 				"<details><summary>Review: findings upheld</summary>",
 				"",

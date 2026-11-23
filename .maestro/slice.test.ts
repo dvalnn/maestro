@@ -355,6 +355,7 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		pr,
 		delivered: 1,
 		review,
+		touched: [],
 		seen: join(ctx, "seen"),
 	});
 	expect(readdirSync(join(ctx, "seen"))).toEqual([]);
@@ -372,6 +373,7 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		pr: join(ctx, "pr.md"),
 		delivered: 1,
 		review,
+		touched: [],
 		seen: join(ctx, "seen"),
 	});
 	expect(readFileSync(join(ctx, "pr.md"), "utf8")).toBe("");
@@ -414,9 +416,10 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 	);
 });
 
-test("requirePatch drafts a change that leaves findings upheld, edits a held path or got no review, naming each reason in its notice", () => {
+test("requirePatch drafts a change that leaves findings upheld, edits a held path or got no review, naming each reason in its notice, and lists the paths touched", () => {
 	const ctx = mkdtempSync(join(scratch, "draft-"));
 	const dir = mkdtempSync(join(scratch, "patches-"));
+	let touched: unknown;
 	const run = (
 		patch: string,
 		upheld: Parameters<typeof requirePatch>[0]["upheld"],
@@ -440,6 +443,7 @@ test("requirePatch drafts a change that leaves findings upheld, edits a held pat
 				scratch: ctx,
 			} as unknown as CodeContext,
 		);
+		touched = "touched" in out && out.touched;
 		return [
 			"draft" in out && out.draft,
 			readFileSync(join(ctx, "notice.md"), "utf8"),
@@ -455,9 +459,17 @@ test("requirePatch drafts a change that leaves findings upheld, edits a held pat
 	expect(run(quoted, [])[1]).toBe(
 		"Draft: this change edits `docs/adr/\\303\\251.md`, which the owner holds.\n",
 	);
-	expect(run(touching("src/a.ts"), [], 1, touching("docs/rulings.md"))[1]).toBe(
+	expect(
+		run(
+			touching("src/b.ts") + touching("src/a.ts"),
+			[],
+			1,
+			touching("docs/rulings.md") + touching("src/a.ts"),
+		)[1],
+	).toBe(
 		"Draft: this change edits `docs/rulings.md`, which the owner holds.\n",
 	);
+	expect(touched).toEqual(["docs/rulings.md", "src/a.ts", "src/b.ts"]);
 	expect(run(touching("src/a.ts"), [], 0)).toEqual([
 		true,
 		"Draft: no lens delivered a review of this change.\n",

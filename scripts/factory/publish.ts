@@ -127,6 +127,7 @@ function pullText(
 		notice: report.notice,
 		review: report.review,
 		reviewers: report.reviewers,
+		touched: report.touched,
 	};
 	return {
 		title: result.spec.subject,

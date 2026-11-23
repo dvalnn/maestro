@@ -733,6 +733,44 @@ test("a PR body folds the last review's record above the spend: its agents as ro
 	);
 });
 
+test("a PR body folds the change held against the plan above the review's record: planned paths left alone, and touched ones not planned", () => {
+	const planned = (touches: string[], touched?: string[]) =>
+		pullBody({
+			issue: 5,
+			spend: [SPENT],
+			risk: "low",
+			result: result("ready-for-agent", { spec: { ...spec, touches } }),
+			pr: "## Summary\n\nx",
+			reviewers: [{ name: "lens", runtime: "stub", status: "ok" }],
+			touched,
+		});
+	expect(planned(["a.ts", "b.ts"], ["b.ts", "c.ts", "d.ts"])).toContain(
+		[
+			"**Risk:** low",
+			"",
+			"<details><summary>Plan: touches 1 of 2 planned paths, 2 unplanned</summary>",
+			"",
+			"- Planned, not touched: `a.ts`",
+			"- Touched, not planned: `c.ts`, `d.ts`",
+			"",
+			"</details>",
+			"",
+			"<details><summary>Review:",
+		].join("\n"),
+	);
+	expect(planned(["a.ts"], ["a.ts"])).toContain(
+		[
+			"<details><summary>Plan: touches 1 of 1 planned path, 0 unplanned</summary>",
+			"",
+			"- Planned, not touched: none",
+			"- Touched, not planned: none",
+		].join("\n"),
+	);
+	// A spec that planned no path, or a concert from before `touched`, holds nothing to compare.
+	expect(planned([], ["a.ts"])).not.toContain("Plan:");
+	expect(planned(["a.ts"])).not.toContain("Plan:");
+});
+
 const PROPOSAL = {
 	target: "docs/agents/factory.md",
 	title: "Say to run just fmt first",
