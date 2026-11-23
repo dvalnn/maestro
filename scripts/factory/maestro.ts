@@ -343,6 +343,68 @@ const agentsOf = (bin: string, id: string, doc: Json) =>
 			.map((i) => json(bin, ["ls", id, String(i.name)])),
 	).then((docs) => docs.filter(isJson));
 
+const IDENT = "(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)";
+const BUILD = "[0-9A-Za-z-]+";
+/** `maestro <semver>` as `--version` prints it: a strict SemVer 2 version, build metadata allowed. */
+const VERSION_LINE = new RegExp(
+	`^maestro ((?:0|[1-9]\\d*)(?:\\.(?:0|[1-9]\\d*)){2}(?:-${IDENT}(?:\\.${IDENT})*)?(?:\\+${BUILD}(?:\\.${BUILD})*)?)(?:\\s|$)`,
+);
+
+/** The oldest maestro the tour manager runs on: `config <concert> --json` prints `moduleDir` from this version. */
+export const MAESTRO_FLOOR = "0.4.0-rc.2";
+
+/** What `bin --version` printed on each stream, quoted, or `""` when it printed nothing. */
+function quoted(out: string, err: string) {
+	const texts = [out, err].map((t) => t.trim()).filter(Boolean);
+	return texts.map((t) => JSON.stringify(t)).join(" and ") || '""';
+}
+
+/**
+ * Whether `found`, a SemVer string, orders before the floor. A number of 16 digits or more is clamped to 15, since
+ * Bun's parser throws past 64 bits and the floor's numbers are far below either.
+ */
+function olderThanFloor(found: string) {
+	return (
+		Bun.semver.order(found.replace(/\d{16,}/g, "9".repeat(15)), MAESTRO_FLOOR) <
+		0
+	);
+}
+
+/**
+ * Refuses a `bin` whose `--version` is older than {@link MAESTRO_FLOOR}.
+ * @throws Error naming the fix when it is older, when `bin` cannot run, or quoting what `bin --version` printed when
+ * that is no version.
+ */
+export async function checkMaestroVersion(bin = "maestro") {
+	let child: Bun.Subprocess<"ignore", "pipe", "pipe">;
+	try {
+		child = Bun.spawn([bin, "--version"], { stdout: "pipe", stderr: "pipe" });
+	} catch {
+		throw new Error(
+			`cannot run ${bin} --version; install maestro and put it on PATH`,
+		);
+	}
+	const [out, err, code] = await Promise.all([
+		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
+		child.exited,
+	]);
+	const printed = quoted(out, err);
+	if (code !== 0)
+		throw new Error(
+			`${bin} --version exited ${code} and printed ${printed}; reinstall maestro`,
+		);
+	const found = VERSION_LINE.exec(out)?.[1];
+	if (!found)
+		throw new Error(
+			`${bin} --version printed ${printed}, not a maestro version; reinstall maestro`,
+		);
+	if (olderThanFloor(found))
+		throw new Error(
+			`maestro ${found} is older than ${MAESTRO_FLOOR}, which the tour manager needs; install a newer maestro`,
+		);
+}
+
 /**
  * The rows of an `ls --json` list.
  * @throws Error with maestro's own message when it answered with an error document, else that it is not a list.

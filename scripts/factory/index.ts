@@ -29,7 +29,13 @@ import {
 	type Review,
 } from "./forge";
 import { type Conflicts, landing, SIGNING_KEY } from "./land";
-import { type Concert, maestro, type Report, type Result } from "./maestro";
+import {
+	type Concert,
+	checkMaestroVersion,
+	maestro,
+	type Report,
+	type Result,
+} from "./maestro";
 import {
 	masterclass,
 	overdueMasterclass,
@@ -1288,6 +1294,7 @@ if (import.meta.main) {
 	}
 	mkdirSync(options.dir, { recursive: true });
 	try {
+		await checkMaestroVersion();
 		const tm = forge();
 		const account = await tm.account();
 		await tick(

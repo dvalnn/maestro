@@ -16,8 +16,9 @@ against real `main` and every PR targets it. On a low-risk PR to `main` whose re
 arms the forge's auto-merge, fast-forward only, so the commits keep their signature; it never merges by hand, so
 `main`'s branch protection must require the `check` status for the merge to wait on CI.
 
-It needs maestro `v0.4.0-rc.2` or later on `PATH`, since it calls `encore`, `artifact ls`, `ls --all` and `--detach`,
-and `jj`, `git`, `bun` and `just` to land a slice. It needs no python or `fj`.
+It needs maestro `0.4.0-rc.2` or later on `PATH`, and the tick checks that before it reads the forge.
+`config <concert> --json` prints the `moduleDir` the tree reader needs only from that version. It also calls `encore`,
+`artifact ls`, `ls --all` and `--detach`. It needs `jj`, `git`, `bun` and `just` to land a slice, and no python or `fj`.
 
 It reads `$XDG_CONFIG_HOME/maestro/.env` (`~/.config` by default) when that exists, as maestro does, and a variable
 already set wins over the file:

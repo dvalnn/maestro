@@ -10,7 +10,59 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { maestro } from "./maestro";
+import * as maestroModule from "./maestro";
+import { checkMaestroVersion, maestro } from "./maestro";
+
+// Seam: the exported floor and the minimum version stated to a maintainer in the README.
+test("the README states the exported maestro floor", () => {
+	const floor: unknown = Reflect.get(maestroModule, "MAESTRO_FLOOR");
+	expect(floor).toBe("0.4.0-rc.2");
+	expect(readFileSync(join(import.meta.dir, "README.md"), "utf8")).toContain(
+		String(floor),
+	);
+});
+
+// Seam: checkMaestroVersion against executable stubs, which answer only `--version`.
+function versionStub(stdout: string, stderr = "", exit = 0) {
+	const stubDir = mkdtempSync(join(tmpdir(), "factory-version-stub-"));
+	const stub = join(stubDir, "maestro");
+	writeFileSync(
+		stub,
+		`#!/bin/sh\n[ "$1" = "--version" ] || exit 64\nprintf '%s\\n' '${stdout}'\nprintf '%s\\n' '${stderr}' >&2\nexit ${exit}\n`,
+	);
+	chmodSync(stub, 0o755);
+	return stub;
+}
+
+test("checkMaestroVersion refuses a stub older than the floor", async () => {
+	await expect(
+		checkMaestroVersion(versionStub("maestro 0.4.0-rc.1 (sdk 0.4.0-rc.1)")),
+	).rejects.toThrow(
+		"maestro 0.4.0-rc.1 is older than 0.4.0-rc.2, which the tour manager needs; install a newer maestro",
+	);
+});
+
+test("checkMaestroVersion accepts a stub at the floor and later", async () => {
+	for (const v of ["0.4.0-rc.2", "0.4.0", "0.10.0-rc.1", "0.4.0+build.1"]) {
+		await checkMaestroVersion(versionStub(`maestro ${v} (sdk x)`));
+	}
+});
+
+test("checkMaestroVersion quotes both streams of a failed version command", async () => {
+	await expect(
+		checkMaestroVersion(versionStub("maestro 0.4.0-rc.2", "boom", 3)),
+	).rejects.toThrow(/"maestro 0\.4\.0-rc\.2"[\s\S]*"boom"/);
+});
+
+test("checkMaestroVersion accepts a version whose number exceeds 64 bits", async () => {
+	await checkMaestroVersion(versionStub("maestro 18446744073709551616.0.0"));
+});
+
+test("checkMaestroVersion names the fix when maestro cannot run", async () => {
+	await expect(checkMaestroVersion("/nonexistent/maestro")).rejects.toThrow(
+		/PATH/,
+	);
+});
 
 const dir = mkdtempSync(join(tmpdir(), "factory-maestro-"));
 const bin = join(dir, "maestro");

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+	chmodSync,
 	existsSync,
 	mkdtempSync,
 	readFileSync,
@@ -35,6 +36,100 @@ import {
 	NO_REPORT,
 	type Stored,
 } from "./test-support";
+
+// Seam: the executable tick's exit, output and effects with maestro at the process boundary.
+async function tickWithVersion(output: string, exit = 0, fd = 1) {
+	const home = mkdtempSync(join(tmpdir(), "factory-version-"));
+	try {
+		const bin = join(home, "maestro");
+		writeFileSync(
+			bin,
+			'#!/bin/sh\n[ "$*" = "--version" ] || exit 64\nprintf \'%s\\n\' "$VERSION_OUTPUT" >&"$VERSION_FD"\nexit "$VERSION_EXIT"\n',
+		);
+		chmodSync(bin, 0o755);
+		const child = Bun.spawn(
+			[
+				process.execPath,
+				join(import.meta.dir, "index.ts"),
+				"--milestone",
+				"test",
+			],
+			{
+				cwd: home,
+				env: {
+					PATH: `${home}:${process.env.PATH ?? ""}`,
+					HOME: home,
+					XDG_CONFIG_HOME: join(home, "config"),
+					XDG_RUNTIME_DIR: home,
+					XDG_CACHE_HOME: home,
+					VERSION_OUTPUT: output,
+					VERSION_EXIT: String(exit),
+					VERSION_FD: String(fd),
+				},
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		);
+		const [stdout, stderr, code] = await Promise.all([
+			new Response(child.stdout).text(),
+			new Response(child.stderr).text(),
+			child.exited,
+		]);
+		return {
+			stdout,
+			stderr,
+			code,
+			locked: existsSync(join(home, "maestro-factory", "lock")),
+		};
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+}
+
+test("an older maestro stops the tick before the forge and lock", async () => {
+	const result = await tickWithVersion(
+		"maestro 0.4.0-rc.1 (sdk 0.4.0-rc.1, ir 1.2, bun 1.4.5)",
+	);
+	expect(result.code).toBe(1);
+	expect(result.stderr).toBe(
+		"tour manager: maestro 0.4.0-rc.1 is older than 0.4.0-rc.2, which the tour manager needs; install a newer maestro\n",
+	);
+	expect(result.stdout).toBe("");
+	expect(result.locked).toBe(false);
+});
+
+test("a failed or unreadable maestro version stops the tick and quotes its output", async () => {
+	for (const [output, exit] of [
+		["maestro 0.4.0-rc.2", 3],
+		["maestro not-a-version", 0],
+		["something else 0.4.0-rc.2", 0],
+		["maestro 0.4.0-rc..2", 0],
+		["maestro 1.2.3-.", 0],
+		["", 0],
+	] as const) {
+		for (const fd of [1, 2]) {
+			const result = await tickWithVersion(output, exit, fd);
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain(`"${output}"`);
+			expect(result.locked).toBe(false);
+		}
+	}
+});
+
+test("the floor and later maestro versions let the tick reach the forge", async () => {
+	for (const version of [
+		"0.4.0-rc.2",
+		"0.4.0",
+		"0.10.0-rc.1",
+		"0.4.0+build.1",
+	]) {
+		const result = await tickWithVersion(
+			`maestro ${version} (sdk 0.4.0-rc.2, ir 1.2, bun 1.4.5)`,
+		);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("MAESTRO_TM_TOKEN");
+	}
+});
 
 const OTHER_MILESTONE_ID = 12;
 const ASK = "Make greet.sh greet by name.";
