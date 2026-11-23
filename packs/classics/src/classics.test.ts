@@ -922,7 +922,7 @@ describe("build_then_review's build and review config", () => {
 		const { out, code } = await maestro(["compose", ...REVIEWED, "-c", flag]);
 		expect(code).toBe(2);
 		expect(out).toContain(mention);
-		if (unclaimed) expect(out).toContain("CFG.unclaimed");
+		expect(out.includes("CFG.unclaimed")).toBe(unclaimed);
 	});
 
 	test.each(["--tested", "--max-repairs"])(

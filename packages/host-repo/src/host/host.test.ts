@@ -1559,8 +1559,9 @@ describe("perform", () => {
 		expect(result).toMatchObject({ outcome });
 		const got = result.outcome === "ok" ? "" : result.reason;
 		// The shell's not-found wording differs between bash and dash.
-		if (typeof reason === "string") expect(got).toEndWith(reason);
-		else expect(got).toMatch(reason);
+		expect(
+			typeof reason === "string" ? got.endsWith(reason) : reason.test(got),
+		).toBe(true);
 		expect(readFileSync(artifact("x", "logs"), "utf8")).toContain("$ ");
 	});
 

@@ -439,16 +439,17 @@ describe("a file param", () => {
 				"demo:\n  ticket:\n    doc:\n      first: good.md\n",
 				`demo:\n  ticket:\n    doc:\n      second: ${JSON.stringify(scenario.path)}\n`,
 			);
+			let refusal: unknown;
 			try {
 				paramValues(request({ layers, compositions, base: () => dir }));
-				throw new Error("expected a file refusal");
 			} catch (error) {
-				expect(error).toBeInstanceOf(ConfigError);
-				if (!(error instanceof ConfigError)) throw error;
-				expect(error.diagnostics.map((d) => d.source?.file)).toEqual([
-					WORKSPACE,
-				]);
+				refusal = error;
 			}
+			if (!(refusal instanceof ConfigError))
+				throw new Error("expected a file refusal");
+			expect(refusal.diagnostics.map((d) => d.source?.file)).toEqual([
+				WORKSPACE,
+			]);
 		},
 	);
 

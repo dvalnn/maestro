@@ -312,11 +312,10 @@ describe("lanes", () => {
 			const composed = await composeIt(
 				buildIr(composition("bad", { examples: [{}] }, body), {}, { carry }),
 			);
-			expect(composed.ok).toBe(false);
-			if (!composed.ok)
-				expect(composed.diagnostics.map((d) => [d.code, d.message])).toEqual([
-					[want, message],
-				]);
+			if (composed.ok) throw new Error("expected a refusal");
+			expect(composed.diagnostics.map((d) => [d.code, d.message])).toEqual([
+				[want, message],
+			]);
 			expect(requests).toEqual([]);
 		},
 	);
@@ -792,10 +791,11 @@ describe("examples", () => {
 			expect(requests).toHaveLength(agents);
 			const resolver = requests.find((r) => r.prompt.startsWith("Resolve"));
 			expect(resolver !== undefined).toBe(resolved);
-			if (resolver)
-				expect(resolver.prompt).toMatch(
-					/── incoming\/ +\d+ files?, [^:]+: Read when you need/,
-				);
+			const incomingHint =
+				/── incoming\/ +\d+ files?, [^:]+: Read when you need/;
+			expect(resolver === undefined || incomingHint.test(resolver.prompt)).toBe(
+				true,
+			);
 			const series = joinPath(
 				concertDirs(concert.dir, concert.id).artifacts,
 				result.path,

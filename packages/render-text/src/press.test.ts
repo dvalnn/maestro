@@ -233,12 +233,17 @@ describe("press", () => {
 	])("%s", (_what, from, keys, expected) => {
 		const { at, open, pins, folded, given, ...nav } = expected;
 		const f = pressed(from, keys, given);
-		if (at !== undefined) expect(cursorOf(f)).toBe(at);
 		expect(f.nav).toMatchObject(nav);
-		if (open) expect([...f.nav.open]).toEqual(open);
-		if (pins) expect([...f.nav.pins]).toEqual(pins);
-		if (folded)
-			expect(f.rows.find((r) => r.key === folded[0])?.open).toBe(folded[1]);
+		const foldedRow = f.rows.find((r) => r.key === folded?.[0]);
+		const seen = {
+			at: cursorOf(f),
+			open: [...f.nav.open],
+			pins: [...f.nav.pins],
+			folded: foldedRow?.open,
+		};
+		const wanted = { at, open, pins, folded: folded?.[1] };
+		const stated = Object.entries(wanted).filter(([, v]) => v !== undefined);
+		expect(seen).toMatchObject(Object.fromEntries(stated));
 	});
 
 	test("[ at the first round stays put", () => {
@@ -393,9 +398,10 @@ describe("browse", () => {
 		const check = () => {
 			const { index, top } = f.nav;
 			const offset = index - top;
-			if (top > 0) expect(offset).toBeGreaterThanOrEqual(SCROLL_MARGIN);
-			if (top < last)
-				expect(offset).toBeLessThanOrEqual(f.body - 1 - SCROLL_MARGIN);
+			expect(offset).toBeGreaterThanOrEqual(top > 0 ? SCROLL_MARGIN : 0);
+			expect(offset).toBeLessThanOrEqual(
+				top < last ? f.body - 1 - SCROLL_MARGIN : f.body - 1,
+			);
 			expect(f.lines[ABOVE + offset]).toStartWith(">");
 			expect(f.lines[ABOVE + f.body]).toContain(
 				`rows ${top + 1}–${top + f.body} of ${f.rows.length}`,

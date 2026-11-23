@@ -12,7 +12,6 @@ import { cp } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { Host } from "@maestro/core/host";
-import { openRecord } from "@maestro/core/perform";
 import { repoHost } from "@maestro/host-repo";
 import { stubHarness } from "@maestro/host-repo/harness";
 import { cleanup, FIXTURES, scratch } from "./fixtures/packs";
@@ -1106,65 +1105,93 @@ describe("profiles", () => {
  * Each real harness behind its gate: the agent's instructions and file, and the metrics it reports. pi's model is one
  * the presets seat. claude thinks at high: at low, haiku streams no thinking text and drops the instructed word.
  */
-const REAL_HARNESSES = [
-	{
-		gate: "MAESTRO_PI",
-		harness: "pi",
-		model: process.env.MAESTRO_PI_MODEL ?? "github-copilot/gpt-6-luna",
-		thinking: "low",
-	},
-	{
-		gate: "MAESTRO_CLAUDE",
-		harness: "claude",
-		model: process.env.MAESTRO_CLAUDE_MODEL ?? "haiku",
-		thinking: "high",
-	},
-];
+type RealHarness = {
+	gate: string;
+	harness: string;
+	model: string;
+	thinking: string;
+};
 
-for (const { gate, harness, model, thinking } of REAL_HARNESSES) {
-	test.skipIf(!process.env[gate])(
-		`${harness} performs an agent with instructions, and its file is in the version a check reads`,
-		async () => {
-			const w = await repoWorld();
-			profileIn(
-				w.cwd,
-				"writer",
-				`runtime: { harness: ${harness}, model: ${model}, thinking: ${thinking} }\ninstructions: instructions.md\n`,
-				{
-					"instructions.md":
-						"You end every report summary you give with the word kumquat.",
-				},
-			);
-			const done = await w.call(["perform", join(REPO, "write.ts")]);
-			expect(done).toMatchObject({ code: 0 });
-			const agent = json(await w.call(["ls", idOf(done), "write", "--json"]));
-			expect(agent.report.summary.toLowerCase()).toContain("kumquat");
-			expect(agent.metrics.tokens_in).toBeGreaterThan(0);
-			if (harness === "claude") {
-				const record = openRecord(join(w.root, "data/maestro/record.db"));
-				const events = record.events(idOf(done));
-				record.close();
-				expect(
-					events.some(
-						(e) =>
-							e.type === "progress" &&
-							e.event.kind === "thinking" &&
-							typeof e.event.text === "string" &&
-							e.event.text.length > 0,
-					),
-				).toBe(true);
-			}
-			const [instructions] = [
-				...new Bun.Glob("**/staged/instructions.md").scanSync({
-					cwd: w.root,
-					absolute: true,
-				}),
-			];
-			expect(readFileSync(instructions ?? "", "utf8")).toContain("kumquat");
+const PI: RealHarness = {
+	gate: "MAESTRO_PI",
+	harness: "pi",
+	model: process.env.MAESTRO_PI_MODEL ?? "github-copilot/gpt-6-luna",
+	thinking: "low",
+};
+
+const CLAUDE: RealHarness = {
+	gate: "MAESTRO_CLAUDE",
+	harness: "claude",
+	model: process.env.MAESTRO_CLAUDE_MODEL ?? "haiku",
+	thinking: "high",
+};
+
+async function performWriter({ harness, model, thinking }: RealHarness) {
+	const w = await repoWorld();
+	profileIn(
+		w.cwd,
+		"writer",
+		`runtime: { harness: ${harness}, model: ${model}, thinking: ${thinking} }\ninstructions: instructions.md\n`,
+		{
+			"instructions.md":
+				"You end every report summary you give with the word kumquat.",
 		},
-		180_000,
 	);
+	const done = await w.call(["perform", join(REPO, "write.ts")]);
+	return { w, done };
 }
+
+type Performed = Awaited<ReturnType<typeof performWriter>>;
+
+async function expectWriterPerformed({ w, done }: Performed) {
+	expect(done).toMatchObject({ code: 0 });
+	const agent = json(await w.call(["ls", idOf(done), "write", "--json"]));
+	expect(agent.report.summary.toLowerCase()).toContain("kumquat");
+	expect(agent.metrics.tokens_in).toBeGreaterThan(0);
+	const [instructions] = [
+		...new Bun.Glob("**/staged/instructions.md").scanSync({
+			cwd: w.root,
+			absolute: true,
+		}),
+	];
+	expect(readFileSync(instructions ?? "", "utf8")).toContain("kumquat");
+}
+
+test.skipIf(!process.env[PI.gate])(
+	"pi performs an agent with instructions, and its file is in the version a check reads",
+	async () => {
+		await expectWriterPerformed(await performWriter(PI));
+	},
+	180_000,
+);
+
+test.skipIf(!process.env[CLAUDE.gate])(
+	"claude performs an agent with instructions, its file is in the version a check reads, and its thinking is recorded",
+	async () => {
+		const performed = await performWriter(CLAUDE);
+		await expectWriterPerformed(performed);
+		const watched = await performed.w.call([
+			"watch",
+			idOf(performed.done),
+			"--events",
+			"--json",
+		]);
+		const events = watched.out
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		expect(
+			events.some(
+				(e) =>
+					e.type === "progress" &&
+					e.event?.kind === "thinking" &&
+					typeof e.event.text === "string" &&
+					e.event.text.length > 0,
+			),
+		).toBe(true);
+	},
+	180_000,
+);
 
 // Seams: changeset show/apply output and exit, and the instances and pointer in ls <concert> --json.
 function seedDroppedInstance(dataHome: string, id: string) {

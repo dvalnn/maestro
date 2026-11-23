@@ -179,16 +179,9 @@ test.each([
 		const { nodes, edges } = await composed([risk]);
 		const ids = nodes.map((n) => n.id);
 		expect(ids.includes("build/tester")).toBe(tested);
-		if (tested)
-			expect(from(edges, "build/build", "lane")).toEqual([
-				{ node: "build/tester", port: "lane" },
-			]);
-		else {
-			expect(ids).toContain("build/build");
-			expect(nodes.find((n) => n.id === "build/build")?.config.checks).toEqual(
-				projectChecks,
-			);
-		}
+		const buildLane = tested ? [{ node: "build/tester", port: "lane" }] : [];
+		expect(from(edges, "build/build", "lane")).toEqual(buildLane);
+		expect(ids).toContain("build/build");
 		const spec = [{ node: "build/spec", port: "file" }];
 		expect(from(edges, "writer", "spec")).toEqual(spec);
 		const lenses = ids.filter((id) => /tiered_review\/[^/]+\/lens$/.test(id));
@@ -198,6 +191,13 @@ test.each([
 			expect(n.literals?.floor).toBe(floor);
 	},
 );
+
+test("under --preset low, the build keeps the project's checks", async () => {
+	const { nodes } = await composed(["low"]);
+	expect(nodes.find((n) => n.id === "build/build")?.config.checks).toEqual(
+		projectChecks,
+	);
+});
 
 test("with only the stub preset, no tester is composed", async () => {
 	const { nodes } = await composed(["stub"]);

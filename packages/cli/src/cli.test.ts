@@ -52,8 +52,8 @@ function expectPlainClosing(
 	verb: string | undefined,
 	term: string | undefined,
 ) {
-	if (verb === "wait" || term === "dumb") expect(text).not.toContain(ESC);
-	else expect(text).not.toMatch(SGR);
+	const plainAlways = verb === "wait" || term === "dumb";
+	expect(plainAlways ? text.includes(ESC) : SGR.test(text)).toBe(false);
 }
 
 /** The keys of an `ls --json` listing row, the whole of it. */
@@ -578,7 +578,11 @@ describe("compose and config", () => {
 			w.root,
 		]);
 		expect(refused.code).not.toBe(0);
-		if (refused.out !== "") expect(json(refused).ok).toBe(false);
+		expect(json(refused)).toEqual({
+			ok: false,
+			error: expect.stringContaining("EISDIR"),
+			exit: 1,
+		});
 		expect(json(shown)).toEqual({ ok: true, plan: loopFanPlan, agents: [] });
 	});
 
@@ -2358,8 +2362,15 @@ describe("usage errors", () => {
 			expect(outcome.out).toBe("");
 			expect(outcome.err).toMatch(message);
 			expect(outcome.code).toBe(exitOfRow(_what));
-			if (!NEEDS_STORE.includes(_what))
-				expect(existsSync(w.env.XDG_DATA_HOME)).toBe(false);
+		},
+	);
+
+	test.each(USAGE.filter(([what]) => !NEEDS_STORE.includes(what)))(
+		"%s refuses before it opens the record store",
+		async (_what, args) => {
+			const w = await world();
+			await w.call(args);
+			expect(existsSync(w.env.XDG_DATA_HOME)).toBe(false);
 		},
 	);
 

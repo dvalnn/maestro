@@ -649,26 +649,22 @@ test("an unknown major version is rejected with a clear error", () => {
 
 test("a newer minor version than the reader knows is rejected", () => {
 	const result = parseIr(withVersion("1.7"));
-	expect(result.ok).toBe(false);
-	if (!result.ok) {
-		expect(result.diagnostics[0]?.code).toBe("IR.version");
-		expect(result.diagnostics[0]?.message).toBe(
-			"IR version 1.7 is newer than this maestro reads (1.2). It was emitted by a newer SDK, for example one bundled in a pack",
-		);
-		expect(result.diagnostics[0]?.hint).toBe(
-			"Upgrade maestro to a version that reads IR 1.7, or re-emit the IR with an SDK that targets IR 1.2",
-		);
-	}
+	if (result.ok) throw new Error("expected a refusal");
+	expect(result.diagnostics[0]?.code).toBe("IR.version");
+	expect(result.diagnostics[0]?.message).toBe(
+		"IR version 1.7 is newer than this maestro reads (1.2). It was emitted by a newer SDK, for example one bundled in a pack",
+	);
+	expect(result.diagnostics[0]?.hint).toBe(
+		"Upgrade maestro to a version that reads IR 1.7, or re-emit the IR with an SDK that targets IR 1.2",
+	);
 });
 
 test.each([[undefined], ["1"], [1], ["v1.0"]])(
 	"a missing or malformed version %p is rejected before the shape is checked",
 	(irVersion) => {
 		const result = parseIr({ irVersion, nodes: "not even close" });
-		expect(result.ok).toBe(false);
-		if (!result.ok) {
-			expect(result.diagnostics.map((d) => d.code)).toEqual(["IR.version"]);
-		}
+		if (result.ok) throw new Error("expected a refusal");
+		expect(result.diagnostics.map((d) => d.code)).toEqual(["IR.version"]);
 	},
 );
 

@@ -580,7 +580,7 @@ describe("apply", () => {
 				{ "r.txt": null, "moved.txt": "uno\n2\n3\n4\n5\n" },
 			],
 			conflicts: ["moved.txt"],
-			holds: { "moved.txt": /^<<<<<<< [\s\S]*one[\s\S]*uno/ },
+			holds: { "moved.txt": /^<<<<<<< [\s\S]*one[\s\S]*uno/, "r.txt": null },
 		},
 	] as {
 		name: string;
@@ -599,9 +599,11 @@ describe("apply", () => {
 			await merge.seal();
 
 			const sealed = await lanes.fork("c1.merge", "c1.resolve");
-			for (const [f, text] of Object.entries(holds))
-				if (text === null) expect(existsSync(join(sealed.dir, f))).toBe(false);
-				else expect(read(sealed, f)).toMatch(text);
+			for (const [f, text] of Object.entries(holds)) {
+				const present = existsSync(join(sealed.dir, f));
+				const held = present && (text === null || text.test(read(sealed, f)));
+				expect(held).toBe(text !== null);
+			}
 			expect(read(sealed, "b.txt")).toBe("b\n");
 		},
 	);

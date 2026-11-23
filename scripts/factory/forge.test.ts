@@ -159,18 +159,20 @@ test("asking for a review again posts the reviewers to the PR's requested review
 	});
 });
 
-test.each([
-	["already armed", "Pull request is already scheduled to auto merge", true],
-	["refused otherwise", "merge failed because of conflict", false],
-])(
-	"arming a PR the forge answers 409 as %s throws only when not armed",
-	async (_, refusal, passes) => {
-		const { send } = recording(() => [409, { message: refusal }]);
-		const armed = withShims(() => forge(signedIn, send).arm(30));
-		if (passes) await armed;
-		else await expect(armed).rejects.toThrow(refusal);
-	},
-);
+test("arming a PR the forge answers 409 as already armed is not an error", async () => {
+	const { send } = recording(() => [
+		409,
+		{ message: "Pull request is already scheduled to auto merge" },
+	]);
+	await withShims(() => forge(signedIn, send).arm(30));
+});
+
+test("arming a PR the forge answers 409 as refused otherwise throws", async () => {
+	const refusal = "merge failed because of conflict";
+	const { send } = recording(() => [409, { message: refusal }]);
+	const armed = withShims(() => forge(signedIn, send).arm(30));
+	await expect(armed).rejects.toThrow(refusal);
+});
 
 test("reviews read the inline comments of an official review requesting changes above the bound, on the old line when it has no new one, and name a deleted account Ghost", async () => {
 	const reviews = JSON.stringify([

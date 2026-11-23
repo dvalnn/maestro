@@ -1662,7 +1662,9 @@ describe("a build", () => {
 			]);
 			expect(data.encore).toBe(encore);
 			expect(t.starts).toHaveLength(states.length - 1);
-			if (t.starts[0]) expect(t.starts[0][1]).toEndWith(".maestro/slice.ts");
+			expect(
+				t.starts.map((start) => start[1]?.endsWith(".maestro/slice.ts")),
+			).toEqual(states.slice(1).map(() => true));
 			expect([t.steps, t.applied]).toEqual([[], []]);
 			expect(t.writes.filter((w) => w.startsWith("file"))).toEqual([]);
 			const writes = t.writes.length;
@@ -2008,11 +2010,14 @@ describe("a build", () => {
 			expect([t.opened.length, t.starts.length]).toEqual([1 - starts, starts]);
 			expect(t.starts.flat()).not.toContain("encore");
 			expect(t.starts.flat()).not.toContain("target.base=sha7");
-			if (!starts)
-				expect(t.steps.slice(0, 2)).toEqual([
-					`open factory-i7 at ${CACHED} on sha7`,
-					`squash ${CACHED}: feat: greet by name\n\nRefs: #7\n`,
-				]);
+			expect(t.steps.slice(0, 2)).toEqual(
+				starts
+					? []
+					: [
+							`open factory-i7 at ${CACHED} on sha7`,
+							`squash ${CACHED}: feat: greet by name\n\nRefs: #7\n`,
+						],
+			);
 			expect(dataAt(parked).revisionBase).toBeUndefined();
 			writes = t.writes.length;
 			await t.run();
@@ -2183,7 +2188,7 @@ const review = (id: number, over: Partial<Review> = {}): Review => ({
 });
 
 describe("a review", () => {
-	const reviews: [string, Review[], boolean][] = [
+	const encoring: [string, Review[]][] = [
 		[
 			"encores the landed concert on an official review requesting changes newer than the last fed, feeding it alone",
 			[
@@ -2196,12 +2201,13 @@ describe("a review", () => {
 				review(7, { state: "APPROVED" }),
 				review(8, { dismissed: true }),
 			],
-			true,
 		],
-		["ignores an unofficial review", [review(6, { official: false })], false],
-		["ignores a review older than the last fed", [review(3)], false],
 	];
-	test.each(reviews)("%s", async (_, given, encores) => {
+	const holding: [string, Review[]][] = [
+		["ignores an unofficial review", [review(6, { official: false })]],
+		["ignores a review older than the last fed", [review(3)]],
+	];
+	const reviewed = async (given: Review[]) => {
 		const concerts: Concert[] = [sliceConcert("s1", 7)];
 		const results: Record<string, Result> = {};
 		const t = setup(
@@ -2212,10 +2218,14 @@ describe("a review", () => {
 		t.pulls.push(pullOf(31, 7));
 		t.reviews[31] = given;
 		await t.run();
-		if (!encores) {
-			expect([t.starts, t.writes]).toEqual([[], []]);
-			return;
-		}
+		return { t, concerts, results };
+	};
+	test.each(holding)("%s", async (_, given) => {
+		const { t } = await reviewed(given);
+		expect([t.starts, t.writes]).toEqual([[], []]);
+	});
+	test.each(encoring)("%s", async (_, given) => {
+		const { t, concerts, results } = await reviewed(given);
 		expect(t.starts.map(started)).toEqual(["encore s1"]);
 		expect(argAfter(t.starts[0] ?? [], "--request")).toBe(
 			`${requestFor(7)}\n## Review by ann\n\nRename it.\n\n- \`greet.sh:3\`: use printf\n  not echo\n`,
@@ -2250,30 +2260,33 @@ describe("a review", () => {
 });
 
 describe("a PR that conflicts with main", () => {
-	test.each([
-		["main", true],
-		["maestro-tm/i5", false],
-	])(
-		"to %s is encored from its merge onto main, which it lands on and answers: %p",
-		async (base, encores) => {
-			const concerts: Concert[] = [sliceConcert("s1", 7)];
-			const results: Record<string, Result> = {};
-			const t = setup(
-				[specced(7, "in-review", { slice: "s1", concert: "s1" })],
-				concerts,
-				results,
-			);
-			t.pulls.push(pullOf(31, 7, base));
-			t.conflicting.sha7 = {
-				paths: ["greet.sh", "gone.sh", "old.sh"],
-				deletedOnto: ["gone.sh"],
-				deletedInHead: ["old.sh"],
-			};
-			await t.run();
-			if (!encores) {
-				expect([t.starts, t.writes]).toEqual([[], []]);
-				return;
-			}
+	const conflicted = async (base: string) => {
+		const concerts: Concert[] = [sliceConcert("s1", 7)];
+		const results: Record<string, Result> = {};
+		const t = setup(
+			[specced(7, "in-review", { slice: "s1", concert: "s1" })],
+			concerts,
+			results,
+		);
+		t.pulls.push(pullOf(31, 7, base));
+		t.conflicting.sha7 = {
+			paths: ["greet.sh", "gone.sh", "old.sh"],
+			deletedOnto: ["gone.sh"],
+			deletedInHead: ["old.sh"],
+		};
+		await t.run();
+		return { t, concerts, results };
+	};
+
+	test("to maestro-tm/i5 is left alone, with nothing started or written", async () => {
+		const { t } = await conflicted("maestro-tm/i5");
+		expect([t.starts, t.writes]).toEqual([[], []]);
+	});
+
+	test.each([["main"]])(
+		"to %s is encored from its merge onto main, which it lands on and answers",
+		async (base) => {
+			const { t, concerts, results } = await conflicted(base);
 			const [started = []] = t.starts;
 			expect(started.slice(0, 2)).toEqual(["encore", "s1"]);
 			expect(configsOf(started)).toEqual([
@@ -2589,17 +2602,14 @@ describe("two slots in a tick", () => {
 		expect(specAt(build.find(7))?.body).toBe(before);
 	});
 
-	test.each([
-		["review encore", "slice"],
-		["stack review", "epic"],
-	])("a running triage on the tour holds back its %s", async (_, kind) => {
-		if (kind === "epic") {
-			const t = epicWith("in-review");
-			t.concerts.push(triageConcert("c1", 9, "running"));
-			await t.run();
-			expect(t.starts).toEqual([]);
-			return;
-		}
+	test("a running triage on the tour holds back its stack review", async () => {
+		const t = epicWith("in-review");
+		t.concerts.push(triageConcert("c1", 9, "running"));
+		await t.run();
+		expect(t.starts).toEqual([]);
+	});
+
+	test("a running triage on the tour holds back its review encore", async () => {
 		const t = setup(
 			[specced(7, "in-review", { slice: "s1", concert: "s1", review: 3 })],
 			[triageConcert("c1", 7, "running"), sliceConcert("s1", 7)],

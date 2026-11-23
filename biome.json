@@ -18,6 +18,7 @@
 		"enabled": true,
 		"rules": {
 			"preset": "recommended",
+			"suspicious": { "noConditionalExpect": "error" },
 			"style": {
 				"noRestrictedImports": {
 					"level": "error",

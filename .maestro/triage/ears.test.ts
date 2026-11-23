@@ -36,7 +36,7 @@ test.each([
 	const ran = run(plan);
 	expect(ran.exitCode).toBe(exitCode);
 	expect(ran.out).toContain(out);
-	if (exitCode === 3) expect(ran.err).not.toBe("");
+	expect(ran.err !== "").toBe(exitCode === 3);
 });
 
 test("check ears reports every requirement that breaks the EARS shape", () => {

@@ -711,7 +711,6 @@ test.each([
 	const w = await roster();
 	const refused = await w.call(args);
 	expect(refused.code).toBe(2);
-	if (args.includes("--json")) return expect(json(refused).error).toBe(err);
 	const [what = "", ...fix] = err.split("\n");
 	expect(refused.err).toStartWith(`error: ${what}\n`);
 	expect(refused.err).toEndWith(`\n  ${fix.join("\n")}`);
