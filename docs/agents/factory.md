@@ -324,9 +324,9 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   it deferred or untestable. The builder extends the tester's lane with the map relayed into its task, makes the tests
   pass, and writes the tests for the deferred requirements and what each pin misses; it changes a tester's test only
   where it contradicts the spec or the interface it builds, naming that test and why in its `overrules` reply. The
-  review judges the tests like any other, and the writer's Evidence table names the map's tests. An encore runs with no
-  tester, `-c classics.build.testFirst=false`, as the change it continues already holds the tests: its builder continues
-  the last one's session.
+  review judges the tests like any other, and the writer's Not covered reads the map for what the tests leave unpinned.
+  An encore runs with no tester, `-c classics.build.testFirst=false`, as the change it continues already holds the
+  tests: its builder continues the last one's session.
 - **Dependencies.** A dependency is a forge "blocked by" link, a split's children or not, that sets triage and build
   order: a spec is written, and built, against real `main`. Triage skips an intake ticket while any of its dependencies
   is open, and a build skips a ready ticket while any is open. A dependency is freed when it closes, merged or not, or
@@ -424,23 +424,25 @@ flowchart TD
   last fix round and `Gaps` for the builder's; below it the tick adds one line of risk and area with the planner's
   contract as the one-way door, the plan held against the change, the review's record, the spend (a row per slice
   concert of the ticket's tour, a build or an encore as its record says, then a total) and `Closes #N` with the
-  `Relates to` links last. The review's record is folded, and read from the concert's record, not written by an agent.
-  It holds the agents of the last review round, each with its runtime and how it settled, then the review as the
-  consolidator ruled it. The plan held against the change is folded and computed the same way. It names the paths the
-  spec's `touches` planned that the change left alone, and those it touches unplanned. Tests and the transcripts they
-  write are left out of the unplanned: the tester chooses them. A change that moved a transcript opens its body, after
-  any draft notice, with "What the user sees". The slice's `seen` step, not the writer, runs `just pictures` in the
-  review's sandbox, against the PR's base on a revision too. The tick attaches each picture and shows the diffs. A
-  writer that fails costs the build nothing: the tick builds the body from its data alone, with the upheld findings
-  counted under `Unresolved review` and no gaps. A PR is a draft, opened with the `WIP: ` title prefix, which Forgejo
-  treats as a draft and refuses to merge, when the review left findings upheld, no lens delivered a review, or the
-  change, or an earlier round of the same PR, edits `docs/rulings.md` or `docs/adr/`. The slice's result node decides it
-  and writes the notice that opens the body, a line per reason, which the writer does not write. A draft is never armed,
-  a last child's after its stack review clears included: the owner merges it. Every landing, an encore's included,
-  rewrites the title and body of the PR already open on the branch, so an encore that clears the draft drops the prefix.
-  A revision's landing then comments on the PR that it was revised, by which concert, with the conflicts it resolved,
-  and asks each official reviewer who requested changes on the PR to review it again, before the ticket moves to
-  `in-review`, so a tick cut in between lands and answers again.
+  `Relates to` links last. After the body's opening section the tick puts `Proof`, the last review as its consolidator
+  ruled it. It is read from the concert's record, not written by an agent. The writer names no test that pins a
+  requirement; its `Not covered` lists only what the tests leave unpinned. The review's record is folded and read the
+  same way: the agents of the last review round, each with its runtime and how it settled. The plan held against the
+  change is folded and computed the same way. It names the paths the spec's `touches` planned that the change left
+  alone, and those it touches unplanned. Tests and the transcripts they write are left out of the unplanned: the tester
+  chooses them. A change that moved a transcript opens its body, after any draft notice, with "What the user sees". The
+  slice's `seen` step, not the writer, runs `just pictures` in the review's sandbox, against the PR's base on a revision
+  too. The tick attaches each picture and shows the diffs. A writer that fails costs the build nothing: the tick builds
+  the body from its data alone, with the upheld findings counted under `Unresolved review` and no gaps. A PR is a draft,
+  opened with the `WIP: ` title prefix, which Forgejo treats as a draft and refuses to merge, when the review left
+  findings upheld, no lens delivered a review, or the change, or an earlier round of the same PR, edits
+  `docs/rulings.md` or `docs/adr/`. The slice's result node decides it and writes the notice that opens the body, a line
+  per reason, which the writer does not write. A draft is never armed, a last child's after its stack review clears
+  included: the owner merges it. Every landing, an encore's included, rewrites the title and body of the PR already open
+  on the branch, so an encore that clears the draft drops the prefix. A revision's landing then comments on the PR that
+  it was revised, by which concert, with the conflicts it resolved, and asks each official reviewer who requested
+  changes on the PR to review it again, before the ticket moves to `in-review`, so a tick cut in between lands and
+  answers again.
 
 ### Masterclass
 

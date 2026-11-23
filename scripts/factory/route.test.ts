@@ -680,7 +680,7 @@ test("a PR body from the writer keeps its sections, then the risk, the spend fol
 	expect(body).not.toContain("Review:");
 });
 
-test("a PR body folds the last review's record above the spend: its agents as rows, then the review with its headings in bold", () => {
+test("a PR body gives the last review as its proof, after the writer's opening section, and folds that round's agents above the spend", () => {
 	const landed = {
 		issue: 5,
 		spend: [SPENT],
@@ -698,6 +698,17 @@ test("a PR body folds the last review's record above the spend: its agents as ro
 			{ name: "consolidator", runtime: "claude · m", status: "ok" },
 		],
 	};
+	const proof = [
+		"## Proof",
+		"",
+		"The last review's rulings, as its consolidator wrote them.",
+		"",
+		"**Met**",
+		"",
+		"- **C1**: holds",
+		"",
+		"",
+	].join("\n");
 	const record = [
 		"<details><summary>Review: findings upheld</summary>",
 		"",
@@ -708,31 +719,34 @@ test("a PR body folds the last review's record above the spend: its agents as ro
 		"| lens | pi · m | rejected: a \\| b stands |",
 		"| consolidator | claude · m | ok |",
 		"",
-		"**Met**",
-		"",
-		"- **C1**: holds",
-		"",
 		"<br>",
 		"",
 		"</details>",
 		"",
 		"",
 	].join("\n");
-	expect(pullBody({ ...landed, pr: "## Summary\n\nx" })).toContain(
+	const written = pullBody({
+		...landed,
+		pr: "## Summary\n\nx\n\n## Off spec\n\nNone.",
+	});
+	expect(written).toStartWith(`## Summary\n\nx\n\n${proof}## Off spec`);
+	expect(written).toContain(
 		`**Risk:** low\n\n${record}<details><summary>Spend:`,
 	);
+	// A body of one section takes the proof last.
+	expect(pullBody({ ...landed, pr: "## Summary\n\nx" })).toStartWith(
+		`## Summary\n\nx\n\n${proof.trimEnd()}\n\n**Risk:**`,
+	);
 	expect(pullBody(landed)).toContain(
-		`- Review: findings upheld\n\n${record}## Unresolved review`,
+		`- Review: findings upheld\n\n${proof}${record}## Unresolved review`,
 	);
-	// A record of the agents alone, or of the review alone, still shows.
+	// The agents alone, or the review alone, still show.
 	const agentsOnly = pullBody({ ...landed, review: undefined });
-	expect(agentsOnly).toContain(
-		"| consolidator | claude · m | ok |\n\n<br>\n\n</details>",
-	);
+	expect(agentsOnly).not.toContain("## Proof");
+	expect(agentsOnly).toContain("<details><summary>Review: findings upheld");
 	const reviewOnly = pullBody({ ...landed, reviewers: [] });
-	expect(reviewOnly).toContain(
-		"<details><summary>Review: findings upheld</summary>\n\n**Met**",
-	);
+	expect(reviewOnly).toContain(proof);
+	expect(reviewOnly).not.toContain("<details><summary>Review:");
 });
 
 test("a PR body folds the change held against the plan above the review's record: planned paths left alone, and touched ones not planned, tests apart", () => {

@@ -828,12 +828,33 @@ function planRecord({ result, touched }: Landed) {
 }
 
 /**
- * The record of the last review round, folded: a row per agent with how it settled, then the review as its consolidator
- * ruled it, its headings in bold. None when the concert's record holds neither.
+ * The proof of the change: the last review as its consolidator ruled it, its headings in bold. None when the concert's
+ * record holds no review.
  */
+const proofSection = ({ review }: Landed) =>
+	review
+		? [
+				"## Proof",
+				"",
+				"The last review's rulings, as its consolidator wrote them.",
+				"",
+				review.replace(/^## (.*)$/gm, "**$1**"),
+				"",
+			]
+		: [];
+
+/** `pr` with `section` after its opening section, or last when it has but one. */
+function afterOpening(pr: string, section: string[]) {
+	if (!section.length) return pr;
+	const at = pr.indexOf("\n## ", 1);
+	const [opening, rest] = at < 0 ? [pr, ""] : [pr.slice(0, at), pr.slice(at)];
+	return `${opening.trimEnd()}\n\n${section.join("\n").trimEnd()}${rest ? `\n${rest}` : ""}`;
+}
+
+/** The agents of the last review round, folded: a row per agent with how it settled. None when the record names none. */
 function reviewRecord(landed: Landed) {
-	const { review, reviewers = [] } = landed;
-	if (!review && !reviewers.length) return [];
+	const { reviewers = [] } = landed;
+	if (!reviewers.length) return [];
 	const rows = reviewers.map(
 		(r) =>
 			`| ${cell(r.name)} | ${cell(r.runtime)} | ${cell([r.status, r.reason].filter(Boolean).join(": "))} |`,
@@ -841,17 +862,12 @@ function reviewRecord(landed: Landed) {
 	return [
 		`<details><summary>${reviewLine(landed)}</summary>`,
 		"",
-		...(rows.length
-			? [
-					"The agents of the last review round. A lens that raises findings settles `rejected`; the consolidator rules on them.",
-					"",
-					"| Agent | Runtime | Settled |",
-					"| --- | --- | --- |",
-					...rows,
-					"",
-				]
-			: []),
-		...(review ? [review.replace(/^## (.*)$/gm, "**$1**"), ""] : []),
+		"The agents of the last review round. A lens that raises findings settles `rejected`; the consolidator rules on them.",
+		"",
+		"| Agent | Runtime | Settled |",
+		"| --- | --- | --- |",
+		...rows,
+		"",
 		...FOLD_END,
 	];
 }
@@ -927,7 +943,7 @@ function writtenBody(landed: Landed, pr: string) {
 	const riskLines = [risk, ...door];
 	const total = `${elapsed(sum(spend, (s) => s.elapsedMs))}, ${shorthand(sum(spend, tokenTotal))} tokens`;
 	return [
-		pr,
+		afterOpening(pr, proofSection(landed)),
 		"",
 		...riskLines,
 		"",
@@ -1008,6 +1024,7 @@ function builtBody(landed: Landed) {
 			...(decisions.length ? ["", ...decisions] : []),
 		]),
 		...block("Evidence", evidenceLines(landed)),
+		...proofSection(landed),
 		...planRecord(landed),
 		...reviewRecord(landed),
 		...unresolvedLines(landed),

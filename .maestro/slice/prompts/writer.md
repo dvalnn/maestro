@@ -10,7 +10,7 @@ The spec picks the form:
 - **Direct**, any other spec, such as one opening with `#### Brief` or a hand brief opening with `Slice:`. No spec gate
   ran, so the body shows the calls the builder made.
 
-A `## map` or `## overrules` section does not pick the form; Evidence applies it to both forms.
+A `## map` or `## overrules` section does not pick the form; Evidence and Not covered apply it.
 
 Use exactly the form's sections, with no preamble, in the words of `GLOSSARY.md`. Size each section to the change: a
 small change gets a sentence per section.
@@ -51,11 +51,9 @@ Specced:
 
 <one line: built to spec, shape unchanged or not>
 
-## Evidence
+## Not covered
 
-| Requirement | Pinned by |
-| ----------- | --------- |
-| R1          | <test>    |
+<one line per requirement the tests leave partly or wholly unpinned, or "None.">
 
 ## Off spec
 
@@ -90,13 +88,21 @@ your body.
   pseudocode of its inputs and outcome, or the command output that shows it. Give one pair for the change the issue
   asked for, and at most two more for what the owner would otherwise check by hand, each Before and After one short
   line.
-- **Specced:** one row per requirement, in order, naming the test that pins it: a test the patches add. A requirement no
-  test pins says so in its row.
-- **Overrules:** when the spec has a `## overrules` section, the build overruled those tests: name each in its row or
-  pair, with its why.
+- **Overrules:** when the spec has a `## overrules` section, the build overruled those tests: name each in its pair,
+  with its why.
 - **Map:** when the spec has a `## map` section, a tester pinned the requirements, and its tests are the ones to name:
-  each row or pair names the map's test, by file and name, or for a deferred requirement the test the patches add. An
+  each pair names the map's test, by file and name, or for a deferred requirement the test the patches add. An
   untestable requirement says so, with its why.
+
+## Not covered
+
+The tick puts the review's rulings above this section as the proof, so name no test that pins a requirement. Say only
+what the tests leave unpinned, one line per requirement, in order. Each line names the case or path that no test
+reaches, of the patches' tests and those the spec's `## map` names. Leave out a requirement the tests pin whole.
+
+- A requirement no test pins says so, and an untestable one gives its why.
+- A test the spec's `## overrules` section lists was overruled by the build. Name it on its requirement's line, with its
+  why.
 
 ## Off spec
 
