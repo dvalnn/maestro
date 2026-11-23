@@ -58,18 +58,19 @@ lanes and artifacts. Renderers consume the IR and events.
 
 A monorepo of separately versioned packages. Package names are workspace names and are never published.
 
-| Layer            | Package          | Responsibility                                                                                                   |
-| ---------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------- |
-| IR               | `ir`             | The IR and the formats maestro emits: schema, version, validators, plan and event shapes. No runtime.            |
-| Core             | `core`           | Graph model, compose checks, executor, resume, record, config layering, events, worker protocol, host interface. |
-| SDK              | `sdk`            | Authoring API: node constructors, Refs, types, subcompositions, stdlib.                                          |
-| Test kit         | `testkit`        | Fake host, build and compose-time assertions, stub concert.                                                      |
-| CLI              | `cli`            | Commands, derived input flags, output formats, exit codes, host and pack loading.                                |
-| Repo host        | `host-repo`      | Agent and check node kinds, lanes, sandbox, harness adapter interface.                                           |
-| Repo host SDK    | `host-repo-sdk`  | Typed constructors for the repo node kinds and lanes, output declarations, `seat()`.                             |
-| Harness adapters | `harness-<name>` | One adapter per coding-agent runtime.                                                                            |
-| Packs            | `packs/<id>`     | Compositions, Markdown prompts, schemas, code nodes, params.                                                     |
-| Renderers        | `render-<form>`  | Static graph render, live view.                                                                                  |
+| Layer            | Package          | Responsibility                                                                                                                                   |
+| ---------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| IR               | `ir`             | The IR and the formats maestro emits: schema, version, validators, plan and event shapes. No runtime.                                            |
+| Core             | `core`           | Graph model, compose checks, executor, resume, record, config layering, events, worker protocol, host interface.                                 |
+| SDK              | `sdk`            | Authoring API: node constructors, Refs, types, subcompositions, stdlib.                                                                          |
+| Test kit         | `testkit`        | Fake host, build and compose-time assertions, stub concert.                                                                                      |
+| Transcript       | `transcript`     | What a terminal shows, held in committed files by tests ([README](../packages/transcript/README.md)). Imports no package; tests alone import it. |
+| CLI              | `cli`            | Commands, derived input flags, output formats, exit codes, host and pack loading.                                                                |
+| Repo host        | `host-repo`      | Agent and check node kinds, lanes, sandbox, harness adapter interface.                                                                           |
+| Repo host SDK    | `host-repo-sdk`  | Typed constructors for the repo node kinds and lanes, output declarations, `seat()`.                                                             |
+| Harness adapters | `harness-<name>` | One adapter per coding-agent runtime.                                                                                                            |
+| Packs            | `packs/<id>`     | Compositions, Markdown prompts, schemas, code nodes, params.                                                                                     |
+| Renderers        | `render-<form>`  | Static graph render, live view.                                                                                                                  |
 
 Each package imports only what it sits above in the graph. `core` and `ir` never import a host, a pack or an adapter.
 Biome import restrictions and a domain-word scan enforce this in `just check`.

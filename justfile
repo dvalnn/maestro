@@ -46,6 +46,16 @@ test *paths:
     [ "${#targets[@]}" -gt 0 ] || targets=(./ ./.maestro)
     exec bun test {{parallel}} --timeout 30000 --only-failures "${targets[@]}"
 
+# rewrite the transcripts from what the code prints now, after an intended change: all, or those of the given test files
+[positional-arguments]
+transcripts *paths:
+    TRANSCRIPTS=write just test "$@"
+
+# draw the transcripts as PNGs in <out>; with a base revision, only the sections that differ from it, before beside after
+[positional-arguments]
+pictures out base="":
+    bun packages/transcript/src/pictures.ts "$@"
+
 # auto-format
 fmt:
     bunx biome format --write .

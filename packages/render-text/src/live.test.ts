@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { styleText } from "node:util";
 import type { ConcertEvent, EventBody, Ir } from "@maestro/ir";
+import { transcript } from "@maestro/transcript";
 import { END_S, MID_S, PANEL_IR, panelEvents } from "./fixtures/panel";
 import {
 	agentsOf,
@@ -194,18 +195,35 @@ describe("cutting styled text", () => {
 });
 
 describe("frame", () => {
-	test("draws a header, `now` and `last`, the authored rows with a parMap body aggregated, and a footer of counts", () => {
-		const lines = drawn().split("\n");
-		expect(lines.slice(0, -1)).toEqual([
-			'● fixtures.fanout-fanin-loop  "greeting"  kswoykny   running  1m04s',
-			'now   ● topics[b] › draft   1m02s   tool bash {"command":"ls"}',
-			"last  ! topics[c] › draft   failed   flaky",
-			"▾ ✓ topics      parMap     ok       12s    3/3 items · 1 running · 1 ok · 1 failed",
-			"  ▸ ● draft ×3  fake.task  running  1m03s  c !  a ✓  b ●",
-			"▸ ○ refine      scope      pending         refine-until-done",
-		]);
-		expect(lines.at(-1)).toStartWith("── 1 running · 1 ok · 1 failed ──");
-		expect(lines.at(-1)).toHaveLength(VIEW.columns - 1);
+	// Transcript: the frame as a terminal shows it, at the widths where its header and footer change shape.
+	test("draws a header, `now` and `last`, the authored rows with a parMap body aggregated, and a footer of counts", async () => {
+		const long = { ...VIEW.concert, title: "a very long concert title" };
+		const views: [name: string, view: Partial<View> & { columns: number }][] = [
+			["100 columns", { columns: 100 }],
+			[
+				"100 columns, a newline in the label",
+				{
+					columns: 100,
+					concert: { ...VIEW.concert, label: "first\nsecond" },
+				},
+			],
+			["68 columns", { columns: 68 }],
+			["40 columns, a long title", { columns: 40, concert: long }],
+			["33 columns", { columns: 33 }],
+			["32 columns", { columns: 32 }],
+			["30 columns", { columns: 30 }],
+			["29 columns", { columns: 29 }],
+			["19 columns", { columns: 19 }],
+			["21 columns and 3 rows", { columns: 21, rows: 3 }],
+		];
+		await transcript(
+			new URL("./transcripts/watch-frame.txt", import.meta.url),
+			views.map(([name, view]) => ({
+				name: `watch, ${name}`,
+				columns: view.columns,
+				shown: drawn({ ...view, color: true }),
+			})),
+		);
 		expect(drawn()).not.toContain(ESC);
 	});
 

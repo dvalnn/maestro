@@ -35,6 +35,7 @@
       },
       "devDependencies": {
         "@maestro/testkit": "workspace:*",
+        "@maestro/transcript": "workspace:*",
       },
     },
     "packages/core": {
@@ -96,6 +97,9 @@
       "dependencies": {
         "@maestro/ir": "workspace:*",
       },
+      "devDependencies": {
+        "@maestro/transcript": "workspace:*",
+      },
     },
     "packages/sdk": {
       "name": "@maestro/sdk",
@@ -112,6 +116,10 @@
         "@maestro/ir": "workspace:*",
         "@maestro/sdk": "workspace:*",
       },
+    },
+    "packages/transcript": {
+      "name": "@maestro/transcript",
+      "version": "0.4.0-rc.2",
     },
     "packs/classics": {
       "name": "@maestro/classics",
@@ -171,6 +179,8 @@
     "@maestro/sdk": ["@maestro/sdk@workspace:packages/sdk"],
 
     "@maestro/testkit": ["@maestro/testkit@workspace:packages/testkit"],
+
+    "@maestro/transcript": ["@maestro/transcript@workspace:packages/transcript"],
 
     "@types/bun": ["@types/bun@1.4.5", "", { "dependencies": { "bun-types": "1.4.5" } }, "sha512-DpgwNI9z0L1S0gtb45QLCWgwCUcMLnsHYMJHQvpNj7erGiCGBvpggltAIeARrtobNMKMuy0UP7i56tKKgwFs/Q=="],
 

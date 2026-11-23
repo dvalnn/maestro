@@ -7,6 +7,8 @@
   what they see. Update `packages/cli/README.md` with it.
 - An exit code depends on where a diagnostic came from, not on its code alone (`isArgument` in
   `packages/cli/src/output.ts`): a `-c` value and a config-file value can exit differently. Probe both.
-- Human output is held to `CODING_STANDARDS.md` (Terminal look). Its color and fitting show only on a terminal. A test
-  pins them with a `terminal` dep and color on. A check by eye runs the command in a pty, such as
-  `script -qc "stty cols 80; maestro ls" /dev/null`.
+- Human output is held to `CODING_STANDARDS.md` (Terminal look). Its color and fitting show only on a terminal.
+- A transcript pins how human output looks. Read `packages/transcript/README.md` before testing output. Draw it with a
+  `terminal` dep and color on, at the widths a user meets.
+- A change to human output adds no assertion on how it looks. It moves the assertions that describe that output into the
+  transcript, and leaves the tests of output it does not change as they are.

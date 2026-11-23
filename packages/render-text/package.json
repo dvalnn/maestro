@@ -12,5 +12,8 @@
 	},
 	"dependencies": {
 		"@maestro/ir": "workspace:*"
+	},
+	"devDependencies": {
+		"@maestro/transcript": "workspace:*"
 	}
 }

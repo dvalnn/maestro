@@ -108,6 +108,7 @@ home; no repo doc links into them for its facts.
 | Tick install, `.env`, flags, exit codes                         | `scripts/factory/README.md`                   | factory                                |
 | Issue shape, brief and report                                   | `docs/agents/issue-tracker.md`                | implementation-loop                    |
 | Hand-driven slice loop, release review                          | `docs/agents/implementation-loop.md`          | CLAUDE.md, release skill               |
+| Transcripts: output held in committed files, and their pictures | `packages/transcript/README.md`               | architecture, `.maestro/areas/cli.md`  |
 | Replay bench: tickets, arms, metrics, the owner's call          | `docs/agents/bench.md`                        |                                        |
 | Commit messages                                                 | `CLAUDE.md`                                   | jj skill                               |
 | Toolchain and harness pins, their updates                       | `mise.toml`, `renovate.json`                  | INSTALL                                |

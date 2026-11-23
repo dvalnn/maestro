@@ -120,6 +120,76 @@
 			}
 		},
 		{
+			"includes": [
+				"packages/core/**/*.test.ts",
+				"packages/sdk/**/*.test.ts",
+				"packages/render-*/**/*.test.ts"
+			],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": [
+											"@maestro/**",
+											"!@maestro/ir",
+											"!@maestro/transcript"
+										],
+										"message": "core, sdk and render-* tests import ir and transcript alone."
+									},
+									{
+										"group": [
+											"../../*/src/**",
+											"../../*/fixtures/**",
+											"../../../*/src/**",
+											"../../../*/fixtures/**",
+											"../../../../*/src/**",
+											"../../../../*/fixtures/**"
+										],
+										"message": "Import another package by its name, never by a relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["packages/transcript/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": ["@maestro/**"],
+										"message": "transcript imports no other package."
+									},
+									{
+										"group": [
+											"../../*/src/**",
+											"../../*/fixtures/**",
+											"../../../*/src/**",
+											"../../../*/fixtures/**",
+											"../../../../*/src/**",
+											"../../../../*/fixtures/**"
+										],
+										"message": "Import another package by its name, never by a relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
 			"includes": ["packages/host-repo/**"],
 			"linter": {
 				"rules": {
@@ -291,9 +361,10 @@
 											"!@maestro/host-repo/harness",
 											"!@maestro/host-repo-sdk",
 											"!@maestro/harness-*",
-											"!@maestro/testkit"
+											"!@maestro/testkit",
+											"!@maestro/transcript"
 										],
-										"message": "cli imports core, sdk, ir, render-*, host-repo, host-repo-sdk and the harness adapters, and testkit in tests."
+										"message": "cli imports core, sdk, ir, render-*, host-repo, host-repo-sdk and the harness adapters, and testkit and transcript in tests."
 									},
 									{
 										"group": [

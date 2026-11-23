@@ -12,6 +12,11 @@ run fails.
 A test the change adds blocks when it duplicates another's coverage, or pins wording, such as an error message or a
 prompt, unless the text is a contract: piped stdout, --json output, or a line something parses.
 
+A transcript pins how terminal output looks, once (`packages/transcript/README.md`). A test the change adds blocks when
+it asserts a look that a transcript holds or could hold. An assertion left on the look of output the change alters
+blocks too, though the change leaves that test alone: it moves into the transcript. Color, a rule over every input and
+what is not output stay assertions.
+
 Never raise a test, present or missing, that these grounds make unnecessary:
 
 - a test for trivial logic;
