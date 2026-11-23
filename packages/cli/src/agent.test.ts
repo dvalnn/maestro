@@ -715,14 +715,3 @@ test.each([
 	expect(refused.err).toStartWith(`error: ${what}\n`);
 	expect(refused.err).toEndWith(`\n  ${fix.join("\n")}`);
 });
-
-test("agent --help names the ls, show and probe verbs", async () => {
-	const helped = await (await roster()).call(["agent", "--help"]);
-	expect(helped.out).toContain(
-		[
-			"Usage: maestro agent ls [flags]  (alias: ag)",
-			"       maestro agent show <profile> [flags]",
-			"       maestro agent probe <profile> [flags]",
-		].join("\n"),
-	);
-});

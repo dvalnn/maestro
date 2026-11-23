@@ -1178,6 +1178,10 @@ async function held(
 
 const START = Date.UTC(2026, 0, 5, 9);
 
+/** The commands a plain root help lists. */
+const verbsOf = (rootHelp: string) =>
+	[...rootHelp.matchAll(/^ {2}([a-z]+) /gm)].map(([, verb = ""]) => verb);
+
 /** Runs `body` with the clock and the concert ids fixed. */
 async function fixed<T>(
 	body: (run: ReturnType<typeof fixedRun>) => Promise<T>,
@@ -2395,23 +2399,16 @@ describe("usage errors", () => {
 				out: expect.stringContaining("Usage: maestro"),
 				err: "",
 			});
-		expect((await w.call(["--help"])).out).toMatch(/^ {2}watch +\(w\) +\S/m);
 		for (const [alias, verb] of [
 			["r", "resume"],
 			["e", "encore"],
 			["ag", "agent"],
 		] as const) {
-			expect((await w.call(["--help"])).out).toMatch(
-				new RegExp(`^ {2}${verb} +\\(${alias}\\) +\\S`, "m"),
-			);
 			expect((await w.call([alias, "--help"])).out).toBe(
 				(await w.call([verb, "--help"])).out,
 			);
 		}
-		const verbs = [
-			...(await w.call(["--help"])).out.matchAll(/^ {2}([a-z]+) /gm),
-		].map(([, verb = ""]) => verb);
-		expect(verbs).toContain("tour");
+		const verbs = verbsOf((await w.call(["--help"])).out);
 		const reads = ["ls", "wait", "watch", "kill", "tour", "prune", "artifact"];
 		for (const verb of verbs) {
 			const { out } = await w.call([verb, "--help"]);
@@ -2437,9 +2434,25 @@ describe("usage errors", () => {
 				flags.includes("--config"),
 			]).toEqual([form, takes, takes]);
 		}
-		const { out: root } = await w.call(["--help"]);
-		expect(root).toMatch(/^ {2}-c, --config <key=value> +\S/m);
-		expect(root).toMatch(/^ {6}--color +.*--no-color turns it off/m);
+	});
+
+	// Transcript: every help page, which is the CLI's surface: its commands, flags, exit codes and environment.
+	test("prints the help of maestro and of each command on a 100-column terminal", async () => {
+		const w = await world();
+		const terminal = () => ({ columns: 100, rows: 40 });
+		const help = async (...args: string[]) => ({
+			name: ["maestro", ...args, "--help"].join(" "),
+			columns: 100,
+			shown: (await w.call([...args, "--help"], { terminal })).out,
+		});
+		const root = await help();
+		const sections = [root];
+		for (const verb of verbsOf(stripVTControlCharacters(root.shown)))
+			sections.push(await help(verb));
+		await transcript(
+			new URL("./transcripts/help.txt", import.meta.url),
+			sections,
+		);
 	});
 
 	// Seam: root help's terminal and piped stdout.
@@ -2658,52 +2671,6 @@ describe("help and color", () => {
 	});
 
 	const TERMINAL = () => ({ columns: 80, rows: 24 });
-	const COMMON_LINE =
-		"Common flags: --color, --debug, -h/--help (see 'maestro --help')";
-
-	test("a command's help is its summary, usage, arguments, flags, examples and the common flags, in that order", async () => {
-		const { out } = await (await world()).call(["artifact", "--help"]);
-		const at = [
-			"List a concert's artifacts",
-			"Usage: maestro artifact",
-			"Arguments:",
-			"  <concert>   A concert, as 'maestro ls' lists it",
-			"Flags:",
-			"Examples:",
-			"  # Read the plan the planner wrote\n  maestro artifact show 7f3c2a planner plan.md",
-		].map((part) => out.indexOf(part));
-		expect(at.every((i) => i >= 0)).toBe(true);
-		expect(at).toEqual(at.toSorted((a, b) => a - b));
-		expect(out).toEndWith(`\n\n${COMMON_LINE}`);
-	});
-
-	test("a command without examples has no Examples section", async () => {
-		const { out } = await (await world()).call(["kill", "--help"]);
-		expect(out).toStartWith(
-			"Stop a running concert\n\nUsage: maestro kill <concert>",
-		);
-		expect(out).toContain("Arguments:\n  <concert>  A running concert");
-		expect(out).not.toContain("Examples:");
-		expect(out).toEndWith(COMMON_LINE);
-	});
-
-	test("maestro --help lists the common flags, the exit codes and the environment", async () => {
-		const { out } = await (await world()).call(["--help"]);
-		expect(out).toContain("Common flags (each command lists those it takes):");
-		expect(out).toMatch(/Exit codes:\n {2}0 {4}Done/);
-		expect(out).toMatch(/\n {2}124 {2}wait --timeout/);
-		for (const name of [
-			"NO_COLOR",
-			"FORCE_COLOR",
-			"TERM",
-			"MAESTRO_TOUR",
-			"XDG_CONFIG_HOME",
-			"XDG_DATA_HOME",
-		])
-			expect(out).toMatch(new RegExp(`^ {2}${name} `, "m"));
-		expect(out).not.toContain("MAESTRO_STUB");
-	});
-
 	test("help and help <command> show the root help and that command's", async () => {
 		const w = await world();
 		expect((await w.call(["help"])).out).toBe((await w.call(["--help"])).out);

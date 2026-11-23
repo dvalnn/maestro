@@ -1,0 +1,414 @@
+## maestro --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+Usage: maestro <command> [flags]
+
+Commands:
+  compose     (c)    Build a composition and check it, without performing it
+  perform     (p)    Perform a composition as a concert
+  resume      (r)    Resume a failed or rejected concert
+  encore      (e)    Perform a concert's composition again as a new concert
+  ls                 List concerts, or the node instances of one
+  wait        (wt)   Wait for a concert to settle
+  watch       (w)    Show a concert's node instances live until it settles
+  kill        (k)    Stop a running concert
+  config      (cfg)  Show a composition's or a concert's config and where each value came from
+  agent       (ag)   List agent profiles, or show one's environment
+  repertoire  (rep)  List installed packs and their compositions
+  prune              Delete settled concerts and what they hold
+  changeset   (cs)   Show a concert's changeset, or apply it to a checkout or drop it
+  artifact    (art)  List a concert's artifacts, or show an instance's files
+  tour        (t)    Put concerts on a tour, or take them off
+
+Flags:
+  --version    Print the maestro, SDK, IR and Bun versions
+  --data-root  Print the directory that holds maestro's record and packs
+  --help       Show this help
+
+Common flags (each command lists those it takes):
+      --preset <name>       Layer the preset .maestro/presets/<name>.yaml, else the user's, on the
+                            config; repeatable, later ones winning
+  -c, --config <key=value>  Set a config key to a YAML value, over the presets; repeatable
+      --color               Color output even when not a terminal; --no-color turns it off
+      --debug               Show stack traces
+  -h, --help                Show this help
+
+Exit codes:
+  0    Done, or the concert settled ok
+  1    The concert settled failed, a composition or config does not build, or the command could not
+       do what it said
+  2    Usage error: bad arguments
+  3    The concert settled rejected, or cs apply left conflicts
+  124  wait --timeout passed, the concert still running
+  130  Stopped by Ctrl-C
+  143  Stopped by SIGTERM
+
+Environment:
+  NO_COLOR         Turn color off, when not empty
+  FORCE_COLOR      Color output even when not a terminal, when not empty
+  TERM             dumb turns color off
+  PAGER            The pager for a finished document on a terminal (default less -FRX); empty or cat
+                   turns paging off
+  MAESTRO_TOUR     The tour a new concert joins when --tour is not given
+  XDG_CONFIG_HOME  Where maestro/ holds the user config, presets and .env (default ~/.config)
+  XDG_DATA_HOME    Where maestro/ holds concerts and installed packs (default ~/.local/share)
+
+See 'maestro <command> --help', or 'maestro help <command>', for a command's flags.
+
+## maestro compose --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+Build a composition and check it, without performing it
+
+Usage: maestro compose <composition> [flags]  (alias: c)
+       maestro compose --concert <id> [flags]
+
+Arguments:
+  <composition>  A .ts, .js or .json file, or <pack>.<composition> as 'maestro repertoire' lists it
+
+Flags:
+      --json          Print one JSON document on stdout
+      --concert <id>  Pre-flight the graph this concert was performed from, in place of a
+                      composition
+      --out <file>    Save the IR to this file, with its code beside it
+      --plan          Print the plan in full
+      --graph         Print the graph as a Mermaid flowchart
+      --flow          Draw the authored flow in place of every data path, and set --graph
+                      (experimental)
+
+Examples:
+  # Pre-flight a pack's composition
+  maestro compose classics.build_then_repair --request "Add a --verbose flag"
+  # Show the plan a concert was performed from
+  maestro compose --concert 7f3c2a --plan
+
+Common flags: --preset, -c/--config, --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro perform --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+Perform a composition as a concert
+
+Usage: maestro perform <composition> [flags]  (alias: p)
+
+Arguments:
+  <composition>  A .ts, .js or .json file, or <pack>.<composition> as 'maestro repertoire' lists it
+
+Flags:
+      --json          Print one JSON document on stdout
+      --tour <slug>   Put the concert on this tour (default: MAESTRO_TOUR)
+      --title <text>  Give the concert a title
+      --detach        Run the concert in the background: print its id once it starts, then exit
+
+Examples:
+  # Perform a pack's composition with one of its params
+  maestro perform classics.build_then_repair --request "Add a --verbose flag"
+  # Rehearse with the stub preset, which spends nothing
+  maestro perform .maestro/slice.ts --preset stub --request "Add a --verbose flag"
+  # Put the concert on a tour, with a title
+  maestro perform classics.build_then_repair --request "Add a --verbose flag" --tour epic.story --title "Verbose flag"
+  # Start it in the background, then wait for it
+  id=$(maestro perform classics.build_then_repair --request "Add a --verbose flag" --detach) && maestro wait "$id"
+
+Common flags: --preset, -c/--config, --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro resume --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+Resume a failed or rejected concert
+
+Usage: maestro resume <concert> [flags]  (alias: r)
+
+Arguments:
+  <concert>  A concert, as 'maestro ls' lists it
+
+Flags:
+      --json    Print one JSON document on stdout
+      --detach  Run the concert in the background: print its id once it starts, then exit
+
+Examples:
+  # Resume a failed concert after fixing what failed
+  maestro resume 7f3c2a
+  # Resume with -c over the concert's recorded config, for this attempt
+  maestro resume 7f3c2a -c concurrency=2
+
+Common flags: -c/--config, --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro encore --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+Perform a concert's composition again as a new concert
+
+Usage: maestro encore <concert> [flags]  (alias: e)
+
+Arguments:
+  <concert>  A concert, as 'maestro ls' lists it
+
+Flags:
+      --json          Print one JSON document on stdout
+      --tour <slug>   Put the concert on this tour (default: MAESTRO_TOUR)
+      --title <text>  Give the concert a title
+      --detach        Run the concert in the background: print its id once it starts, then exit
+
+Examples:
+  # Perform a concert's composition again as a new concert
+  maestro encore 7f3c2a
+  # Change one of its params
+  maestro encore 7f3c2a --request "Add a --quiet flag"
+  # Set a config value with -c over the concert's recorded config
+  maestro encore 7f3c2a -c concurrency=2
+
+Common flags: -c/--config, --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro ls --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+List concerts, or the node instances of one
+
+Usage: maestro ls [<concert> [<instance>]] [flags]
+
+Arguments:
+  <concert>   A concert, as 'maestro ls' lists it; without it, the concerts are listed
+  <instance>  One of the concert's instances, as 'maestro ls <concert>' lists it, or a unique ending
+              of its name; its row and notes alone, and with --json its contents in full
+
+Flags:
+      --json                     Print one JSON document on stdout
+      --status <status>          Only concerts that are running, ok, failed, rejected
+      --composition <pack.name>  Only this composition, as <pack>.<composition>
+      --tour <slug>              Only this tour and the tours under it (epic matches epic.story)
+      --workspace <name>         Only this workspace
+      --limit <count>            Show at most this many, newest first (default 20)
+      --all                      Show every concert that matches, newest first
+
+• after a status: its instances left notes ('maestro ls <concert>' shows them)
+
+Examples:
+  # Which concerts failed?
+  maestro ls --status failed
+  # Every concert on the epic tour and the tours under it, such as epic.story
+  maestro ls --tour epic
+  # One concert's node instances
+  maestro ls 7f3c2a
+  # One instance's row and notes
+  maestro ls 7f3c2a build
+
+Common flags: --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro wait --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+Wait for a concert to settle
+
+Usage: maestro wait <concert> [flags]  (alias: wt)
+
+Arguments:
+  <concert>  A concert, as 'maestro ls' lists it
+
+Flags:
+      --json                Print one JSON document on stdout
+      --timeout <duration>  Give up after this long, such as 500ms, 90s, 15m, 12h or 7d, and exit
+                            124
+
+Common flags: --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro watch --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+Show a concert's node instances live until it settles
+
+Usage: maestro watch <concert> [flags]  (alias: w)
+
+Arguments:
+  <concert>  A concert, as 'maestro ls' lists it
+
+Flags:
+      --json           Print a JSON Lines stream of events, ending with the concert document
+      --events         Show every event, tool calls and thinking among them, not the graph
+      --instance <id>  Show only this instance's events, or a unique ending of its id; a group or
+                       scope id takes all under it; sets --events
+
+Common flags: --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro kill --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+Stop a running concert
+
+Usage: maestro kill <concert> [flags]  (alias: k)
+
+Arguments:
+  <concert>  A running concert, as 'maestro ls' lists it; a settled one exits 0 and says so
+
+Flags:
+      --json  Print one JSON document on stdout
+
+Common flags: --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro config --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+Show a composition's or a concert's config and where each value came from
+
+Usage: maestro config <composition|concert> [flags]  (alias: cfg)
+
+Arguments:
+  <composition>  A .ts, .js or .json file, or <pack>.<composition> as 'maestro repertoire' lists it
+  <concert>      A concert id or unique prefix, as 'maestro ls' lists it: the config it was
+                 performed under, read from its record alone, so no --preset or -c. Each value shows
+                 its layer, and its file and line or its -c flag, as for a composition. The params
+                 it was given for a pack's composition show as values too, with the layer that set
+                 them; a bare file's are left out. --json is {values}, plus presets and flags, each
+                 as typed in order, limits with timeout in milliseconds, left out when the concert
+                 had none, params as given, and moduleDir and file, where its composition loads
+                 from. A snapshot that is missing, unreadable or no longer composes exits 1
+
+Flags:
+      --json  Print one JSON document on stdout
+
+Examples:
+  # Where does each key of the config come from?
+  maestro config classics.build_then_repair --request "Add a --verbose flag"
+  # See a -c override take the top layer
+  maestro config classics.build_then_repair --request "Add a --verbose flag" -c target.repo=../app
+  # The config a concert was performed under, with its presets, flags and limits
+  maestro config 7f3c2a --json
+
+Common flags: --preset, -c/--config, --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro agent --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+List agent profiles, or show one's environment
+
+Usage: maestro agent ls [flags]  (alias: ag)
+       maestro agent show <profile> [flags]
+       maestro agent probe <profile> [flags]
+       maestro agent prompt <composition> <node> [flags]
+
+Arguments:
+  <profile>      A profile, as 'maestro agent ls' lists it
+  <composition>  With prompt, the composition the node sits in: a file, or <pack>.<composition>
+  <node>         With prompt, an agent node, as 'maestro compose' lists it
+
+Flags:
+      --json  Print one JSON document on stdout
+
+Common flags: --preset, -c/--config, --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro repertoire --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+List installed packs and their compositions
+
+Usage: maestro repertoire [<pack>[.<composition>]] [flags]  (alias: rep)
+
+Arguments:
+  <pack>  An installed pack, or <pack>.<composition> for one of its compositions; without it, every
+          pack is listed
+
+Flags:
+      --json  Print one JSON document on stdout
+
+Common flags: --preset, -c/--config, --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro prune --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+Delete settled concerts and what they hold
+
+Usage: maestro prune <concert>... | <filter>... | --all [flags]
+
+Arguments:
+  <concert>  A settled concert, as 'maestro ls' lists it
+
+Flags:
+      --json                     Print one JSON document on stdout
+      --before <duration>        Prune concerts that settled longer ago than this, such as 500ms,
+                                 90s, 15m, 12h or 7d
+      --all                      Prune every settled concert, leaving running ones out
+      --status <status>          Only concerts that are ok, failed, rejected
+      --composition <pack.name>  Only this composition, as <pack>.<composition>
+      --tour <slug>              Only this tour and the tours under it (epic matches epic.story)
+      --workspace <name>         Only this workspace
+      --yes                      Do not ask before deleting
+  -n, --dry-run                  List the concerts it would prune, and prune nothing; one per line,
+                                 full id first, no header
+
+Examples:
+  # See what pruning week-old concerts would free
+  maestro prune --before 7d -n
+  # Prune them
+  maestro prune --before 7d
+
+Common flags: --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro changeset --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+Show a concert's changeset, or apply it to a checkout or drop it
+
+Usage: maestro changeset show|apply <concert> [flags]  (alias: cs)
+       maestro changeset drop [flags]
+
+Arguments:
+  <concert>  A concert, as 'maestro ls' lists it
+
+Flags:
+  -C, --repo <repo>  The checkout to work in, a relative path from the current directory (default:
+                     show, apply: the concert's target.repo; drop: the config's)
+      --node <id>    show, apply: take this instance's changeset, as 'maestro ls <concert>' prints
+                     it, or a unique ending of its id
+      --partial      show, apply: with --node, take the work a failed agent left, not a changeset it
+                     made
+      --stat         show: print a diffstat, not the diff
+      --summary      show: print the concert's tour and title, and the files changed
+      --commit       apply: commit the staged change with the changeset's message
+      --yes          drop: do not ask before resetting
+
+Examples:
+  # What did the concert change?
+  maestro changeset show 7f3c2a --stat
+  # Stage the concert's changeset in a checkout
+  maestro changeset apply 7f3c2a -C ../app
+  # Take what a failed agent left, from one node instance
+  maestro changeset apply 7f3c2a --node build --partial
+  # Reset the checkout's uncommitted changes
+  maestro changeset drop
+
+Common flags: --preset, -c/--config, --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro artifact --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+List a concert's artifacts, or show an instance's files
+
+Usage: maestro artifact ls <concert> [flags]  (alias: art)
+       maestro artifact show <concert> <instance> [<file>] [flags]
+
+Arguments:
+  <concert>   A concert, as 'maestro ls' lists it
+  <instance>  One of its node instances, as 'maestro ls <concert>' lists it, or a unique ending of
+              its id
+  <file>      One file of that instance, by name; without it, every file prints in turn
+
+Flags:
+      --json  Print one JSON document on stdout
+      --path  Print absolute paths, one per line, not content
+
+Examples:
+  # What did the concert leave, instance by instance?
+  maestro artifact ls 7f3c2a
+  # Read the plan the planner wrote
+  maestro artifact show 7f3c2a planner plan.md
+  # Open an instance's files in your editor
+  $EDITOR $(maestro artifact show 7f3c2a panel/consolidator --path)
+
+Common flags: --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro tour --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+Put concerts on a tour, or take them off
+
+Usage: maestro tour set <slug> <concert>... [flags]  (alias: t)
+       maestro tour clear <concert>... [flags]
+
+Arguments:
+  <slug>     The tour, such as epic or epic.story
+  <concert>  A concert, as 'maestro ls' lists it
+
+Flags:
+      --json  Print one JSON document on stdout
+
+Examples:
+  # Put two concerts on a tour
+  maestro tour set epic.story 7f3c2a 9b1d04
+  # Take a concert off its tour
+  maestro tour clear 7f3c2a
+
+Common flags: --color, --debug, -h/--help (see 'maestro --help')
