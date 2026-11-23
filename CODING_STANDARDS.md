@@ -70,7 +70,9 @@ Human output on a terminal shares one look. Color and fitting apply only on a te
 | Path              | under the home directory as `~/…`                                          |
 
 - A line fits the terminal width. A table names the columns that give way, cut with `…`. An id, a status or a name the
-  user types next never gives way. A cut points to where the whole value is, as a hint.
+  user types next never gives way. A cut points to where the whole value is, as a hint. The live view is the exception:
+  its cut label and title and its folded rows take no hint. It is an interactive viewer, and its footer holds the
+  counts.
 - Prose such as a description wraps under its own column, never back to the first.
 - A format meant for scripts, such as `prune -n`, keeps its layout; it may color on a terminal.
 

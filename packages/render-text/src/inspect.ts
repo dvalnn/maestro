@@ -347,7 +347,7 @@ function inspector(
 ): Browsed {
 	const graph = indexGraph(ir);
 	const { head, events, count } = inspectorLines(ir, seen, view, at.key, held);
-	const top = headSegs(graph, seen, view).lines;
+	const top = headSegs(graph, seen, view);
 	const room = view.rows - top.length - INSPECTOR_BELOW;
 	const summary = capped(head, Math.max(MIN_SUMMARY, room - MIN_BODY));
 	const body = Math.max(MIN_BODY, room - summary.length);

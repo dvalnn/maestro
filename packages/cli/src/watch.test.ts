@@ -595,7 +595,6 @@ describe("watch on a running concert", async () => {
 			),
 		).toBe(true);
 		expect(last).toMatch(/^✓ demo\.greet {2}\S+ +ok/m);
-		expect(last).toMatch(/^── 4 ok ─+$/m);
 	});
 
 	test("on a screen, follows the running instance, and Ctrl-C before the concert settles leaves it and exits 130 with every row printed", () => {

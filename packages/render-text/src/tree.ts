@@ -191,14 +191,23 @@ export const holdsUnder = (
 		),
 	).holds;
 
-/** `states` counted as `3 ok · 1 failed`, in `COUNTED` order. */
-export const countsText = (states: readonly Shown[]) =>
+/** Each state `states` hold with how many hold it, in `COUNTED` order. */
+const counted = (states: readonly Shown[]) =>
 	COUNTED.map((state): [Shown, number] => [
 		state,
 		states.filter((s) => s === state).length,
-	])
-		.filter(([, n]) => n > 0)
+	]).filter(([, n]) => n > 0);
+
+/** `states` counted as `3 ok · 1 failed`. */
+export const countsText = (states: readonly Shown[]) =>
+	counted(states)
 		.map(([state, n]) => `${n} ${state}`)
+		.join(NOTE_SEP);
+
+/** `states` counted by glyph, as `✓ 3 · ! 1`, for where the words do not fit. */
+export const countGlyphs = (states: readonly Shown[]) =>
+	counted(states)
+		.map(([state, n]) => `${GLYPH[state]} ${n}`)
 		.join(NOTE_SEP);
 
 /**

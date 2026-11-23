@@ -196,79 +196,13 @@ describe("cutting styled text", () => {
 
 // Seam: the rendered frame's header and footer at the terminal width.
 describe("frame", () => {
-	test("keeps the concert identity and the title hint when the header is cut", () => {
-		const lines = drawn({
-			columns: 40,
-			tokens: 39_300,
-			concert: { ...VIEW.concert, title: "a very long concert title" },
-		}).split("\n");
-		expect(lines[0]).toEndWith("…  kswoykny   running  1m04s");
-		expect(Bun.stringWidth(lines[0] ?? "")).toBeLessThanOrEqual(39);
-		expect(lines.at(-1)).toContain("maestro ls kswoykny --json");
-		expect(lines.at(-1)).not.toContain("1 running · 1 ok · 1 failed");
-		expect(Bun.stringWidth(lines.at(-1) ?? "")).toBeLessThanOrEqual(39);
-	});
-
-	test("draws a header that exactly fits whole and adds no hint", () => {
-		const whole =
-			'● fixtures.fanout-fanin-loop  "greeting"  kswoykny   running  1m04s';
-		const lines = drawn({ columns: whole.length + 1 }).split("\n");
-		expect(lines[0]).toBe(whole);
-		expect(lines.at(-1)).not.toContain("--json");
-	});
-
-	test("keeps the whole title hint at a width where the rule decoration would cut it", () => {
-		const last = drawn({
-			columns: 36,
-			concert: { ...VIEW.concert, title: "a very long concert title" },
-		})
-			.split("\n")
-			.at(-1);
-		expect(last).toContain("maestro ls kswoykny --json");
-	});
-
-	test("omits the label and its gap when less than two cells remain", () => {
-		for (const columns of [28, 29]) {
-			const header = drawn({ columns }).split("\n")[0];
-			expect(header).toBe("kswoykny   running  1m04s");
-		}
-	});
-
-	test("keeps a cut label when two cells remain", () => {
-		const header = drawn({ columns: 30 }).split("\n")[0];
-		expect(header).toBe("●…  kswoykny   running  1m04s");
-	});
-
-	test("cuts a footer whose hint alone is too wide from the right", () => {
-		const last = drawn({ columns: 21, rows: 3 }).split("\n").at(-1);
-		expect(last).toBe("every row: maestro l");
-	});
-
-	test("starts with the short id when the fixed header does not fit", () => {
-		const header = drawn({ columns: 21 }).split("\n")[0];
-		expect(header).toStartWith("kswoykny");
-		expect(Bun.stringWidth(header ?? "")).toBeLessThanOrEqual(20);
-	});
-
-	test("shows a label's newline as a space in the header", () => {
-		const lines = drawn({
-			concert: { ...VIEW.concert, label: "first\nsecond" },
-		}).split("\n");
-		expect(lines[0]).toBe(
-			'● first second  "greeting"  kswoykny   running  1m04s',
-		);
-	});
-
-	test("keeps the every-row hint instead of the cut-title hint when rows are hidden", () => {
-		const lines = drawn({
-			columns: 40,
-			rows: 3,
-			concert: { ...VIEW.concert, title: "a very long concert title" },
-		}).split("\n");
-		expect(lines[0]).toEndWith("…  kswoykny   running  1m04s");
-		expect(lines.at(-1)).toContain("every row: maestro ls kswoykny");
-		expect(lines.at(-1)).not.toContain("--json");
-		expect(Bun.stringWidth(lines.at(-1) ?? "")).toBeLessThanOrEqual(39);
+	test("fits every line to its terminal at any width, a wide footer of tokens too", () => {
+		const concert = { ...VIEW.concert, title: "a very long concert title" };
+		for (let columns = 2; columns <= 120; columns++)
+			for (const line of drawn({ columns, concert, tokens: 39_300 }).split(
+				"\n",
+			))
+				expect(Bun.stringWidth(line)).toBeLessThan(columns);
 	});
 
 	// Transcript: the frame as a terminal shows it, at the widths where its header and footer change shape.
@@ -291,6 +225,18 @@ describe("frame", () => {
 			["29 columns", { columns: 29 }],
 			["19 columns", { columns: 19 }],
 			["21 columns and 3 rows", { columns: 21, rows: 3 }],
+			[
+				"100 columns, failed, with tokens",
+				{
+					columns: 100,
+					concert: {
+						...VIEW.concert,
+						status: "failed",
+						settledAt: START + 4_500,
+					},
+					tokens: 39_300,
+				},
+			],
 		];
 		await transcript(
 			new URL("./transcripts/watch-frame.txt", import.meta.url),
@@ -301,27 +247,6 @@ describe("frame", () => {
 			})),
 		);
 		expect(drawn()).not.toContain(ESC);
-	});
-
-	test("shows the concert's tokens in the footer, the last failure's items once it settled, and a node that never started as not reached", () => {
-		const settled = drawn({
-			concert: { ...VIEW.concert, status: "failed", settledAt: START + 4_500 },
-			tokens: 39_300,
-		}).split("\n");
-		expect(settled[0]).toBe(
-			'! fixtures.fanout-fanin-loop  "greeting"  kswoykny   failed  4.5s',
-		);
-		expect(settled[1]).toStartWith("now   ● topics[b] › draft");
-		expect(settled.slice(4, 9)).toEqual([
-			"  ▾ ● draft ×3  fake.task  running      1m03s  c !  a ✓  b ●",
-			"      ! [c]     fake.task  failed       0.4s   flaky",
-			"      ✓ [a]     fake.task  ok           3.1s",
-			'      ● [b]     fake.task  running      1m02s  tool bash {"command":"ls"}',
-			"▸ – refine      scope      not reached         refine-until-done",
-		]);
-		expect(settled.at(-1)).toMatch(
-			/^── 1 running · 1 ok · 1 failed ─+ 39\.3k tok ──$/,
-		);
 	});
 
 	test("shows the short id at least 8 letters, its unique part bold and the rest dim", () => {
@@ -456,7 +381,7 @@ describe("frame", () => {
 		expect(lines[5]).toStartWith(SGR.dim);
 	});
 
-	test("cuts lines at columns - 1, and fits the rows to rows - 1 lines, hidden ones counted and the footer pointing at maestro ls", () => {
+	test("cuts lines at columns - 1, and fits the rows to rows - 1 lines, hidden ones counted", () => {
 		const narrow = drawn({ columns: 21 }).split("\n");
 		expect(narrow[3]).toBe("▾ ✓ topics      parM");
 		expect(Math.max(...narrow.map((l) => Bun.stringWidth(l)))).toBe(20);
@@ -475,14 +400,12 @@ describe("frame", () => {
 				new Map(),
 			).split("\n");
 		const full = fitting(50);
-		expect(full.at(-1)).not.toContain("maestro ls");
 		for (let rows = 6; rows <= full.length + 1; rows++)
 			expect(fitting(rows).length).toBeLessThanOrEqual(rows - 1);
-		expect(fitting(3).slice(3)).toEqual([
+		expect(fitting(3).slice(3, -1)).toEqual([
 			"  … 2 running · 3 ok · 1 rejected · 3 pending",
-			expect.stringContaining("every row: maestro ls kswoykny"),
 		]);
-		expect(fitting(12).slice(3)).toEqual([
+		expect(fitting(12).slice(3, -1)).toEqual([
 			"  … 3 ok",
 			"  ✗ test       code        rejected  9.0s  3 of 41 tests fail",
 			"▾ ● test-loop  loop        running   50s   ⟲ 2/3   1✗ 2●",
@@ -490,9 +413,6 @@ describe("frame", () => {
 			"    ○ test     code        pending",
 			"▸ ○ panel      scope       pending         verification-panel",
 			"  ○ ruling     code        pending",
-			expect.stringMatching(
-				/^── 1 running · 3 ok · 2 rejected ── every row: maestro ls kswoykny ─+$/,
-			),
 		]);
 	});
 

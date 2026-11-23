@@ -378,38 +378,7 @@ describe("keysOf", () => {
 	});
 });
 
-// Seam: the browsed view's rendered header and footer.
 describe("browse", () => {
-	test("keeps the row range over the cut-title hint on a narrow viewport", () => {
-		const view = viewOf(false, 10, 40);
-		view.concert.title = "a very long concert title";
-		const { lines } = browse(
-			PANEL_IR,
-			seen(new Map(), panelEvents(MID_S)),
-			view,
-			new Map(),
-			NAV,
-		);
-		expect(lines[0]).toEndWith("…  kswoykny   running  2m00s");
-		expect(lines[6]).toContain("rows 4–6 of 9");
-		expect(lines[6]).not.toContain("maestro ls");
-		expect(Bun.stringWidth(lines[6] ?? "")).toBeLessThanOrEqual(39);
-	});
-
-	test("shows the title hint when all browsed rows fit", () => {
-		const view = viewOf(false, TALL, 40);
-		view.concert.title = "a very long concert title";
-		const { lines } = browse(
-			PANEL_IR,
-			seen(new Map(), panelEvents(MID_S)),
-			view,
-			new Map(),
-			NAV,
-		);
-		expect(lines[0]).toEndWith("…  kswoykny   running  2m00s");
-		expect(lines[TALL - 4]).toContain("maestro ls kswoykny --json");
-	});
-
 	/** A terminal whose viewport holds 5 rows. */
 	const SHORT = 12;
 	const ABOVE = 3;

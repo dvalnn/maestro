@@ -15,6 +15,7 @@ import { type Fitted, fitted } from "./fit";
 import { arranged, shapeOf } from "./layout";
 import { type Browsed, type Nav, resolve } from "./press";
 import {
+	countGlyphs,
 	countsText,
 	followOf,
 	GAP,
@@ -527,8 +528,8 @@ export function shortIds(ids: readonly string[]): ShortIds {
 const ranFor = ({ concert, now }: View) =>
 	duration((concert.settledAt ?? now) - concert.startedAt);
 
-/** The header's segments, and whether `view.columns - 1` cells cut it: the label and title give way, the id, status and elapsed time stay. */
-function headerSegs(view: View): { segs: Seg[]; cut: boolean } {
+/** The header within `view.columns - 1` cells: the label and title give way, the id, status and elapsed time stay. */
+function headerSegs(view: View): Seg[] {
 	const { concert } = view;
 	const look = lookOf(concert.status);
 	const title =
@@ -541,11 +542,9 @@ function headerSegs(view: View): { segs: Seg[]; cut: boolean } {
 		[`${GAP}${ranFor(view)}`],
 	];
 	const fixedCells = Bun.stringWidth(fixed.map(([text]) => text).join(""));
-	const limit = view.columns - 1;
-	const room = limit - fixedCells - GAP.length;
-	const cut = Bun.stringWidth(lead) > room;
-	if (room < ELLIPSIS.length + 1) return { segs: fixed, cut };
-	return { segs: [[`${cutTo(lead, room)}${GAP}`, "bold"], ...fixed], cut };
+	const room = view.columns - 1 - fixedCells - GAP.length;
+	if (room < ELLIPSIS.length + 1) return fixed;
+	return [[`${cutTo(lead, room)}${GAP}`, "bold"], ...fixed];
 }
 
 /** The width of the `now` and `last` labels, with their gap. */
@@ -591,22 +590,24 @@ function lastSegs(graph: GraphIndex, seen: Seen, settled: boolean): Seg[] {
 	];
 }
 
-/** The rule under the rows: the drawn node instances counted, groups aside, then `hint` when given, and the tokens. */
+/**
+ * The rule under the rows: the drawn node instances counted, groups aside, then `hint` when given, and the tokens. The
+ * counts go by glyph where their words do not fit, and lose the leading rule before a count is cut.
+ */
 function footerSegs(states: readonly Shown[], view: View, hint = ""): Seg[] {
 	const after = hint ? `${RULE}${RULE} ${hint} ` : "";
-	const counts = `${RULE}${RULE} ${countsText(states)} `;
-	const tokens =
+	const tail =
 		view.tokens > 0 ? ` ${compact(view.tokens)} tok ${RULE}${RULE}` : "";
 	const limit = view.columns - 1;
-	// The hint holds a command the user types next, so the counts and tokens give way before it.
-	const whole = counts.length + after.length + tokens.length + 1 <= limit;
-	const room = limit - after.length - 1;
-	const bare = room >= 0 ? after : hint;
-	const head = whole || !hint ? `${counts}${after}` : bare;
-	const tail = whole || !hint ? tokens : "";
-	// A bare hint takes no fill, which would touch its last word.
-	const fill =
-		head === hint ? 0 : Math.max(1, limit - head.length - tail.length);
+	const headOf = (counts: string) => `${RULE}${RULE} ${counts} ${after}`;
+	const cells = (head: string) => Bun.stringWidth(head) + tail.length;
+	const glyphs = countGlyphs(states);
+	const bare = `${glyphs} ${after}`;
+	const head =
+		[headOf(countsText(states)), headOf(glyphs)].find(
+			(h) => cells(h) < limit,
+		) ?? bare;
+	const fill = Math.max(1, limit - cells(head));
 	return [[`${head}${RULE.repeat(fill)}${tail}`, "dim"]];
 }
 
@@ -615,21 +616,11 @@ export const headSegs = (
 	graph: GraphIndex,
 	seen: Seen,
 	view: View,
-): { lines: Seg[][]; cut: boolean } => {
-	const { segs, cut } = headerSegs(view);
-	return {
-		lines: [
-			segs,
-			nowSegs(graph, seen, view),
-			lastSegs(graph, seen, view.concert.status !== "running"),
-		],
-		cut,
-	};
-};
-
-/** The footer's hint for a cut header, naming where the whole title is. */
-const cutHint = ({ id, unique }: View["concert"]) =>
-	`title: maestro ls ${shownId(id, unique)} --json`;
+): Seg[][] => [
+	headerSegs(view),
+	nowSegs(graph, seen, view),
+	lastSegs(graph, seen, view.concert.status !== "running"),
+];
 
 /** Lines the frame holds beside its rows: the header, `now`, `last` and the footer. */
 const CHROME_LINES = 4;
@@ -653,19 +644,11 @@ export function frame(ir: Ir, seen: Seen, view: View, agents: Agents): string {
 	}).map((row) => ({ ...row, t: textsOf(row) }));
 	const widths = widthsOf(rows);
 	const lines = fitted(rows, view.rows - FREE_LINES - CHROME_LINES);
-	const hid = lines.filter((l) => l.type === "row").length < rows.length;
-	const { id, unique } = view.concert;
 	const states = leavesOf(graph, seen).map((s) => s.state);
-	const head = headSegs(graph, seen, view);
-	const hint = hid
-		? `every row: maestro ls ${shownId(id, unique)}`
-		: head.cut
-			? cutHint(view.concert)
-			: "";
 	return [
-		...head.lines,
+		...headSegs(graph, seen, view),
 		...lines.map((l) => lineSegs(l, widths)),
-		footerSegs(states, view, hint),
+		footerSegs(states, view),
 	]
 		.map((segs) => painted(segs, view.color, view.columns - 1))
 		.join("\n");
@@ -793,13 +776,10 @@ export function browse(
 	const range = `rows ${nav.top + 1}–${Math.min(rows.length, nav.top + body)} of ${rows.length}`;
 	const paint = (segs: readonly Seg[]) =>
 		painted(segs, view.color, view.columns - 1);
-	const head = headSegs(graph, seen, view);
-	const hint =
-		rows.length > body ? range : head.cut ? cutHint(view.concert) : "";
 	const lines = [
-		...head.lines.map(paint),
+		...headSegs(graph, seen, view).map(paint),
 		...viewportLines(rows, nav, body, view),
-		paint(footerSegs(states, view, hint)),
+		paint(footerSegs(states, view, rows.length > body ? range : "")),
 		...detailSegs(rows[nav.index]).map(paint),
 		paint(keySegs(nav, settled, view.columns - 1)),
 	];

@@ -137,9 +137,9 @@ flowchart TD
 ### Frame
 
 `frame(ir, seen, view, agents)` is the plain view: a header, `now`, `last`, the rows and a footer of counts and tokens.
-On a narrow terminal the header cuts its label and title with `…`. It keeps the short id, status and elapsed time while
-they fit. The footer then points at `maestro ls <short id> --json`. The every-row hint or the browse row range keeps the
-slot first. A footer too wide cuts its counts and tokens before its hint.
+On a narrow terminal the header cuts its label and title with `…`, then leaves them out. It keeps the short id, status
+and elapsed time while they fit. No hint points at the whole title. A footer whose counts do not fit in words counts by
+glyph, as `● 1 · ✓ 1 · ! 1`, and drops its leading rule before it cuts a count.
 
 ```text
 ● fixtures.fanout-fanin-loop  "greeting"  kswoykny   running  1m04s
