@@ -83,7 +83,8 @@ figure fits, say the shape in a sentence.
 ## Evidence
 
 Nothing ran for you here: the gate passed before you, so cite the tests the patches add or the tester's map names, never
-a run you did not see.
+a run you did not see. Never paste or describe terminal output a transcript holds: the tick shows the transcripts above
+your body.
 
 - **Direct:** Before is what the issue asked for, failing or missing. After names the test that now pins it, as
   pseudocode of its inputs and outcome, or the command output that shows it. Give one pair for the change the issue

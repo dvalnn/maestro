@@ -18,6 +18,7 @@ import {
 	type Triage as Routed,
 	replyHow,
 	requestOf,
+	seenSection,
 	shorthand,
 	tracked,
 	turnLines,
@@ -863,5 +864,40 @@ test("a question comment sets ahead between blank lines after the last question 
 			"<sub>How.</sub>",
 			"",
 		].join("\n"),
+	);
+});
+
+test("the what-the-user-sees section holds a picture and a diff per transcript by name, a diff alone when none was drawn, a pointer for a long diff, and nothing when nothing moved", () => {
+	const long = Array.from({ length: 201 }, (_, i) => `+ ${i}`).join("\n");
+	const section = seenSection([
+		{ name: "b", diff: "- old\n+ ``` new\n" },
+		{ name: "a", picture: "https://x/a.png", diff: long },
+		{ name: "c", picture: "https://x/c.png", diff: "" },
+	]);
+	expect(section).toStartWith("## What the user sees\n");
+	// By name, a picture before its text, a long diff as a pointer, and a fence longer than the diff's own.
+	expect(section).toMatch(
+		/!\[a\]\(https:\/\/x\/a\.png\)\n\na as text: over 200 lines[^\n]*\n\n<details><summary>b[^\n]*<\/summary>\n\n````diff\n- old\n\+ ``` new\n````\n\n<\/details>\n\n!\[c\]\(https:\/\/x\/c\.png\)$/,
+	);
+	expect(seenSection([])).toBe("");
+	// The limit itself still shows.
+	const atLimit = Array.from({ length: 200 }, (_, i) => `+ ${i}`).join("\n");
+	expect(seenSection([{ name: "a", diff: atLimit }])).toContain("+ 199\n```");
+});
+
+test("a PR body places the what-the-user-sees section after the draft notice and before the body, written or built", () => {
+	const landed = {
+		issue: 5,
+		spend: [SPENT],
+		risk: "low",
+		result: ready,
+		notice: "Draft: x.",
+		userSees: "## What the user sees",
+	} as const;
+	expect(pullBody({ ...landed, pr: "## Summary" })).toStartWith(
+		"Draft: x.\n\n## What the user sees\n\n## Summary",
+	);
+	expect(pullBody(landed)).toStartWith(
+		"Draft: x.\n\n## What the user sees\n\nCloses #5",
 	);
 });

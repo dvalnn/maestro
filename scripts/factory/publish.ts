@@ -1,4 +1,5 @@
 // Landing a slice's change as its PR to `main` (factory.md, Rules, Landing and PRs).
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isSlice, tourOf } from "./concerts";
 import {
@@ -10,7 +11,14 @@ import {
 } from "./forge";
 import type { Report, Spend } from "./maestro";
 import { riskOf } from "./pick";
-import { type Data, dataOf, pullBody, specCommentOf } from "./route";
+import {
+	type Data,
+	dataOf,
+	type Moved,
+	pullBody,
+	seenSection,
+	specCommentOf,
+} from "./route";
 import {
 	BASE,
 	branchOf,
@@ -79,8 +87,14 @@ async function inWorkspace(
 /** Forgejo's draft marker: a title with it opens a draft, which the forge refuses to merge. */
 const DRAFT_PREFIX = "WIP: ";
 
-/** A PR's title and body, and whether it is a draft, which holds it unarmed. */
-type PullText = Pick<NewPull, "title" | "body"> & { draft: boolean };
+/**
+ * A PR's title and body, and whether it is a draft, which holds it unarmed. `seen` is the directory of transcripts the
+ * slice drew, and the body with a "What the user sees" section in it.
+ */
+type PullText = Pick<NewPull, "title" | "body"> & {
+	draft: boolean;
+	seen?: { dir: string; bodyWith(section: string): string };
+};
 
 /** What each slice concert of `issue`'s tour spent, oldest first, the one still running left out. */
 async function spendOf(tick: Tick, issue: Issue) {
@@ -103,7 +117,7 @@ function pullText(
 ) {
 	const result = data.result;
 	if (!result?.spec) throw new Error(`#${issue.number} holds no spec`);
-	const body = pullBody({
+	const landed = {
 		issue: issue.number,
 		spend,
 		risk: riskOf(issue, result.risk),
@@ -111,11 +125,17 @@ function pullText(
 		result,
 		pr: report.pr,
 		notice: report.notice,
-	});
+	};
 	return {
 		title: result.spec.subject,
-		body,
+		body: pullBody(landed),
 		draft: report.draft === true,
+		seen: report.seen
+			? {
+					dir: report.seen,
+					bodyWith: (userSees: string) => pullBody({ ...landed, userSees }),
+				}
+			: undefined,
 	};
 }
 
@@ -181,7 +201,8 @@ async function answer(tick: Tick, { data }: Entry, id: string, pull: number) {
 
 /**
  * Pushes `commit` of slice `id` from `dir` as `entry`'s branch and opens or rewrites its PR, a draft when `draft`,
- * answers its reviewers when it revised the PR, then arms a low one unless it is a draft.
+ * shows the transcripts it moved in its body, answers its reviewers when it revised the PR, then arms a low one unless
+ * it is a draft.
  */
 async function publish(
 	tick: Tick,
@@ -189,11 +210,17 @@ async function publish(
 	id: string,
 	dir: string,
 	commit: string,
-	{ draft, ...pull }: NewPull & Pick<PullText, "draft">,
+	{ draft, seen, ...pull }: NewPull & Omit<PullText, "title" | "body">,
 ) {
 	await tick.forge.push(dir, commit, pull.head);
 	const title = draft ? `${DRAFT_PREFIX}${pull.title}` : pull.title;
 	const number = await openPull(tick.forge, { ...pull, title });
+	// The pictures are attached to the PR, so its body takes their section once it exists.
+	const section = seen
+		? seenSection(await attachMoved(tick.forge, seen.dir, number))
+		: "";
+	if (seen && section)
+		await tick.forge.editPull(number, title, seen.bodyWith(section));
 	// Answering before arming keeps a PR merged at once open for it, and before recording lets a tick cut while
 	// answering land and answer again.
 	if (entry.data.revisionBase) await answer(tick, entry, id, number);
@@ -204,6 +231,34 @@ async function publish(
 	)
 		await tick.forge.arm(number);
 	return number;
+}
+
+/**
+ * The transcripts in the `seen` directory `dir`, each picture attached to PR `pull`. A sandbox wrote `dir`, so only its
+ * regular files are read: a link there could name any file of the host.
+ */
+async function attachMoved(forge: Forge, dir: string, pull: number) {
+	const files = readdirSync(dir, { withFileTypes: true })
+		.filter((f) => f.isFile())
+		.map((f) => f.name);
+	const names = new Set(
+		files.flatMap((f) => /^(.+)\.(?:diff|png)$/.exec(f)?.[1] ?? []),
+	);
+	return Promise.all(
+		[...names].map(async (name): Promise<Moved> => {
+			const png = `${name}.png`;
+			const diff = `${name}.diff`;
+			return {
+				name,
+				picture: files.includes(png)
+					? await forge.attach(pull, join(dir, png))
+					: undefined,
+				diff: files.includes(diff)
+					? readFileSync(join(dir, diff), "utf8")
+					: undefined,
+			};
+		}),
+	);
 }
 
 /** Writes `entry`'s landed slice `concert` back: `in-review` with its PR `pull`. */

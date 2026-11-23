@@ -93,6 +93,26 @@ test("the account comes from one GET /user, with a fallback name and email", asy
 	]);
 });
 
+test("attaching a file posts it as the attachment field of a multipart form, named, and returns its download URL", async () => {
+	const png = join(dir, "a.png");
+	writeFileSync(png, "pixels");
+	const { calls, send } = recording(() => [
+		201,
+		{ browser_download_url: "https://forge.example/attachments/u" },
+	]);
+	const url = await withShims(() => forge(signedIn, send).attach(30, png));
+	expect(url).toBe("https://forge.example/attachments/u");
+	expect(calls[0]?.url).toEndWith(
+		"/repos/owner/repo/issues/30/assets?name=a.png",
+	);
+	expect(calls[0]?.init.method).toBe("POST");
+	const headers = calls[0]?.init.headers as Record<string, string>;
+	expect(headers["Content-Type"]).toBeUndefined();
+	const form = calls[0]?.init.body as FormData;
+	const file = form.get("attachment") as File;
+	expect([file.name, await file.text()]).toEqual(["a.png", "pixels"]);
+});
+
 test.each([
 	"git@forge.example:owner/repo.git",
 	"ssh://git@forge.example:2222/owner/repo.git",

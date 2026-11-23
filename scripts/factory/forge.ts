@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import { isJson, type Json } from "./json";
 
 const REPO = resolve(import.meta.dir, "../..");
@@ -109,6 +109,8 @@ export type Forge = {
 	openPull(pull: NewPull): Promise<number>;
 	/** Sets `pull`'s title and body. */
 	editPull(pull: number, title: string, body: string): Promise<void>;
+	/** Attaches the file at `path` to issue or PR `number` and returns the URL it is served at. */
+	attach(number: number, path: string): Promise<string>;
 	/** Has the forge fast-forward `main` to `pull` once its required checks pass, unless that is already armed. */
 	arm(pull: number): Promise<void>;
 	/** The reviews of `pull`, oldest first. */
@@ -214,6 +216,7 @@ async function call(
 	body?: unknown,
 	repoScoped = true,
 ) {
+	const form = body instanceof FormData;
 	const { host, owner, repo, token } = await creds();
 	const base = `https://${host}/api/v1`;
 	const response = await send(
@@ -223,9 +226,10 @@ async function call(
 			headers: {
 				Authorization: `token ${token}`,
 				Accept: "application/json",
-				...(body ? { "Content-Type": "application/json" } : {}),
+				// A form carries its own multipart boundary in its content type.
+				...(body && !form ? { "Content-Type": "application/json" } : {}),
 			},
-			body: body ? JSON.stringify(body) : undefined,
+			body: form ? body : body ? JSON.stringify(body) : undefined,
 		},
 	);
 	const out = await response.text();
@@ -543,6 +547,18 @@ export function forge(
 			num(object(await api("POST", "/pulls", pull), "pull"), "number"),
 		editPull: async (pull, title, body) => {
 			await api("PATCH", `/pulls/${pull}`, { title, body });
+		},
+		attach: async (number, path) => {
+			const form = new FormData();
+			form.set(
+				"attachment",
+				new File([await Bun.file(path).bytes()], basename(path)),
+			);
+			const url = `/issues/${number}/assets?${query({ name: basename(path) })}`;
+			return text(
+				object(await api("POST", url, form), "attachment"),
+				"browser_download_url",
+			);
 		},
 		arm: async (pull) => {
 			try {

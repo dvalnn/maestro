@@ -734,6 +734,8 @@ export type Landed = {
 	pr?: string;
 	/** The draft notice, which opens the body. */
 	notice?: string;
+	/** The "What the user sees" section, which follows the notice. */
+	userSees?: string;
 };
 
 const THOUSAND = 1_000;
@@ -872,14 +874,55 @@ function writtenBody(landed: Landed, pr: string) {
 }
 
 /**
- * The PR body of a landed slice (factory.md, Rules, Landing and PRs: PRs), led by its draft notice when it has one: the
- * writer's followed by the tick's sections, else one built from the tick's data alone, with the subject and each decision's lead as Summary, the
- * gate as green with the review's upheld count as Evidence, then the unresolved review, risk and
- * spend.
+ * The PR body of a landed slice (factory.md, Rules, Landing and PRs: PRs), led by its draft notice when it has one, then
+ * by what the user sees when a transcript moved: the writer's followed by the tick's sections, else one built from the
+ * tick's data alone, with the subject and each decision's lead as Summary, the gate as green with the review's upheld
+ * count as Evidence, then the unresolved review, risk and spend.
  */
 export function pullBody(landed: Landed) {
 	const body = landed.pr ? writtenBody(landed, landed.pr) : builtBody(landed);
-	return landed.notice ? `${landed.notice}\n\n${body}` : body;
+	return [landed.notice, landed.userSees, body].filter(Boolean).join("\n\n");
+}
+
+/** A transcript the change moved: its text `diff` and the URL of its `picture`, each when the sandbox drew it. */
+export type Moved = { name: string; diff?: string; picture?: string };
+
+const SEEN_DIFF_MAX = 200;
+
+/** The details block of one moved transcript, or a line pointing to the Files tab when its diff is too long. */
+function seenText({ name, diff }: Moved) {
+	const text = diff?.trimEnd();
+	// A change of color alone leaves an empty diff.
+	if (!text) return [];
+	if (text.split("\n").length > SEEN_DIFF_MAX)
+		return [
+			`${name} as text: over ${SEEN_DIFF_MAX} lines, see the transcript in the Files tab.`,
+		];
+	return [
+		`<details><summary>${name} as text</summary>`,
+		"",
+		fenced(text, "diff"),
+		"",
+		"</details>",
+	];
+}
+
+/** The "What the user sees" section for the `moved` transcripts, by name; empty when none moved. */
+export function seenSection(moved: readonly Moved[]) {
+	if (!moved.length) return "";
+	const shown = [...moved].sort((a, b) => (a.name < b.name ? -1 : 1));
+	return [
+		"## What the user sees",
+		"",
+		"The transcripts this change moved, the base's on the left, drawn in the concert's sandbox by `just pictures`.",
+		...shown.flatMap((m) => [
+			"",
+			...(m.picture ? [`![${m.name}](${m.picture})`, ""] : []),
+			...seenText(m),
+		]),
+	]
+		.join("\n")
+		.trimEnd();
 }
 
 /** The PR body built from the tick's data alone. */

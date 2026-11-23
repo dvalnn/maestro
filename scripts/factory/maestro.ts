@@ -66,6 +66,8 @@ export type Report = {
 	delivered?: number;
 	/** The PR body the slice's writer wrote. */
 	pr?: string;
+	/** The directory of transcript pictures and diffs the slice drew, when the concert has one. */
+	seen?: string;
 	/** A review, and the findings the review upheld. */
 	review?: string;
 	blocking?: string[];
@@ -223,14 +225,20 @@ function testsOf(agents: readonly Json[]): Report["tests"] {
 const outputOf = (doc: unknown, name: string) =>
 	isJson(doc) && isJson(doc.outputs) ? doc.outputs[name] : undefined;
 
-/** The text of output `name` of a `wait <concert> --json` document, under the concert's `artifacts`, trimmed. */
-function outputText(doc: unknown, name: string): string | undefined {
+/** The path of output `name` of a `wait <concert> --json` document, under the concert's `artifacts`, when it exists. */
+function outputPath(doc: unknown, name: string): string | undefined {
 	if (!isJson(doc) || typeof doc.artifacts !== "string") return undefined;
 	const output = isJson(doc.outputs) ? doc.outputs[name] : undefined;
 	if (!isJson(output) || typeof output.path !== "string") return undefined;
 	const path = join(doc.artifacts, output.path);
-	return existsSync(path) ? readFileSync(path, "utf8").trim() : undefined;
+	return existsSync(path) ? path : undefined;
 }
+
+/** The text of output `name` of a `wait <concert> --json` document, trimmed. */
+const outputText = (doc: unknown, name: string) => {
+	const path = outputPath(doc, name);
+	return path && readFileSync(path, "utf8").trim();
+};
 
 /** The body of the `upheld` output of a `wait <concert> --json` document, under its heading. */
 const upheldOf = (doc: unknown) =>
@@ -459,6 +467,7 @@ export function maestro(bin = "maestro"): Maestro {
 				delivered: deliveredOf(result),
 				notice: outputText(result, "notice") || undefined,
 				pr: prOf(result),
+				seen: outputPath(result, "seen"),
 				review: outputText(result, "review"),
 				blocking: blockingOf(result),
 				tests: testsOf(agents),

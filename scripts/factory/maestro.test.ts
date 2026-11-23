@@ -90,10 +90,10 @@ esac
 case "$1 $2" in
 	"ls --status") echo '[{"id":"r1","status":"running","pack":"slice","composition":"slice","tour":"v1.i1"},{"id":"r2","status":"running","pack":"triage","composition":"triage","tour":"v2.i3"}]' ;;
 	"ls --tour") [ "$6" = "--composition" ] && by="-$7"; echo '[{"id":"l'"$5$by"'","status":"ok","pack":"slice","composition":"slice","tour":"'"$3"'.i1","startedAt":10,"settledAt":25}]' ;;
-	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"draft":true,"delivered":2,"notice":{"path":"notice.md"},"pr":{"path":"pr.md"}}}' ;;
+	"wait c2") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"},"draft":true,"delivered":2,"notice":{"path":"notice.md"},"pr":{"path":"pr.md"},"seen":{"path":"seen"}}}' ;;
 	"wait c4") echo '{"status":"rejected","artifacts":"${dir}","outputs":{"review":{"path":"review.md"},"upheld":[{"id":"F1","lens":"spec","where":"a.ts:3","issue":"A seam breaks","cites":"R1"}]}}' ;;
 	"wait c6") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"upheld.md"}}}' ;;
-	"wait c3"|"wait c5") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"},"pr":{"path":"empty.md"}}}' ;;
+	"wait c3"|"wait c5") echo '{"status":"ok","artifacts":"${dir}","outputs":{"upheld":{"path":"missing.md"},"pr":{"path":"empty.md"},"seen":{"path":"gone"}}}' ;;
 	"ls gone") echo '{"ok":false,"error":"no concert gone in the record"}' ;;
 	"ls d"*) echo '{}' ;;
 	"wait d"*) echo '{"status":"ok","outputs":{"delivered":'"\${2#d}"'}}' ;;
@@ -115,6 +115,7 @@ writeFileSync(join(dir, "notice.md"), "Draft: x\n");
 writeFileSync(join(dir, "pr.md"), "## Summary\n\nx\n");
 writeFileSync(join(dir, "review.md"), "# Review\n\nA seam breaks.\n");
 writeFileSync(join(dir, "empty.md"), "");
+mkdirSync(join(dir, "seen"));
 const fake = maestro(bin);
 
 test("reads a settled concert's result whatever wait exits with", async () => {
@@ -135,6 +136,7 @@ test("reads a concert's report: each agent's obstacles, lessons and well-formed 
 		delivered: 2,
 		notice: "Draft: x",
 		pr: "## Summary\n\nx",
+		seen: join(dir, "seen"),
 		tests: { pinned: 3, deferred: 1, untestable: 0 },
 	});
 	expect(await fake.report("c4")).toMatchObject({
@@ -216,7 +218,7 @@ test("a concert with no draft output is a draft when it upheld findings", async 
 	expect((await fake.report("c6")).draft).toBe(true);
 });
 
-test("a report whose upheld file is gone has no upheld findings, one whose PR body is empty has none, and one whose delivered is not a whole number has no count", async () => {
+test("a report whose upheld file or seen directory is gone has neither, one whose PR body is empty has none, and one whose delivered is not a whole number has no count", async () => {
 	const report = await fake.report("c3");
 	expect([
 		report.upheld,
@@ -224,7 +226,8 @@ test("a report whose upheld file is gone has no upheld findings, one whose PR bo
 		report.draft,
 		report.notice,
 		report.delivered,
-	]).toEqual([undefined, undefined, false, undefined, undefined]);
+		report.seen,
+	]).toEqual([undefined, undefined, false, undefined, undefined, undefined]);
 	const delivered = async (value: string) =>
 		(await fake.report(`d${value}`)).delivered;
 	expect(await Promise.all(["0", "1.5", '"2"'].map(delivered))).toEqual([

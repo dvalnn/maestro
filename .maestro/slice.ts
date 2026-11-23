@@ -1,8 +1,9 @@
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildChange, fixUntilClean, type Upheld } from "@maestro/classics";
 import {
 	changeset,
+	check,
 	commits,
 	MarkdownOut,
 	read,
@@ -104,8 +105,9 @@ const noticeLines = (upheld: number, held: string[], unreviewed: boolean) => [
 
 /**
  * The changeset, the last round's upheld findings as `upheld.md`, whether the PR is a draft with its notice, the
- * writer's PR body, unchanged, and the `delivered` count, when the changeset holds a patch; the body is empty when the
- * writer delivered none.
+ * writer's PR body, unchanged, the `delivered` count and the `seen` directory of transcript pictures, when the
+ * changeset holds a patch; the body is empty when the writer delivered none, and `seen` empty when the check that draws
+ * it did not settle ok.
  * A rejection when the changeset holds no patch, so the slice settles `rejected`.
  * - `draft` is true when the last review's `delivered` is 0, findings remain upheld, or the patches, or those
  *   of the PR `revised`, touch `docs/rulings.md` or `docs/adr/`.
@@ -118,12 +120,14 @@ export function requirePatch(
 		upheld,
 		delivered,
 		written,
+		seen,
 	}: {
 		changeset: ArtifactRef;
 		revised?: ArtifactRef;
 		upheld: Held[];
 		delivered: number;
 		written: Settled<ArtifactRef>[];
+		seen: Settled<ArtifactRef>[];
 	},
 	ctx: CodeContext,
 ) {
@@ -143,8 +147,12 @@ export function requirePatch(
 	const notice = join(ctx.scratch, "notice.md");
 	writeFileSync(notice, lines.length ? `${lines.join("\n")}\n` : "");
 	const draft = lines.length > 0;
+	const drawn = seen[0];
+	const nothing = join(ctx.scratch, "seen");
+	if (drawn?.outcome !== "ok") mkdirSync(nothing, { recursive: true });
 	const outputs = {
 		changeset,
+		seen: drawn?.outcome === "ok" ? drawn.value : nothing,
 		upheld: file,
 		draft,
 		notice,
@@ -173,8 +181,9 @@ export const slice = composition(
 			"Under a preset that sets classics.build.testFirst, a tester writes the spec's tests first and the build starts from them.",
 			"Each round repairs until the target's checks pass, then reviews; up to maxFixes fix rounds follow.",
 			"Leaves the changeset, the findings the last review upheld, whether the PR is a draft with its notice, and a",
-			"writer's PR body: over the PR it revises when given, empty when the writer failed, and how many lenses the last",
-			"review delivered. Fails when the changeset holds no patch.",
+			"writer's PR body: over the PR it revises when given, empty when the writer failed, how many lenses the last",
+			"review delivered, and the transcript pictures `just pictures` draws of the change in the review's sandbox, an empty",
+			"directory when that failed. Fails when the changeset holds no patch.",
 		].join("\n"),
 		params: {
 			request: Text({ description: "The brief: what to build" }),
@@ -232,6 +241,18 @@ export const slice = composition(
 			out: { pr: MarkdownOut("pr.md") },
 			tolerate: "rejected",
 		});
+		const seen = check(
+			read(reviewed.out.lane),
+			{
+				// A revision's lane is cut from the PR it revises, so the base is that PR's: its first commit's parent.
+				run: revises
+					? 'just pictures "$MAESTRO_CHECK_OUTPUT" "$(git rev-list --reverse "$REVISES" | head -n 1)^"'
+					: 'just pictures "$MAESTRO_CHECK_OUTPUT" "$MAESTRO_LANE_BASE"',
+				timeout: "10m",
+				...(revises && { env: { REVISES: revises } }),
+			},
+			{ label: "seen", tolerate: "rejected" },
+		);
 		return code(requirePatch, {
 			in: {
 				changeset: changes,
@@ -239,6 +260,7 @@ export const slice = composition(
 				upheld: reviewed.out.upheld,
 				delivered: reviewed.out.delivered,
 				written: allSettled([written.out.pr], { label: "written" }),
+				seen: allSettled([seen.out.output], { label: "seen_settled" }),
 			},
 			out: {
 				changeset: Dir(),
@@ -247,6 +269,7 @@ export const slice = composition(
 				notice: Markdown(),
 				pr: Markdown(),
 				delivered: Int(),
+				seen: Dir(),
 			},
 			label: "result",
 			tolerate: "rejected",

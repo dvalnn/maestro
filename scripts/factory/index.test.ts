@@ -5,6 +5,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1587,6 +1588,50 @@ describe("a build", () => {
 		await t.run();
 		expect(t.writes).toHaveLength(writes);
 	});
+
+	const ATTACHED = "https://forge.example/attachments/a.png";
+	test.each([
+		[
+			"a picture and a diff",
+			["a.png", "a.diff", "a.svg"],
+			`![a](${ATTACHED})\n\n<details>`,
+		],
+		["a diff and no picture", ["a.diff", "a.svg"], "```diff\n- old"],
+		["nothing a transcript moved", ["a.svg"], undefined],
+		// The sandbox wrote the directory: a link in it is never followed to a file of the host.
+		["only links", ["a.svg", "link:a.png", "link:a.diff"], undefined],
+	])(
+		"with %s in the slice's seen directory, the PR takes its pictures and a body that opens with the section, and with none the PR is not rewritten",
+		async (_, files, opens) => {
+			const seen = mkdtempSync(join(tmpdir(), "factory-seen-"));
+			const secret = join(mkdtempSync(join(tmpdir(), "factory-host-")), "s");
+			writeFileSync(secret, "+ secret\n");
+			for (const f of files)
+				if (f.startsWith("link:")) symlinkSync(secret, join(seen, f.slice(5)));
+				else writeFileSync(join(seen, f), "- old\n+ new\n");
+			const t = setup(
+				[specced(7, "in-progress", { slice: "s1" })],
+				[sliceConcert("s1", 7)],
+				{ s1: { status: "ok", outputs: {} } },
+				undefined,
+				{
+					reports: { s1: { ...NO_REPORT, draft: true, notice: NOTICE, seen } },
+				},
+			);
+			await t.run();
+			expect(t.writes.filter((w) => /^(attach|rewrite)/.test(w))).toEqual([
+				...(files.includes("a.png") ? ["attach #30 a.png"] : []),
+				...(opens ? ["rewrite #30: WIP: feat: greet by name"] : []),
+			]);
+			const body = t.pulls.find((p) => p.number === FIRST_PULL)?.body ?? "";
+			expect(body.startsWith(`${NOTICE}\n\n## What the user sees`)).toBe(
+				opens !== undefined,
+			);
+			expect(body).toContain(opens ?? "");
+			expect(body.includes("![a](")).toBe(files.includes("a.png"));
+			expect(body).not.toContain("secret");
+		},
+	);
 
 	test.each([
 		[

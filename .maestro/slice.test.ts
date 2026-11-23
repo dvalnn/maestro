@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	type ArtifactRef,
@@ -119,6 +119,7 @@ type Node = {
 type Edge = {
 	from: { node: string; port?: string };
 	to: { node: string; port?: string };
+	tolerate?: string;
 };
 
 /** The plan and agents of `.maestro/slice.ts` composed under the `presets`, with `flags` after its request. */
@@ -235,6 +236,18 @@ test.each([
 		expect(nodes.find((n) => n.id === "result")?.out).toHaveProperty(
 			"delivered",
 		);
+		expect(nodes.find((n) => n.id === "result")?.out).toHaveProperty("seen");
+		// Against the lane's base, and under --revises against the base of the PR revised.
+		expect(JSON.stringify(nodes.find((n) => n.id === "seen"))).toContain(
+			flags.length
+				? '"env":{"REVISES":"HEAD^!"},"run":"just pictures \\"$MAESTRO_CHECK_OUTPUT\\" \\"$(git rev-list --reverse \\"$REVISES\\" | head -n 1)^\\""'
+				: 'just pictures \\"$MAESTRO_CHECK_OUTPUT\\" \\"$MAESTRO_LANE_BASE\\"',
+		);
+		// `seen` reads the lane the writer reads, and runs though the review rejected.
+		expect(from(edges, "seen", "lane")).toEqual(from(edges, "writer", "lane"));
+		expect(
+			edges.some((e) => e.to.node === "seen" && e.tolerate === "rejected"),
+		).toBe(true);
 		const writer = nodes.find((n) => n.id === "writer");
 		expect(Object.keys(writer?.config.attachments ?? {}).sort()).toEqual(
 			attached,
@@ -321,8 +334,9 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		written: Settled<ArtifactRef>[],
 		upheld: Parameters<typeof requirePatch>[0]["upheld"] = [],
 		delivered = 1,
+		seen: Settled<ArtifactRef>[] = [{ outcome: "failed", reason: "x" }],
 	) =>
-		requirePatch({ changeset: ref, upheld, delivered, written }, {
+		requirePatch({ changeset: ref, upheld, delivered, written, seen }, {
 			path: () => dir,
 			scratch: ctx,
 		} as unknown as CodeContext);
@@ -334,7 +348,12 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		notice: join(ctx, "notice.md"),
 		pr,
 		delivered: 1,
+		seen: join(ctx, "seen"),
 	});
+	expect(readdirSync(join(ctx, "seen"))).toEqual([]);
+	expect(run(patched, [], [], 1, [{ outcome: "ok", value: pr }])).toMatchObject(
+		{ seen: pr },
+	);
 	expect(readFileSync(join(ctx, "notice.md"), "utf8")).toBe("");
 	expect(readFileSync(upheldFile, "utf8")).toBe("# Upheld findings\n\nNone.\n");
 	const failed = run(patched, [{ outcome: "failed", reason: "x" }]);
@@ -345,6 +364,7 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		notice: join(ctx, "notice.md"),
 		pr: join(ctx, "pr.md"),
 		delivered: 1,
+		seen: join(ctx, "seen"),
 	});
 	expect(readFileSync(join(ctx, "pr.md"), "utf8")).toBe("");
 	expect(run(patched, [], [], 0)).toMatchObject({
@@ -398,6 +418,7 @@ test("requirePatch drafts a change that leaves findings upheld, edits a held pat
 				upheld,
 				delivered,
 				written: [],
+				seen: [],
 			},
 			{
 				path: (ref: ArtifactRef) => (ref.path === "r" ? earlier : dir),

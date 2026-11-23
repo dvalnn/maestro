@@ -1,5 +1,5 @@
 // The test fakes of the tick's ports: the forge, maestro and the landing, in memory.
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type {
 	Comment,
 	Forge,
@@ -152,6 +152,10 @@ export function fakeForge(
 			write(`rewrite #${n}: ${title}`);
 			const pull = pulls.find((p) => p.number === n);
 			if (pull) Object.assign(pull, { title, body });
+		},
+		attach: async (n, path) => {
+			write(`attach #${n} ${basename(path)}`);
+			return `https://forge.example/attachments/${basename(path)}`;
 		},
 		arm: async (n) => write(`arm #${n}`),
 		reviews: async (n) => reviews[n] ?? [],
