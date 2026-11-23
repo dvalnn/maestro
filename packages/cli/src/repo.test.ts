@@ -364,6 +364,7 @@ export const listing = composition("listing", { examples: [{}] }, () => {
 	const stepKeys = [
 		"name",
 		"node",
+		"kind",
 		"expansion",
 		"status",
 		"stale",

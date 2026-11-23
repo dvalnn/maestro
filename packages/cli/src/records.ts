@@ -3,7 +3,13 @@ import {
 	type ConcertRecord,
 	openRecord,
 } from "@maestro/core/perform";
-import { compact, DURATION_EXAMPLE, MS_PER_UNIT, tokensOf } from "@maestro/ir";
+import {
+	compact,
+	DURATION_EXAMPLE,
+	type Ir,
+	MS_PER_UNIT,
+	tokensOf,
+} from "@maestro/ir";
 import {
 	agentText,
 	cutTo,
@@ -445,7 +451,7 @@ type TextLookup = ReturnType<typeof hostTextOf>;
  * A step's row in `ls <concert> --json`, which leads its `ls <concert> <instance> --json` document: `elapsedMs` is its
  * run time, up to now while it runs, and who ran it and its notes are left out when its host gives none.
  */
-function stepRow(i: Step, hostText: TextLookup) {
+function stepRow(i: Step, ir: Ir, hostText: TextLookup) {
 	const notes = i.stale ? {} : notesOf(i.enrichment, i.node, hostText);
 	const elapsedMs =
 		i.startedAt === undefined
@@ -454,6 +460,7 @@ function stepRow(i: Step, hostText: TextLookup) {
 	return {
 		name: i.name,
 		node: i.node,
+		kind: ir.nodes.find((n) => n.id === i.node)?.kind,
 		expansion: i.expansion,
 		status: i.status,
 		stale: i.stale,
@@ -478,7 +485,7 @@ function stepDetail(row: ConcertRecord, i: Step, hostText: TextLookup) {
 		path: ref.path,
 	}));
 	return {
-		...stepRow(i, hostText),
+		...stepRow(i, row.ir, hostText),
 		metrics: i.metrics,
 		report: i.stale ? undefined : reportOf(i.enrichment, i.node, hostText),
 		outputs: valuesOf(row.ir, i.node, i.outputs, hostText),
@@ -488,7 +495,15 @@ function stepDetail(row: ConcertRecord, i: Step, hostText: TextLookup) {
 	};
 }
 
-/** Concert `row`'s `ls <concert> --json` document: its `ls --json` row, its metrics and a row per step. */
+/** The nodes of `ir` no step names, in IR node order. */
+function pendingOf(ir: Ir, steps: readonly Step[]) {
+	const named = new Set(steps.map((i) => i.node));
+	return ir.nodes
+		.filter((n) => !named.has(n.id))
+		.map((n) => ({ id: n.id, kind: n.kind }));
+}
+
+/** Concert `row`'s `ls <concert> --json` document: its `ls --json` row, its metrics and a row per step and the `pending` nodes with none. */
 function concertListing(
 	stored: Stored,
 	row: ConcertRecord,
@@ -503,7 +518,8 @@ function concertListing(
 		...listRow(store, row, short, notes),
 		changeset,
 		metrics: store.metrics(row.id),
-		instances: steps.map((i) => stepRow(i, hostText)),
+		instances: steps.map((i) => stepRow(i, row.ir, hostText)),
+		pending: pendingOf(row.ir, steps),
 	};
 }
 
@@ -557,7 +573,7 @@ async function instancesOf(stored: Stored, prefix: string, which?: string) {
 	);
 	const noted = instances.map((i) => ({
 		name: i.name,
-		notes: stepRow(i, hostText).notes ?? {},
+		notes: stepRow(i, row.ir, hostText).notes ?? {},
 	}));
 	const notes = notesLines(noted, short, color, columns);
 	session.deps.stdout([text, ...notes].join("\n"));

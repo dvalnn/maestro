@@ -3420,7 +3420,7 @@ describe("the record", () => {
 	});
 
 	// Seam: the concert document and step rows printed by ls --json, not the record's columns.
-	test("ls <concert> --json contains only the concert row, metrics and step rows", async () => {
+	test("ls <concert> --json contains only the concert row, metrics, step rows and pending nodes", async () => {
 		const w = await world();
 		const notes = { Lessons: ["keep the listing small"] };
 		const host: Host = {
@@ -3454,7 +3454,7 @@ describe("the record", () => {
 		expect(shown.err).toBe("");
 		const doc = json(shown);
 		expect(Object.keys(doc).sort()).toEqual(
-			[...LIST_ROW, "metrics", "instances"].sort(),
+			[...LIST_ROW, "metrics", "instances", "pending"].sort(),
 		);
 		expect(doc).toMatchObject({
 			id,
@@ -3483,6 +3483,7 @@ describe("the record", () => {
 			[
 				"name",
 				"node",
+				"kind",
 				"expansion",
 				"status",
 				"stale",
@@ -3512,6 +3513,7 @@ describe("the record", () => {
 			[
 				"name",
 				"node",
+				"kind",
 				"expansion",
 				"status",
 				"stale",
@@ -3547,6 +3549,74 @@ describe("the record", () => {
 		expect(performed.code).toBe(0);
 		return { w, host, id: idOf(performed) };
 	}
+
+	test("ls <concert> --json gives each instance its recorded node kind", async () => {
+		const { w, host, id } = await loopFanConcert();
+		const shown = await w.call(["ls", id, "--json"], { hosts: [host] });
+		expect(shown.code).toBe(0);
+		expect(json(shown).instances).toMatchObject([
+			{ node: "init", kind: "fake.task" },
+			{ node: "rounds", kind: "loop" },
+			{ node: "rounds/fan", kind: "parMap" },
+			{ node: "rounds/fan/worker", kind: "fake.task" },
+			{ node: "rounds/fan/worker", kind: "fake.task" },
+			{ node: "rounds/firstOk", kind: "code" },
+			{ node: "rounds/firstOk_text", kind: "code" },
+			{ node: "rounds/finish", kind: "fake.task" },
+			{ node: "rounds/finish_not", kind: "code" },
+		]);
+		expect(json(shown).pending).toEqual([]);
+	});
+
+	test("ls <concert> --json lists uninstantiated nodes in recorded IR order, or an empty array", async () => {
+		const w = await world();
+		const failed = await w.call(["perform", join(FIXTURES, "loop-fan.ts")]);
+		expect(failed.code).toBe(1);
+		const partial = await w.call(["ls", idOf(failed), "--json"]);
+		expect(partial.code).toBe(0);
+		const doc = json(partial);
+		expect(doc.instances).toMatchObject([
+			{ node: "init", status: "failed" },
+			{ node: "rounds", status: "skipped" },
+		]);
+		expect(doc.pending).toEqual([
+			{ id: "rounds/fan", kind: "parMap" },
+			{ id: "rounds/fan/worker", kind: "fake.task" },
+			{ id: "rounds/firstOk", kind: "code" },
+			{ id: "rounds/firstOk_text", kind: "code" },
+			{ id: "rounds/finish", kind: "fake.task" },
+			{ id: "rounds/finish_not", kind: "code" },
+		]);
+
+		const completed = await w.call(["perform", ...GREET], {
+			hosts: [hostOf()],
+		});
+		expect(completed.code).toBe(0);
+		const shown = await w.call(["ls", idOf(completed), "--json"]);
+		expect(shown.code).toBe(0);
+		expect(json(shown).pending).toEqual([]);
+	});
+
+	test("ls <concert> <instance> --json gives the same node kind as its listing row", async () => {
+		const { w, host, id } = await loopFanConcert();
+		const listing = await w.call(["ls", id, "--json"], { hosts: [host] });
+		expect(listing.code).toBe(0);
+		const instances = json(listing).instances;
+		for (const [name, kind] of [
+			["rounds", "loop"],
+			["rounds[0]/fan", "parMap"],
+			["rounds[0]/fan[lens]/worker", "fake.task"],
+			["rounds[0]/firstOk", "code"],
+		] as const) {
+			const row = instances.find((i: { name: string }) => i.name === name);
+			const result = await w.call(["ls", id, name, "--json"], {
+				hosts: [host],
+			});
+			expect(result.code).toBe(0);
+			expect(json(result).kind).toBe(kind);
+			expect(row.kind).toBe(kind);
+		}
+	});
 
 	test("ls --json names each instance as ls <concert> <instance> takes it, including a fan-out inside a loop", async () => {
 		const { w, host, id } = await loopFanConcert();
