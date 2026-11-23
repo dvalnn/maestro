@@ -40,6 +40,10 @@ test *paths:
     for path in "$@"; do
       case "$path" in
         /* | ./*) targets+=("$path") ;;
+        -*)
+          echo "just test takes test file paths, not flags; run bun test <file> -t <pattern> to pick tests by name" >&2
+          exit 2
+          ;;
         *) targets+=("./$path") ;;
       esac
     done
