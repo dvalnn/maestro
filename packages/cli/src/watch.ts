@@ -358,7 +358,7 @@ async function polled(
 	let row = first;
 	let cursor = 0;
 	let quitting = false;
-	void quit?.then(() => {
+	const quits = (quit ?? new Promise<never>(() => {})).then(() => {
 		quitting = true;
 	});
 	for (;;) {
@@ -367,7 +367,8 @@ async function polled(
 		cursor = events.at(-1)?.seq ?? cursor;
 		show(events, row);
 		if (row.status !== "running") return row;
-		await Bun.sleep(WATCH_POLL_MS);
+		// A quit ends the wait at once, so a settled concert's closing block does not wait out the poll.
+		await Promise.race([Bun.sleep(WATCH_POLL_MS), quits]);
 		if (quitting) return row;
 		row = store.find(row.id) ?? row;
 	}
