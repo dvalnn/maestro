@@ -105,9 +105,9 @@ const noticeLines = (upheld: number, held: string[], unreviewed: boolean) => [
 
 /**
  * The changeset, the last round's upheld findings as `upheld.md`, whether the PR is a draft with its notice, the
- * writer's PR body, unchanged, the `delivered` count and the `seen` directory of transcript pictures, when the
- * changeset holds a patch; the body is empty when the writer delivered none, and `seen` empty when the check that draws
- * it did not settle ok.
+ * writer's PR body, unchanged, the `delivered` count, the last `review` and the `seen` directory of transcript
+ * pictures, when the changeset holds a patch; the body is empty when the writer delivered none, and `seen` empty when
+ * the check that draws it did not settle ok, as `review` is when no consolidator ruled.
  * A rejection when the changeset holds no patch, so the slice settles `rejected`.
  * - `draft` is true when the last review's `delivered` is 0, findings remain upheld, or the patches, or those
  *   of the PR `revised`, touch `docs/rulings.md` or `docs/adr/`.
@@ -119,6 +119,7 @@ export function requirePatch(
 		revised,
 		upheld,
 		delivered,
+		review,
 		written,
 		seen,
 	}: {
@@ -126,6 +127,7 @@ export function requirePatch(
 		revised?: ArtifactRef;
 		upheld: Held[];
 		delivered: number;
+		review?: ArtifactRef;
 		written: Settled<ArtifactRef>[];
 		seen: Settled<ArtifactRef>[];
 	},
@@ -150,6 +152,8 @@ export function requirePatch(
 	const drawn = seen[0];
 	const nothing = join(ctx.scratch, "seen");
 	if (drawn?.outcome !== "ok") mkdirSync(nothing, { recursive: true });
+	const unruled = join(ctx.scratch, "review.md");
+	if (!review) writeFileSync(unruled, "");
 	const outputs = {
 		changeset,
 		seen: drawn?.outcome === "ok" ? drawn.value : nothing,
@@ -157,6 +161,7 @@ export function requirePatch(
 		draft,
 		notice,
 		delivered,
+		review: review ?? unruled,
 	};
 	const body = written[0];
 	if (body?.outcome === "ok") return { ...outputs, pr: body.value };
@@ -182,7 +187,7 @@ export const slice = composition(
 			"Each round repairs until the target's checks pass, then reviews; up to maxFixes fix rounds follow.",
 			"Leaves the changeset, the findings the last review upheld, whether the PR is a draft with its notice, and a",
 			"writer's PR body: over the PR it revises when given, empty when the writer failed, how many lenses the last",
-			"review delivered, and the transcript pictures `just pictures` draws of the change in the review's sandbox, an empty",
+			"review delivered, that review, and the transcript pictures `just pictures` draws of the change in the review's sandbox, an empty",
 			"directory when that failed. Fails when the changeset holds no patch.",
 		].join("\n"),
 		params: {
@@ -259,6 +264,7 @@ export const slice = composition(
 				revised: prior,
 				upheld: reviewed.out.upheld,
 				delivered: reviewed.out.delivered,
+				review: reviewed.out.review,
 				written: allSettled([written.out.pr], { label: "written" }),
 				seen: allSettled([seen.out.output], { label: "seen_settled" }),
 			},
@@ -269,6 +275,7 @@ export const slice = composition(
 				notice: Markdown(),
 				pr: Markdown(),
 				delivered: Int(),
+				review: Markdown(),
 				seen: Dir(),
 			},
 			label: "result",

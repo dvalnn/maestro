@@ -237,6 +237,11 @@ test.each([
 			"delivered",
 		);
 		expect(nodes.find((n) => n.id === "result")?.out).toHaveProperty("seen");
+		// The last round's review reaches the result, which leaves it as an output.
+		expect(from(edges, "result", "review")).toEqual([
+			{ node: "fix_until_clean/fixes", port: "review" },
+		]);
+		expect(nodes.find((n) => n.id === "result")?.out).toHaveProperty("review");
 		// Against the lane's base, and under --revises against the base of the PR revised.
 		expect(JSON.stringify(nodes.find((n) => n.id === "seen"))).toContain(
 			flags.length
@@ -319,7 +324,7 @@ test.each(["low", "medium", "high"])(
 	},
 );
 
-test("requirePatch returns a changeset that holds a patch, the writer's body unchanged, an empty body when the writer failed, and the delivered count, 0 included, and rejects one that holds none; it renders the upheld findings once, grouped by cite", () => {
+test("requirePatch returns a changeset that holds a patch, the writer's body unchanged, an empty body when the writer failed, the review given or an empty one, and the delivered count, 0 included, and rejects one that holds none; it renders the upheld findings once, grouped by cite", () => {
 	const made = (...files: string[]) => {
 		const dir = mkdtempSync(join(scratch, "changeset-"));
 		for (const f of files) writeFileSync(join(dir, f), "x");
@@ -327,6 +332,7 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 	};
 	const ref = { path: "c", contentHash: "sha256:0" };
 	const pr = { path: "p", contentHash: "sha256:2" };
+	const review = { path: "v", contentHash: "sha256:3" };
 	const ctx = mkdtempSync(join(scratch, "result-"));
 	const upheldFile = join(ctx, "upheld.md");
 	const run = (
@@ -336,7 +342,7 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		delivered = 1,
 		seen: Settled<ArtifactRef>[] = [{ outcome: "failed", reason: "x" }],
 	) =>
-		requirePatch({ changeset: ref, upheld, delivered, written, seen }, {
+		requirePatch({ changeset: ref, upheld, delivered, review, written, seen }, {
 			path: () => dir,
 			scratch: ctx,
 		} as unknown as CodeContext);
@@ -348,6 +354,7 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		notice: join(ctx, "notice.md"),
 		pr,
 		delivered: 1,
+		review,
 		seen: join(ctx, "seen"),
 	});
 	expect(readdirSync(join(ctx, "seen"))).toEqual([]);
@@ -364,12 +371,20 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		notice: join(ctx, "notice.md"),
 		pr: join(ctx, "pr.md"),
 		delivered: 1,
+		review,
 		seen: join(ctx, "seen"),
 	});
 	expect(readFileSync(join(ctx, "pr.md"), "utf8")).toBe("");
 	expect(run(patched, [], [], 0)).toMatchObject({
 		delivered: 0,
 	});
+	// A review no consolidator ruled leaves an empty file.
+	const unruled = requirePatch(
+		{ changeset: ref, upheld: [], delivered: 1, written: [], seen: [] },
+		{ path: () => patched, scratch: ctx } as unknown as CodeContext,
+	);
+	expect(unruled).toMatchObject({ review: join(ctx, "review.md") });
+	expect(readFileSync(join(ctx, "review.md"), "utf8")).toBe("");
 	expect(run(made("base"), [])).toEqual(reject("the slice changed nothing"));
 
 	run(

@@ -422,20 +422,22 @@ flowchart TD
   held, titled with the spec's subject, to `main`. The slice's writer writes the body in the form
   `.maestro/slice/prompts/writer.md` gives, with `Unresolved review` for the findings the review left upheld after its
   last fix round and `Gaps` for the builder's; below it the tick adds one line of risk and area with the planner's
-  contract as the one-way door, the spend (a row per slice concert of the ticket's tour, a build or an encore as its
-  record says, then a total) and `Closes #N` with the `Relates to` links last. A change that moved a transcript opens
-  its body, after any draft notice, with "What the user sees". The slice's `seen` step, not the writer, runs
-  `just pictures` in the review's sandbox, against the PR's base on a revision too. The tick attaches each picture and
-  shows the diffs. A writer that fails costs the build nothing: the tick builds the body from its data alone, with the
-  upheld findings counted under `Unresolved review` and no gaps. A PR is a draft, opened with the `WIP: ` title prefix,
-  which Forgejo treats as a draft and refuses to merge, when the review left findings upheld, no lens delivered a
-  review, or the change, or an earlier round of the same PR, edits `docs/rulings.md` or `docs/adr/`. The slice's result
-  node decides it and writes the notice that opens the body, a line per reason, which the writer does not write. A draft
-  is never armed, a last child's after its stack review clears included: the owner merges it. Every landing, an encore's
-  included, rewrites the title and body of the PR already open on the branch, so an encore that clears the draft drops
-  the prefix. A revision's landing then comments on the PR that it was revised, by which concert, with the conflicts it
-  resolved, and asks each official reviewer who requested changes on the PR to review it again, before the ticket moves
-  to `in-review`, so a tick cut in between lands and answers again.
+  contract as the one-way door, the review's record, the spend (a row per slice concert of the ticket's tour, a build or
+  an encore as its record says, then a total) and `Closes #N` with the `Relates to` links last. The review's record is
+  folded, and read from the concert's record, not written by an agent. It holds the agents of the last review round,
+  each with its runtime and how it settled, then the review as the consolidator ruled it. A change that moved a
+  transcript opens its body, after any draft notice, with "What the user sees". The slice's `seen` step, not the writer,
+  runs `just pictures` in the review's sandbox, against the PR's base on a revision too. The tick attaches each picture
+  and shows the diffs. A writer that fails costs the build nothing: the tick builds the body from its data alone, with
+  the upheld findings counted under `Unresolved review` and no gaps. A PR is a draft, opened with the `WIP: ` title
+  prefix, which Forgejo treats as a draft and refuses to merge, when the review left findings upheld, no lens delivered
+  a review, or the change, or an earlier round of the same PR, edits `docs/rulings.md` or `docs/adr/`. The slice's
+  result node decides it and writes the notice that opens the body, a line per reason, which the writer does not write.
+  A draft is never armed, a last child's after its stack review clears included: the owner merges it. Every landing, an
+  encore's included, rewrites the title and body of the PR already open on the branch, so an encore that clears the
+  draft drops the prefix. A revision's landing then comments on the PR that it was revised, by which concert, with the
+  conflicts it resolved, and asks each official reviewer who requested changes on the PR to review it again, before the
+  ticket moves to `in-review`, so a tick cut in between lands and answers again.
 
 ### Masterclass
 

@@ -1516,7 +1516,7 @@ describe("a build", () => {
 	const NOTICE =
 		"Draft: 1 finding remains upheld after the last fix round; see Unresolved review.";
 
-	test("lands an ok slice in a fresh workspace and opens its draft PR, unarmed, with its notice first", async () => {
+	test("lands an ok slice in a fresh workspace and opens its draft PR, unarmed, with its notice first and its review's record", async () => {
 		const t = setup(
 			[specced(7, "in-progress", { slice: "s1" })],
 			[sliceConcert("s1", 7)],
@@ -1531,6 +1531,8 @@ describe("a build", () => {
 						upheld: "- F1, a.ts:3: too wide",
 						draft: true,
 						notice: NOTICE,
+						review: "## Met\n\n- **C1**: holds",
+						reviewers: [{ name: "lens", runtime: "stub", status: "ok" }],
 					},
 				},
 			},
@@ -1563,6 +1565,20 @@ describe("a build", () => {
 				"",
 				"- Gate: green",
 				"- Review: findings upheld",
+				"",
+				"<details><summary>Review: findings upheld</summary>",
+				"",
+				"The agents of the last review round. A lens that raises findings settles `rejected`; the consolidator rules on them.",
+				"",
+				"| Agent | Runtime | Settled |",
+				"| --- | --- | --- |",
+				"| lens | stub | ok |",
+				"",
+				"**Met**",
+				"",
+				"- **C1**: holds",
+				"",
+				"</details>",
 				"",
 				"## Unresolved review",
 				"",

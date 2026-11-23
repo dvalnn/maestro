@@ -75,7 +75,7 @@ case "$1 $2 $3" in
 	"ls c"?" build") echo '{"name":"build","node":"build","harness":"stub","report":{"summary":"s","obstacles":["no rg"],"sightings":[{"path":"a.ts","cites":"R1","text":"drops x"},{"path":"b.ts","text":"no cites"}]}}' ;;
 	"ls c"?" fixes/reviewer") echo '{"name":"fixes/reviewer","node":"fixes/reviewer","harness":"stub","report":{"summary":"s","lessons":["run just fmt first"]}}' ;;
 	"ls c5 tester") echo '{"name":"tester","node":"tester","harness":"stub","outputs":{"map":{"pinned":[{}],"deferred":[],"untestable":[]}}}' ;;
-	"ls c2 --json"|"ls c3 --json"|"ls c4 --json"|"ls c6 --json") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"name":"build/tester","node":"build/tester","harness":"stub"},{"name":"build","node":"build","harness":"stub","notes":{"Obstacles":["no rg"]}},{"name":"build/lens","node":"build/lens","harness":"stub"},{"name":"fixes[0]/fix","node":"fixes/fix","expansion":"[0]"},{"name":"fix_until_clean/fixes[1]/fix","node":"fix_until_clean/fixes/fix","expansion":"[1]"},{"name":"fix_until_clean/fixes/brief","node":"fix_until_clean/fixes/brief"},{"name":"fixes/reviewer","node":"fixes/reviewer","harness":"stub","notes":{"Lessons":["run just fmt first"]}}]}' ;;
+	"ls c2 --json"|"ls c3 --json"|"ls c4 --json"|"ls c6 --json") echo '{"short":"c2","encoreOf":"c1","elapsedMs":90000,"metrics":{"tokens_in":100,"tokens_out":20,"tokens_cache_read":5000,"tokens_cache_write":300,"tokens_reasoning":7},"tokens":5420,"instances":[{"name":"build/tester","node":"build/tester","harness":"stub"},{"name":"build","node":"build","harness":"stub","notes":{"Obstacles":["no rg"]}},{"name":"build/lens","node":"build/lens","harness":"stub"},{"name":"fixes[0]/fix","node":"fixes/fix","expansion":"[0]"},{"name":"fix_until_clean/fixes[1]/fix","node":"fix_until_clean/fixes/fix","expansion":"[1]"},{"name":"fix_until_clean/fixes/brief","node":"fix_until_clean/fixes/brief"},{"name":"fixes/reviewer","node":"fixes/reviewer","harness":"stub","notes":{"Lessons":["run just fmt first"]}},{"name":"fix_until_clean/fixes[0]/tiered_review/tieredOf","status":"ok","startedAt":5},{"name":"fix_until_clean/fixes[0]/tiered_review/lens[lens]/lens","harness":"pi","model":"m2","thinking":"high","status":"rejected","reason":"F1 stands","startedAt":5},{"name":"fix_until_clean/fixes[0]/tiered_review/consolidator","harness":"claude","model":"m3","status":"ok","startedAt":6},{"name":"fix_until_clean/tiered_review/lens[lens]/lens","harness":"stub","model":"m1","status":"ok","startedAt":1},{"name":"writer","harness":"stub","status":"ok","startedAt":9}]}' ;;
 	"config tree --json") echo '{"values":[],"presets":[],"flags":[],"params":{},"moduleDir":"/cache/trees/abc/.maestro","file":"slice.ts"}' ;;
 	"config d"*) echo '{"values":[],"presets":[],"flags":[],"params":{}}' ;;
 	"config gone --json") echo '{"ok":false,"error":"no concert gone in the record"}' ;;
@@ -126,7 +126,7 @@ test("reads a settled concert's result whatever wait exits with", async () => {
 	});
 });
 
-test("reads a concert's report: each agent's obstacles, lessons and well-formed sightings, the upheld findings, how many lenses delivered, the PR body, and a review's text and upheld findings", async () => {
+test("reads a concert's report: each agent's obstacles, lessons and well-formed sightings, the upheld findings, how many lenses delivered, the PR body, the agents of the review round that started last, and a review's text and upheld findings", async () => {
 	expect(await fake.report("c2")).toEqual({
 		obstacles: ["no rg"],
 		lessons: ["run just fmt first"],
@@ -138,6 +138,15 @@ test("reads a concert's report: each agent's obstacles, lessons and well-formed 
 		pr: "## Summary\n\nx",
 		seen: join(dir, "seen"),
 		tests: { pinned: 3, deferred: 1, untestable: 0 },
+		reviewers: [
+			{
+				name: "lens/lens",
+				runtime: "pi · m2 · high",
+				status: "rejected",
+				reason: "F1 stands",
+			},
+			{ name: "consolidator", runtime: "claude · m3", status: "ok" },
+		],
 	});
 	expect(await fake.report("c4")).toMatchObject({
 		review: "# Review\n\nA seam breaks.",
@@ -145,12 +154,14 @@ test("reads a concert's report: each agent's obstacles, lessons and well-formed 
 	});
 });
 
-test("reads the test map of a concert whose tester node has the earlier id", async () => {
-	expect((await fake.report("c5")).tests).toEqual({
+test("reads the test map of a concert whose tester node has the earlier id, and no reviewers when it ran no review", async () => {
+	const report = await fake.report("c5");
+	expect(report.tests).toEqual({
 		pinned: 1,
 		deferred: 0,
 		untestable: 0,
 	});
+	expect(report.reviewers).toEqual([]);
 });
 
 test("reads the .maestro/ directory an encore of a concert reruns", async () => {

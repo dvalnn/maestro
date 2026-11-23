@@ -12,7 +12,7 @@ import {
 } from "../../.maestro/triage/schemas";
 import type { Comment } from "./forge";
 import { isJson, type Json } from "./json";
-import type { Spend } from "./maestro";
+import type { Reviewer, Spend } from "./maestro";
 import {
 	INTAKE,
 	STATES,
@@ -736,6 +736,9 @@ export type Landed = {
 	notice?: string;
 	/** The "What the user sees" section, which follows the notice. */
 	userSees?: string;
+	/** The last review as its consolidator ruled it, and the agents of that round. */
+	review?: string;
+	reviewers?: readonly Reviewer[];
 };
 
 const THOUSAND = 1_000;
@@ -782,10 +785,44 @@ export function unresolvedOf(upheld?: string) {
 	return found?.match(FINDING) ? found : undefined;
 }
 
-function evidenceLines({ upheld }: Landed) {
-	const review =
-		unresolvedOf(upheld) === undefined ? "upheld none" : "findings upheld";
-	return ["- Gate: green", `- Review: ${review}`];
+const reviewLine = ({ upheld }: Landed) =>
+	`Review: ${unresolvedOf(upheld) === undefined ? "upheld none" : "findings upheld"}`;
+
+const evidenceLines = (landed: Landed) => [
+	"- Gate: green",
+	`- ${reviewLine(landed)}`,
+];
+
+const cell = (text: string) => oneLine(text).replaceAll("|", "\\|");
+
+/**
+ * The record of the last review round, folded: a row per agent with how it settled, then the review as its consolidator
+ * ruled it, its headings in bold. None when the concert's record holds neither.
+ */
+function reviewRecord(landed: Landed) {
+	const { review, reviewers = [] } = landed;
+	if (!review && !reviewers.length) return [];
+	const rows = reviewers.map(
+		(r) =>
+			`| ${cell(r.name)} | ${cell(r.runtime)} | ${cell([r.status, r.reason].filter(Boolean).join(": "))} |`,
+	);
+	return [
+		`<details><summary>${reviewLine(landed)}</summary>`,
+		"",
+		...(rows.length
+			? [
+					"The agents of the last review round. A lens that raises findings settles `rejected`; the consolidator rules on them.",
+					"",
+					"| Agent | Runtime | Settled |",
+					"| --- | --- | --- |",
+					...rows,
+					"",
+				]
+			: []),
+		...(review ? [review.replace(/^## (.*)$/gm, "**$1**"), ""] : []),
+		"</details>",
+		"",
+	];
 }
 
 /** The findings the review left upheld after its last fix round, under their own heading; none when it left none. */
@@ -863,6 +900,7 @@ function writtenBody(landed: Landed, pr: string) {
 		"",
 		...riskLines,
 		"",
+		...reviewRecord(landed),
 		`<details><summary>Spend: ${total}</summary>`,
 		"",
 		...spendLines(spend),
@@ -939,6 +977,7 @@ function builtBody(landed: Landed) {
 			...(decisions.length ? ["", ...decisions] : []),
 		]),
 		...block("Evidence", evidenceLines(landed)),
+		...reviewRecord(landed),
 		...unresolvedLines(landed),
 		...block("Merge Danger", dangerLine(landed)),
 		...block("Spend", spendLines(spend)),

@@ -125,6 +125,8 @@ function pullText(
 		result,
 		pr: report.pr,
 		notice: report.notice,
+		review: report.review,
+		reviewers: report.reviewers,
 	};
 	return {
 		title: result.spec.subject,

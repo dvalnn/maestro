@@ -677,6 +677,60 @@ test("a PR body from the writer keeps its sections, then the risk, the spend fol
 	);
 	expect(body).toEndWith("</details>\n\nCloses #5 · relates to #7");
 	expect(body).not.toContain("## Evidence");
+	expect(body).not.toContain("Review:");
+});
+
+test("a PR body folds the last review's record above the spend: its agents as rows, then the review with its headings in bold", () => {
+	const landed = {
+		issue: 5,
+		spend: [SPENT],
+		risk: "low" as const,
+		result: ready,
+		upheld: "- F1, a.ts:3: too wide",
+		review: "## Met\n\n- **C1**: holds",
+		reviewers: [
+			{
+				name: "lens",
+				runtime: "pi · m",
+				status: "rejected",
+				reason: "a | b\nstands",
+			},
+			{ name: "consolidator", runtime: "claude · m", status: "ok" },
+		],
+	};
+	const record = [
+		"<details><summary>Review: findings upheld</summary>",
+		"",
+		"The agents of the last review round. A lens that raises findings settles `rejected`; the consolidator rules on them.",
+		"",
+		"| Agent | Runtime | Settled |",
+		"| --- | --- | --- |",
+		"| lens | pi · m | rejected: a \\| b stands |",
+		"| consolidator | claude · m | ok |",
+		"",
+		"**Met**",
+		"",
+		"- **C1**: holds",
+		"",
+		"</details>",
+		"",
+		"",
+	].join("\n");
+	expect(pullBody({ ...landed, pr: "## Summary\n\nx" })).toContain(
+		`**Risk:** low\n\n${record}<details><summary>Spend:`,
+	);
+	expect(pullBody(landed)).toContain(
+		`- Review: findings upheld\n\n${record}## Unresolved review`,
+	);
+	// A record of the agents alone, or of the review alone, still shows.
+	const agentsOnly = pullBody({ ...landed, review: undefined });
+	expect(agentsOnly).toContain(
+		"| consolidator | claude · m | ok |\n\n</details>",
+	);
+	const reviewOnly = pullBody({ ...landed, reviewers: [] });
+	expect(reviewOnly).toContain(
+		"<details><summary>Review: findings upheld</summary>\n\n**Met**",
+	);
 });
 
 const PROPOSAL = {

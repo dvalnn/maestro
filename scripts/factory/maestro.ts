@@ -10,6 +10,10 @@ import { unresolvedOf } from "./route";
 const WINDOW = 20;
 /** The slice's fix agent, one instance per fix round, directly or under `fix_until_clean`'s scope. */
 const FIX_NODE = /^(.*\/)?fixes\/fix$/;
+/** What the instances of one review round are named under. */
+const REVIEW_ROUND = "tiered_review/";
+/** An expansion in an instance's name, as `[0]` or `[deep-lens]`. */
+const EXPANSION = /\[[^\]]*\]/g;
 /** The slice's tester, whose `map` output holds the tests: beside the builder, and as earlier concerts named it. */
 const TESTER_NODES = [
 	"build/tester",
@@ -68,11 +72,24 @@ export type Report = {
 	pr?: string;
 	/** The directory of transcript pictures and diffs the slice drew, when the concert has one. */
 	seen?: string;
-	/** A review, and the findings the review upheld. */
+	/** The last review, as its consolidator ruled it, and for a review concert the findings it upheld. */
 	review?: string;
+	/** The agents of the last review round, none when the concert ran no review. */
+	reviewers?: Reviewer[];
 	blocking?: string[];
 	/** What the tester's map holds, when the concert's tester wrote one. */
 	tests?: { pinned: number; deferred: number; untestable: number };
+};
+
+/**
+ * An agent of a review round: its instance name within the round with no expansions, its harness, model and thinking
+ * level, how it settled, and why when it did not settle ok. A lens that raises findings settles `rejected`.
+ */
+export type Reviewer = {
+	name: string;
+	runtime: string;
+	status: string;
+	reason?: string;
 };
 
 /** A defect an agent saw outside its task: `cites` is the rule or behaviour it breaches. */
@@ -204,6 +221,33 @@ function spendOf(doc: unknown): Spend {
 /** The `instances` of an `ls <concert> --json` document. */
 const instancesOf = (doc: Json) =>
 	Array.isArray(doc.instances) ? doc.instances.filter(isJson) : [];
+
+const started = (i: Json) =>
+	typeof i.startedAt === "number" ? i.startedAt : 0;
+
+/** The agents of the review round that started last among the `instances` of an `ls <concert> --json` document. */
+function reviewersOf(instances: readonly Json[]): Reviewer[] {
+	const named = instances.filter(
+		(i): i is Json & { name: string } =>
+			typeof i.name === "string" && i.name.includes(REVIEW_ROUND),
+	);
+	const latest = named.toSorted((a, b) => started(a) - started(b)).at(-1);
+	if (!latest) return [];
+	const round = latest.name.slice(
+		0,
+		latest.name.lastIndexOf(REVIEW_ROUND) + REVIEW_ROUND.length,
+	);
+	return named
+		.filter((i) => i.name.startsWith(round) && typeof i.harness === "string")
+		.map((i) => ({
+			name: i.name.slice(round.length).replace(EXPANSION, ""),
+			runtime: [i.harness, i.model, i.thinking]
+				.filter((part) => typeof part === "string")
+				.join(" · "),
+			status: String(i.status),
+			...(typeof i.reason === "string" && { reason: i.reason }),
+		}));
+}
 
 const count = (list: unknown) => (Array.isArray(list) ? list.length : 0);
 
@@ -469,6 +513,7 @@ export function maestro(bin = "maestro"): Maestro {
 				pr: prOf(result),
 				seen: outputPath(result, "seen"),
 				review: outputText(result, "review"),
+				reviewers: reviewersOf(instancesOf(doc)),
 				blocking: blockingOf(result),
 				tests: testsOf(agents),
 			};
