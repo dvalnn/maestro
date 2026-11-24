@@ -32,7 +32,8 @@ For each claim, the script writes `<out>/<n>.json`, with `<n>` the claim's numbe
 - `ignored` lists each difference the script left out because the change intends it, with its count. Leave it empty when
   there is none. It holds nothing else.
 - `notCovered` lists what the claim reaches and the script did not measure, a few words each. Leave it empty when there
-  is none.
+  is none. It holds nothing else: say why a row reads as it does in that row's `what`, such as
+  `base's own config, which skips .maestro`.
 - `notMeasured` is only for a claim with no rows: say why in one line. Leave it empty when `rows` has a row.
 
 Rules:

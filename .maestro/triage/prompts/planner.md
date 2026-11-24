@@ -57,7 +57,9 @@ Give the `plan` reply field in exactly this shape: `spec` only for `ready-for-ag
   - Optional: `Where <feature>, the <system> shall <response>.`
 - `proof`: zero to three claims, one sentence each, from the need's "so that". Each is observable by running something:
   a size, a count, two outputs that are the same, a command that now succeeds. A claim is no requirement restated, so
-  leave it out when a test pins the need. A prover measures each claim on the base and on the change.
+  leave it out when a test pins the need. A prover measures each claim on the base and on the change. So a claim names
+  what differs between the two, or what stays the same. Never claim what the gate shows on every change, such as
+  `just check` passing.
 - `figures`: the change's shape, drawn before the decisions are written, by Figures below. Leave it out when nothing
   fits.
 - `consequences`: a short paragraph or a line: what the change makes easier or harder, and its cost.
