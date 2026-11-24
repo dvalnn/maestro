@@ -481,12 +481,12 @@ test("requirePatch drafts a change that leaves findings upheld, edits a held pat
 		run(touching("src/a.ts"), [{ ...finding("F1"), lens: "spec" }]),
 	).toEqual([
 		true,
-		"Draft: 1 finding remains upheld after the last fix round; see Unresolved review.\n",
+		"Draft: 1 finding remains upheld after the last fix round; see Findings.\n",
 	]);
 	expect(
 		run(touching("docs/adr/0001.md"), [{ ...finding("F1"), lens: "spec" }])[1],
 	).toBe(
-		"Draft: 1 finding remains upheld after the last fix round; see Unresolved review.\nDraft: this change edits `docs/adr/0001.md`, which the owner holds.\n",
+		"Draft: 1 finding remains upheld after the last fix round; see Findings.\nDraft: this change edits `docs/adr/0001.md`, which the owner holds.\n",
 	);
 });
 

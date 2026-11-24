@@ -89,7 +89,7 @@ const noticeLines = (upheld: number, held: string[], unreviewed: boolean) => [
 	...(unreviewed ? [NO_REVIEW_NOTICE] : []),
 	...(upheld
 		? [
-				`Draft: ${upheld} ${upheld === 1 ? "finding remains" : "findings remain"} upheld after the last fix round; see Unresolved review.`,
+				`Draft: ${upheld} ${upheld === 1 ? "finding remains" : "findings remain"} upheld after the last fix round; see Findings.`,
 			]
 		: []),
 	...(held.length

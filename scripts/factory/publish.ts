@@ -128,7 +128,6 @@ function pullText(
 		pr: report.pr,
 		notice: report.notice,
 		interim: isInterim(report.upheld, data.attempts),
-		review: report.review,
 		reviewers: report.reviewers,
 		touched: report.touched,
 	};

@@ -743,8 +743,7 @@ export type Landed = {
 	userSees?: string;
 	/** The paths the change touches, to hold against the spec's `touches`. */
 	touched?: readonly string[];
-	/** The last review as its consolidator ruled it, and the agents of that round. */
-	review?: string;
+	/** The agents of the last review round. */
 	reviewers?: readonly Reviewer[];
 };
 
@@ -832,30 +831,6 @@ function planRecord({ result, touched }: Landed) {
 	];
 }
 
-/**
- * The proof of the change: the last review as its consolidator ruled it, its headings in bold. None when the concert's
- * record holds no review.
- */
-const proofSection = ({ review }: Landed) =>
-	review
-		? [
-				"## Proof",
-				"",
-				"The last review's rulings, as its consolidator wrote them.",
-				"",
-				review.replace(/^## (.*)$/gm, "**$1**"),
-				"",
-			]
-		: [];
-
-/** `pr` with `section` after its opening section, or last when it has but one. */
-function afterOpening(pr: string, section: string[]) {
-	if (!section.length) return pr;
-	const at = pr.indexOf("\n## ", 1);
-	const [opening, rest] = at < 0 ? [pr, ""] : [pr.slice(0, at), pr.slice(at)];
-	return `${opening.trimEnd()}\n\n${section.join("\n").trimEnd()}${rest ? `\n${rest}` : ""}`;
-}
-
 /** The agents of the last review round, folded: a row per agent with how it settled. None when the record names none. */
 function reviewRecord(landed: Landed) {
 	const { reviewers = [] } = landed;
@@ -888,19 +863,78 @@ const INTERIM =
 export const isInterim = (upheld: string | undefined, attempts = 0) =>
 	unresolvedOf(upheld) !== undefined && attempts + 1 < ATTEMPTS;
 
-/** The findings the review left upheld after its last fix round, under their own heading; none when it left none. */
-function unresolvedLines({ upheld }: Landed) {
+/** The findings the review left upheld after its last fix round, folded under their count; none when it left none. */
+function findingsRecord({ upheld }: Landed) {
 	const found = unresolvedOf(upheld);
 	return found
 		? [
-				"## Unresolved review",
-				"",
-				`Blocking findings still upheld after the last fix round (${found.match(FINDING)?.length}):`,
+				`<details><summary>Findings: ${found.match(FINDING)?.length} upheld</summary>`,
 				"",
 				found,
 				"",
+				...FOLD_END,
 			]
 		: [];
+}
+
+/** The most non-blank lines the writer's body shows outside its `<details>` blocks. */
+const VISIBLE_MAX = 40;
+
+/** How many `<details>` folds `line` opens and closes. */
+const foldTags = (line: string): [number, number] => [
+	(line.match(/<details/g) ?? []).length,
+	(line.match(/<\/details>/g) ?? []).length,
+];
+
+type Section = { lines: string[]; visible: number };
+
+/**
+ * `pr` cut at its `## ` headings, each with its visible lines: the non-blank ones outside a `<details>` fold. A fence
+ * hides its contents from the cut and from the folds: a heading or a tag inside one counts as text.
+ */
+function sectionsOf(pr: string) {
+	const sections: Section[] = [{ lines: [], visible: 0 }];
+	let fenced = false;
+	let depth = 0;
+	for (const line of pr.split("\n")) {
+		const fence = line.trim().startsWith("```");
+		const plain = !fenced && !fence;
+		const [opens, closes] = plain ? foldTags(line) : [0, 0];
+		const heading = plain && depth === 0 && line.startsWith("## ");
+		if (heading) sections.push({ lines: [], visible: 0 });
+		const section = sections.at(-1) as Section;
+		section.lines.push(line);
+		depth += opens;
+		if (depth === 0 && line.trim()) section.visible++;
+		depth -= closes;
+		fenced = fenced !== fence;
+	}
+	return sections.filter((section) => section.lines.length);
+}
+
+/**
+ * The writer's `pr` within VISIBLE_MAX visible lines: its `## ` sections in order while they fit, the first always, the
+ * rest folded after them under "More from the writer". A body within the cap is unchanged.
+ */
+function capped(pr: string) {
+	const [first, ...rest] = sectionsOf(pr) as [Section, ...Section[]];
+	const totals = rest.reduce<number[]>(
+		(t, { visible }) => [...t, (t.at(-1) ?? first.visible) + visible],
+		[],
+	);
+	const over = totals.findIndex((total) => total > VISIBLE_MAX);
+	if (over < 0) return pr;
+	const trim = (sections: Section[]) =>
+		sections.map((s) => s.lines.join("\n").trimEnd());
+	const fold = [
+		"<details><summary>More from the writer</summary>",
+		"",
+		...trim(rest.slice(over)).flatMap((section) => [section, ""]),
+		...FOLD_END,
+	];
+	return [...trim([first, ...rest.slice(0, over)]), fold.join("\n")]
+		.join("\n\n")
+		.trimEnd();
 }
 
 function dangerLine({ risk, result }: Landed) {
@@ -950,19 +984,19 @@ const closing = ({ issue, result }: Landed) =>
 	`Closes #${issue}${result.related?.length ? ` · relates to ${refs(result.related)}` : ""}`;
 
 /**
- * The writer's `pr`, then one line of risk and area with the planner's contract as the one-way door, the
- * spend folded under its total, and the closing line last.
+ * The writer's `pr` capped to VISIBLE_MAX lines, then the risk and area with the planner's contract as the one-way
+ * door, then the folds: findings upheld, the plan, the review's agents and the spend under its total; the closing line
+ * last.
  */
 function writtenBody(landed: Landed, pr: string) {
 	const { spend } = landed;
-	const [risk, ...door] = dangerLine(landed);
-	const riskLines = [risk, ...door];
 	const total = `${elapsed(sum(spend, (s) => s.elapsedMs))}, ${shorthand(sum(spend, tokenTotal))} tokens`;
 	return [
-		afterOpening(pr, proofSection(landed)),
+		capped(pr),
 		"",
-		...riskLines,
+		...dangerLine(landed),
 		"",
+		...findingsRecord(landed),
 		...planRecord(landed),
 		...reviewRecord(landed),
 		`<details><summary>Spend: ${total}</summary>`,
@@ -976,9 +1010,9 @@ function writtenBody(landed: Landed, pr: string) {
 
 /**
  * The PR body of a landed slice (factory.md, Rules, Landing and PRs: PRs), led by its draft notice when it has one, then
- * by what the user sees when a transcript moved: the writer's followed by the tick's sections, else one built from the
- * tick's data alone, with the subject and each decision's lead as Summary, the gate as green with the review's upheld
- * count as Evidence, then the unresolved review, risk and spend.
+ * by what the user sees when a transcript moved: the writer's, capped, followed by the tick's risk line and folds, else
+ * one built from the tick's data alone, with the subject and each decision's lead as Summary, the gate as green with the
+ * review's upheld count as Evidence, then the folds, risk and spend.
  */
 export function pullBody(landed: Landed) {
 	const body = landed.pr ? writtenBody(landed, landed.pr) : builtBody(landed);
@@ -1056,10 +1090,9 @@ function builtBody(landed: Landed) {
 			...(decisions.length ? ["", ...decisions] : []),
 		]),
 		...block("Evidence", evidenceLines(landed)),
-		...proofSection(landed),
 		...planRecord(landed),
 		...reviewRecord(landed),
-		...unresolvedLines(landed),
+		...findingsRecord(landed),
 		...block("Merge Danger", dangerLine(landed)),
 		...block("Spend", spendLines(spend)),
 	].join("\n");

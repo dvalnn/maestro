@@ -1514,7 +1514,7 @@ describe("a build", () => {
 	});
 
 	const NOTICE =
-		"Draft: 1 finding remains upheld after the last fix round; see Unresolved review.";
+		"Draft: 1 finding remains upheld after the last fix round; see Findings.";
 
 	test("lands an ok slice in a fresh workspace and opens its draft PR, unarmed, with its notice first, the plan held against the change and its review's record, then gives its upheld findings to the attempt left", async () => {
 		const concerts = [sliceConcert("s1", 7)];
@@ -1536,7 +1536,6 @@ describe("a build", () => {
 						upheld: "- F1, a.ts:3: too wide",
 						draft: true,
 						notice: NOTICE,
-						review: "## Met\n\n- **C1**: holds",
 						reviewers: [{ name: "lens", runtime: "stub", status: "ok" }],
 						touched: ["greet.sh", "x.sh"],
 					},
@@ -1575,14 +1574,6 @@ describe("a build", () => {
 				"- Gate: green",
 				"- Review: findings upheld",
 				"",
-				"## Proof",
-				"",
-				"The last review's rulings, as its consolidator wrote them.",
-				"",
-				"**Met**",
-				"",
-				"- **C1**: holds",
-				"",
 				"<details><summary>Plan: touches 1 of 1 planned path, 1 unplanned</summary>",
 				"",
 				"- Planned, not touched: none",
@@ -1604,11 +1595,13 @@ describe("a build", () => {
 				"",
 				"</details>",
 				"",
-				"## Unresolved review",
-				"",
-				"Blocking findings still upheld after the last fix round (1):",
+				"<details><summary>Findings: 1 upheld</summary>",
 				"",
 				"- F1, a.ts:3: too wide",
+				"",
+				"<br>",
+				"",
+				"</details>",
 				"",
 				"## Merge Danger",
 				"",
@@ -1640,7 +1633,7 @@ describe("a build", () => {
 		};
 		await t.run();
 		const body = t.pulls.find((p) => p.number === FIRST_PULL)?.body ?? "";
-		expect(body).toContain("## Unresolved review");
+		expect(body).toContain("Findings: 1 upheld");
 		expect(body).not.toContain("Interim:");
 		expect(dataAt(t.find(7))).toMatchObject({ concert: "s2", attempts: 2 });
 		expect(stateOf(t.find(7))).toBe("in-review");
