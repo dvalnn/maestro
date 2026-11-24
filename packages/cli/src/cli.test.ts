@@ -1288,7 +1288,69 @@ async function interrupted() {
 	return { code: result.code, during, left, screen: screenOf(live.writes) };
 }
 
+/** The stderr text before the `concert <id>` line, which holds an id that differs between runs. */
+const beforeAnnouncement = (err: string) =>
+	err.split(/^concert /m)[0]?.trimEnd() ?? "";
+
 describe("perform", () => {
+	// Seam: pre-flight warnings on stderr for each foreground command, with and without --json.
+	test("perform resume and encore suppress pre-flight warnings under --json", async () => {
+		const w = await world();
+		const host = fakeHost({
+			validate: () => [
+				{
+					code: "fake",
+					severity: "warning",
+					message: "pre-flight notice",
+					hint: "Check it",
+				},
+			],
+			steps: { first: [{ outcome: "failed", reason: "flaky" }] },
+		});
+		const options = { hosts: [host] };
+		const first = await w.call(["perform", ...GREET], options);
+		expect(first.code).toBe(1);
+		const id = idOf(first);
+		expect(id).not.toBe("");
+		const commands = [
+			["perform", ...GREET],
+			["resume", id],
+			["encore", id, "--name", "y"],
+		];
+		const plain = [];
+		const documents = [];
+		for (const args of commands) {
+			plain.push(await w.call(args, options));
+			documents.push(await w.call([...args, "--json"], options));
+		}
+		expect(plain.map((result) => result.err.includes("warning:"))).toEqual([
+			true,
+			true,
+			true,
+		]);
+		await transcript(
+			new URL("./transcripts/preflight-warning.txt", import.meta.url),
+			[
+				{
+					name: "maestro perform, a pre-flight warning on stderr",
+					columns: 80,
+					shown: beforeAnnouncement(plain[0]?.err ?? ""),
+				},
+				{
+					name: "maestro perform --json, the same warning left out",
+					columns: 80,
+					shown: beforeAnnouncement(documents[0]?.err ?? "") || "(nothing)",
+				},
+			],
+		);
+		expect(documents.map((result) => result.code)).toEqual([1, 1, 1]);
+		expect(
+			documents.map((result) =>
+				result.err.split("\n").filter((line) => line.startsWith("warning:")),
+			),
+		).toEqual([[], [], []]);
+	});
+
 	// Seam: stderr and stdout while a foreground command waits for a concert, and after it settles.
 	// Transcript: what a stderr terminal shows while `perform` waits, and after the concert settles.
 	test("draws the live block over itself as time passes, and the closing block in its place", async () => {

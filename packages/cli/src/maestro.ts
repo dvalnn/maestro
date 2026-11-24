@@ -71,6 +71,7 @@ process.exit(
 		env: process.env,
 		stdout: (line) => emit(STDOUT_FD, `${line}\n`),
 		stdoutBytes: (bytes) => emit(STDOUT_FD, bytes),
+		stderrBytes: (bytes) => emit(STDERR_FD, bytes),
 		stderr: (line) => emit(STDERR_FD, `${line}\n`),
 		confirm: process.stdin.isTTY ? confirm : undefined,
 		terminal: isatty(STDOUT_FD)

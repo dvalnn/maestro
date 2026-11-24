@@ -1,0 +1,13 @@
+## maestro perform --detach, after a warning
+───────────────────────────────────────────────────────────────────────────────┐
+warning: pack demo is out of date
+01a208a7-a190-7521-992d-4549fe729973
+Follow it: maestro watch qxmvuvqk
+
+
+## maestro perform --detach, refused
+───────────────────────────────────────────────────────────────────────────────┐
+error: no such file: nope.ts
+  Check the path
+
+

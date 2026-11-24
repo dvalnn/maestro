@@ -27,28 +27,52 @@ export async function world() {
 		// the caller's FORCE_COLOR must not color a spawned child's piped output
 		FORCE_COLOR: "",
 	};
-	const call = async (
+	const callRaw = async (
 		args: string[],
 		over: Partial<Deps> & { env?: Record<string, string> } = {},
-	): Promise<Outcome> => {
+	): Promise<Outcome & { errBytes: Buffer; shown: string }> => {
 		const out: string[] = [];
-		const err: string[] = [];
+		/** Both streams in the order they were written, as a terminal shows them. */
+		const shown: string[] = [];
+		const err: Buffer[] = [];
 		const code = await main(args, {
 			hosts: [fakeHost()],
 			cwd,
-			stdout: (line) => out.push(`${line}\n`),
-			stdoutBytes: (bytes) => out.push(new TextDecoder().decode(bytes)),
-			stderr: (line) => err.push(line),
+			stdout: (line) => {
+				out.push(`${line}\n`);
+				shown.push(`${line}\n`);
+			},
+			stdoutBytes: (bytes) => {
+				out.push(new TextDecoder().decode(bytes));
+				shown.push(new TextDecoder().decode(bytes));
+			},
+			stderrBytes: (bytes) => {
+				err.push(Buffer.from(bytes));
+				shown.push(new TextDecoder().decode(bytes));
+			},
+			stderr: (line) => {
+				err.push(Buffer.from(`${line}\n`));
+				shown.push(`${line}\n`);
+			},
 			self: [process.execPath, MAESTRO],
 			...over,
 			env: { ...env, ...over.env },
 		});
 		const written = out.join("");
+		const errText = Buffer.concat(err).toString();
 		return {
 			code,
 			out: written.replace(FINAL_NEWLINE, ""),
-			err: err.join("\n"),
+			err: errText.replace(FINAL_NEWLINE, ""),
+			errBytes: Buffer.concat(err),
+			shown: shown.join(""),
 		};
+	};
+	const call = async (
+		...args: Parameters<typeof callRaw>
+	): Promise<Outcome> => {
+		const { code, out, err } = await callRaw(...args);
+		return { code, out, err };
 	};
 	/** Starts `script`, the real `maestro.ts` by default, as its own process in this world. */
 	const spawn = (args: string[], script = MAESTRO) =>
@@ -58,7 +82,7 @@ export async function world() {
 			stdout: "pipe",
 			stderr: "pipe",
 		});
-	return { root, pack, cwd, env, call, spawn };
+	return { root, pack, cwd, env, call, callRaw, spawn };
 }
 
 /** The id a perform announces on stderr, as its own `concert <id>` line. */

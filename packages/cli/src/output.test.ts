@@ -11,6 +11,7 @@ const jsonDeps: Deps = {
 	env: {},
 	stdout: () => {},
 	stdoutBytes: () => {},
+	stderrBytes: () => {},
 	stderr: () => {},
 	self: [],
 };

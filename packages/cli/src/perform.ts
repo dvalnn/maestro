@@ -124,7 +124,9 @@ async function detached(
 	deps: Deps,
 	command: string,
 	args: readonly string[],
-): Promise<{ id: string } | { exit: number; out: string; err: string }> {
+): Promise<
+	{ id: string; before: Buffer } | { exit: number; out: Buffer; err: Buffer }
+> {
 	const dir = mkdtempSync(join(tmpdir(), "maestro-detach-"));
 	const out = join(dir, "out");
 	const err = join(dir, "err");
@@ -143,16 +145,18 @@ async function detached(
 			// Taken before reading, so a run that announced and exited is never taken for one that refused.
 			const ended = exit;
 			if (failed) throw failed;
-			const id = ANNOUNCED.exec(readFileSync(err, "utf8"))?.[1];
-			if (id) {
+			const written = readFileSync(err);
+			const found = ANNOUNCED.exec(written.toString("latin1"));
+			if (found?.[1]) {
 				run.unref();
-				return { id };
+				// latin1 maps one byte to one character, so the match index is a byte offset.
+				return { id: found[1], before: written.subarray(0, found.index) };
 			}
 			if (ended !== undefined)
 				return {
 					exit: ended,
-					out: readFileSync(out, "utf8"),
-					err: readFileSync(err, "utf8"),
+					out: readFileSync(out),
+					err: written,
 				};
 			await Bun.sleep(DETACH_POLL_MS);
 		}
@@ -178,10 +182,11 @@ async function detach(
 ): Promise<number> {
 	const started = await detached(deps, command, args);
 	if ("exit" in started) {
-		if (started.out) deps.stdoutBytes(Buffer.from(started.out));
-		if (started.err) deps.stderr(started.err.trimEnd());
+		if (started.out.length > 0) deps.stdoutBytes(started.out);
+		if (started.err.length > 0) deps.stderrBytes(started.err);
 		return started.exit;
 	}
+	if (started.before.length > 0) deps.stderrBytes(started.before);
 	deps.stdout(
 		json ? jsonOf(resultDoc(started.id, undefined), deps) : started.id,
 	);
@@ -363,13 +368,12 @@ async function report(
 	return stopped;
 }
 
-/** Pre-flights `start`, printing what it warns of. */
+/** Pre-flights `start`, printing what it warns of unless `--json` is given. */
 async function warned({ session, prepared }: Start): Promise<void> {
+	const { diagnostics } = await preflight(session, prepared);
+	if (isSet(prepared.values, "json")) return;
 	const color = colorOf(session.deps, prepared.values);
-	for (const line of renderDiagnostics(
-		(await preflight(session, prepared)).diagnostics,
-		color.err,
-	))
+	for (const line of renderDiagnostics(diagnostics, color.err))
 		session.deps.stderr(line);
 }
 

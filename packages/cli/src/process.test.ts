@@ -5,6 +5,7 @@ import { cp, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Host } from "@maestro/core/host";
 import { fakeHost } from "@maestro/testkit";
+import { transcript } from "@maestro/transcript";
 import { cleanup, demoSource, packOf, scratch } from "./fixtures/packs";
 import {
 	closingOf,
@@ -50,6 +51,7 @@ process.exit(
 		env: process.env,
 		stdout: (line) => void process.stdout.write(\`\${line}\\n\`),
 		stdoutBytes: (bytes) => void process.stdout.write(bytes),
+		stderrBytes: (bytes) => void process.stderr.write(bytes),
 		stderr: (line) => void process.stderr.write(\`\${line}\\n\`),
 	}),
 );
@@ -72,7 +74,142 @@ async function until(done: () => Promise<boolean>) {
 	throw new Error("timed out waiting for the concert to reach echo/echo");
 }
 
+// Seam: a detached command's stdout, stderr and exit code, including their bytes and write order.
+const DETACHED_ID = "01a208a7-a190-7521-992d-4549fe729973";
+const WARNING_BYTES = Buffer.from([
+	119, 97, 114, 110, 105, 110, 103, 58, 32, 0xc3, 0xa9, 0xff, 10, 10,
+]);
+const REFUSAL_ERR = Buffer.from([
+	101, 114, 114, 111, 114, 58, 32, 0xff, 10, 10, 10,
+]);
+const REFUSAL_OUT = Buffer.from([111, 117, 116, 58, 32, 0xfe, 10, 10]);
+
+async function detachedWriter() {
+	const file = join(await scratch(), "maestro.ts");
+	await Bun.write(
+		file,
+		`import { writeSync } from "node:fs";
+import { main } from "${CLI}";
+const args = process.argv.slice(2);
+if (args.includes("--detach")) {
+	const merged = args.includes("--merged");
+	const errFd = merged ? 1 : 2;
+	const code = await main(args.filter((arg) => arg !== "--merged"), {
+		hosts: [], cwd: process.cwd(), env: process.env,
+		self: [process.execPath, import.meta.path],
+		stdout: (line) => writeSync(1, line + "\\n"),
+		stdoutBytes: (bytes) => writeSync(1, bytes),
+		stderr: (line) => writeSync(errFd, line + "\\n"),
+		stderrBytes: (bytes) => writeSync(errFd, bytes),
+	});
+	process.exit(code);
+} else if (args.includes("refuse-text")) {
+	writeSync(2, "error: no such file: nope.ts\\n  Check the path\\n\\n");
+	process.exit(2);
+} else if (args.includes("refuse")) {
+	writeSync(1, Buffer.from(${JSON.stringify([...REFUSAL_OUT])}));
+	writeSync(2, Buffer.from(${JSON.stringify([...REFUSAL_ERR])}));
+	process.exit(7);
+} else {
+	if (args.includes("warn-text")) writeSync(2, "warning: pack demo is out of date\\n");
+	if (args.includes("warn")) writeSync(2, Buffer.from(${JSON.stringify([...WARNING_BYTES])}));
+	writeSync(2, "concert ${DETACHED_ID}\\n");
+}
+`,
+	);
+	return file;
+}
+
+async function detachedOutput(
+	w: Awaited<ReturnType<typeof world>>,
+	script: string,
+	args: string[],
+) {
+	const child = w.spawn(args, script);
+	const [out, err, code] = await Promise.all([
+		new Response(child.stdout).arrayBuffer(),
+		new Response(child.stderr).arrayBuffer(),
+		child.exited,
+	]);
+	return { out: Buffer.from(out), err: Buffer.from(err), code };
+}
+
 describe("a concert in another process", () => {
+	test("a detached start passes the bytes before its announcement to stderr before the id", async () => {
+		const w = await world();
+		const script = await detachedWriter();
+		const args = ["perform", "warn", "--detach"];
+		const result = await detachedOutput(w, script, args);
+		expect(result.code).toBe(0);
+		expect(result.err).toEqual(WARNING_BYTES);
+		expect(result.out).toEqual(Buffer.from(`${DETACHED_ID}\n`));
+		const merged = await detachedOutput(w, script, [...args, "--merged"]);
+		expect(merged.code).toBe(0);
+		expect(merged.err).toEqual(Buffer.alloc(0));
+		expect(merged.out).toEqual(
+			Buffer.concat([WARNING_BYTES, Buffer.from(`${DETACHED_ID}\n`)]),
+		);
+	});
+
+	test("a detached start without preceding stderr prints only the id on stdout", async () => {
+		const w = await world();
+		const result = await detachedOutput(w, await detachedWriter(), [
+			"perform",
+			"quiet",
+			"--detach",
+		]);
+		expect(result.code).toBe(0);
+		expect(result.err).toEqual(Buffer.alloc(0));
+		expect(result.out).toEqual(Buffer.from(`${DETACHED_ID}\n`));
+	});
+
+	test("a detached refusal passes stdout and stderr byte for byte and exits with the run's code", async () => {
+		const w = await world();
+		const script = await detachedWriter();
+		const result = await detachedOutput(w, script, [
+			"perform",
+			"refuse",
+			"--detach",
+		]);
+		expect(result.code).toBe(7);
+		expect(result.err).toEqual(REFUSAL_ERR);
+		expect(result.out).toEqual(REFUSAL_OUT);
+		const called = await w.callRaw(["perform", "refuse", "--detach"], {
+			self: [process.execPath, script],
+		});
+		expect(called.code).toBe(7);
+		expect(called.errBytes).toEqual(REFUSAL_ERR);
+	});
+
+	test("a detached start shows its warning before the id, as the transcript holds", async () => {
+		const w = await world();
+		const script = await detachedWriter();
+		const terminal = {
+			terminal: () => ({ columns: 80, rows: 24 }),
+			stderrTerminal: () => ({ columns: 80 }),
+			self: [process.execPath, script],
+		};
+		const shown = async (...args: string[]) => {
+			const run = await w.callRaw([...args, "--detach", "--color"], terminal);
+			return { code: run.code, text: run.shown };
+		};
+		const started = await shown("perform", "warn-text");
+		const refused = await shown("perform", "refuse-text");
+		expect(started.code).toBe(0);
+		expect(refused.code).toBe(2);
+		await transcript(new URL("./transcripts/detach.txt", import.meta.url), [
+			{
+				name: "maestro perform --detach, after a warning",
+				columns: 80,
+				shown: started.text,
+			},
+			{
+				name: "maestro perform --detach, refused",
+				columns: 80,
+				shown: refused.text,
+			},
+		]);
+	});
 	// Seam: a detached run's refusal document forwarded to the parent's terminal stdout.
 	test("a detached perform refusal stays compact on a terminal before any concert is announced", async () => {
 		const w = await world();

@@ -116,7 +116,8 @@ same. It takes the tour from `--tour`, else `MAESTRO_TOUR`.
 
 With `--detach`, `perform`, `encore` and `resume` run the concert in a process of its own session and exit 0 once it
 starts, printing its id on stdout, or under `--json` `{"id": <id>, "status": "running"}`. A run that starts no concert
-within 2 minutes is stopped. A run that refuses passes its output and exit code through, its `--json` document compact
+within 2 minutes is stopped. What the run writes to stderr before it starts, such as a warning, passes through unchanged
+before the id. A run that refuses passes its output and exit code through byte for byte, its `--json` document compact
 even on a terminal. A concert stopped by Ctrl-C (130) or SIGTERM (143) can be resumed. The first signal cancels the
 concert and waits for it to settle; a second kills the process at once.
 

@@ -1,0 +1,8 @@
+## maestro perform, a pre-flight warning on stderr
+───────────────────────────────────────────────────────────────────────────────┐
+warning: pre-flight notice
+  Check it
+
+## maestro perform --json, the same warning left out
+───────────────────────────────────────────────────────────────────────────────┐
+(nothing)
