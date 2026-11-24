@@ -463,6 +463,9 @@ Refs: ADR 0007, ADR 0008, CORE-14.
 
 ## Changelog
 
+- **1.3, unchanged**: a field that a minor added is refused under an older `irVersion`. IR that declares 1.0 to 1.2 and
+  holds a `schemas` table, or 1.0 to 1.1 and holds a scope's `pack`, now fails. The failure is an `IR.schema` diagnostic
+  at the field. Before, it loaded.
 - **1.3**: the IR gained an optional `schemas` table, and a port may name an entry of it by key in place of an inline
   schema. IR without keys reads as before.
 - **1.2**: a scope gained an optional `pack`, the pack that declares its composition, which config keys of that pack
