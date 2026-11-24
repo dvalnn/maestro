@@ -212,7 +212,7 @@ export const slice = composition(
 		const reviewed = use(fixUntilClean, built, {
 			params: { grounds: JUDGED },
 		});
-		const brief = reviewed.out.brief;
+		const { brief, review } = reviewed.out;
 		const changes = changeset(reviewed.out.lane, {
 			label: "changes",
 			tolerate: "rejected",
@@ -231,6 +231,12 @@ export const slice = composition(
 					artifact: changes,
 					hint: "for what the change did, patch by patch",
 				},
+				...(review && {
+					review: {
+						artifact: review,
+						hint: "for which requirements the last review found met, not met and upheld",
+					},
+				}),
 				...(prior && {
 					revised: {
 						artifact: prior,

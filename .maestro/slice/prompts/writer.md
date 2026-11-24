@@ -13,6 +13,9 @@ The spec picks the form:
 - **Direct**, any other spec, such as one opening with `#### Brief` or a hand brief opening with `Slice:`. No spec gate
   ran, so the body shows the calls the builder made.
 
+When `review` is attached, **Built** and the Requirements fold take met and not met from it. Without it, they take them
+from the patches' tests.
+
 A `## map` or `## overrules` section does not pick the form; Evidence and Requirements apply it.
 
 Use exactly the form's sections, with no preamble, in the words of `GLOSSARY.md`. Size each part to the change: a small

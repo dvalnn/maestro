@@ -215,10 +215,10 @@ test.each(["--risk", "--tier", "--max-fixes", "--max-repairs"])(
 );
 
 test.each([
-	[[], ["patches", "spec"]],
+	[[], ["patches", "review", "spec"]],
 	[
 		["--revises", "HEAD^!"],
-		["patches", "revised", "spec"],
+		["patches", "review", "revised", "spec"],
 	],
 ])(
 	"under --revises, the writer and the result node take the prior patches: flags %j attach %j, and the result is told how many lenses delivered and leaves the count as an output",
@@ -247,6 +247,10 @@ test.each([
 			flags.length
 				? '"env":{"REVISES":"HEAD^!"},"run":"just pictures \\"$MAESTRO_CHECK_OUTPUT\\" \\"$(git rev-list --reverse \\"$REVISES\\" | head -n 1)^\\""'
 				: 'just pictures \\"$MAESTRO_CHECK_OUTPUT\\" \\"$MAESTRO_LANE_BASE\\"',
+		);
+		// The writer reads the same review, for the requirements it counts as met.
+		expect(from(edges, "writer", "review")).toEqual(
+			from(edges, "result", "review"),
 		);
 		// `seen` reads the lane the writer reads, and runs though the review rejected.
 		expect(from(edges, "seen", "lane")).toEqual(from(edges, "writer", "lane"));
