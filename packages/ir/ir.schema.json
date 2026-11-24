@@ -14,6 +14,48 @@
 		"result"
 	],
 	"additionalProperties": false,
+	"allOf": [
+		{
+			"description": "Scope pack came in 1.2.",
+			"if": { "properties": { "irVersion": { "enum": ["1.0", "1.1"] } } },
+			"then": {
+				"properties": {
+					"scopes": { "items": { "properties": { "pack": false } } }
+				}
+			}
+		},
+		{
+			"description": "The schemas table came in 1.3.",
+			"if": {
+				"properties": { "irVersion": { "enum": ["1.0", "1.1", "1.2"] } }
+			},
+			"then": { "properties": { "schemas": false } }
+		},
+		{
+			"description": "Ports that name a schema by key came in 1.3.",
+			"if": {
+				"properties": { "irVersion": { "enum": ["1.0", "1.1", "1.2"] } }
+			},
+			"then": {
+				"properties": {
+					"scopes": {
+						"items": {
+							"properties": { "ports": { "$ref": "#/$defs/inlinePorts" } }
+						}
+					},
+					"nodes": {
+						"items": {
+							"properties": {
+								"in": { "$ref": "#/$defs/inlinePorts" },
+								"out": { "$ref": "#/$defs/inlinePorts" },
+								"inner": { "$ref": "#/$defs/inlinePorts" }
+							}
+						}
+					}
+				}
+			}
+		}
+	],
 	"properties": {
 		"irVersion": {
 			"description": "The IR versions this schema accepts. Bumped together with IR_VERSION.",
@@ -83,6 +125,10 @@
 				"description": "An inline schema, or the key of its entry in the schemas table.",
 				"type": ["object", "boolean", "string"]
 			}
+		},
+		"inlinePorts": {
+			"description": "Ports before 1.3: every schema inline.",
+			"additionalProperties": { "$ref": "#/$defs/schema" }
 		},
 		"portRef": {
 			"type": "object",

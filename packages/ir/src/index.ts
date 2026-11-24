@@ -186,6 +186,9 @@ const SHAPE_MESSAGES: Record<string, (p: ErrorObject["params"]) => string> = {
 	required: (p) => `is missing required property '${p.missingProperty}'`,
 	pattern: (p) => `must match the pattern '${p.pattern}'`,
 	type: (p) => `must be of type ${[p.type].flat().join(" or ")}`,
+	// The schema's only false subschemas are its version gates.
+	"false schema": () =>
+		"is not in the declared irVersion: a later IR minor added it",
 };
 
 type Hint = (p: ErrorObject["params"], path: string) => string;
@@ -203,6 +206,8 @@ const SHAPE_HINTS: Record<string, Hint> = {
 	required: (p, path) => `Add '${p.missingProperty}' to ${path}`,
 	pattern: (p, path) => `Change ${path} to match '${p.pattern}'`,
 	type: (p, path) => `Set ${path} to a ${[p.type].flat().join(" or ")}`,
+	"false schema": (_, path) =>
+		`Declare a newer irVersion, up to "${IR_VERSION}", or remove ${path}`,
 };
 
 const schemaHint = (path: string) =>

@@ -65,6 +65,9 @@ Refs: CORE-17.
 - **Minor** changes are additive and optional: a new optional field, or a new value where readers already reject the
   unknown. IR written for `1.n` keeps its meaning under every later `1.m`. A breaking change to the node config of a
   host that ships with maestro also bumps the minor, and that host refuses a node of the older shape by name.
+- A minor that adds a field also gates that field on the version. The schema refuses the field under an older
+  `irVersion` with an `IR.schema` diagnostic at the field. So a writer that stamps an old version on a new shape fails
+  its own round-trip.
 - **Major** changes are anything else: a removed or renamed field, a new required field, a changed meaning, a new node
   or edge kind.
 - A reader that supports `M.n` accepts `M.0` to `M.n`, and nothing else. It rejects another major, and a newer minor,

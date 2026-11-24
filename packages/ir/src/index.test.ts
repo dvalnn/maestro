@@ -693,6 +693,106 @@ test.each<[string, object, Mutation, string, string | undefined]>([
 	},
 );
 
+// Seam: parseIr accepts versioned fields or refuses them at their JSON Pointer.
+test.each<[string, string[], string[], Mutation, object]>([
+	[
+		"/scopes/1/pack",
+		["1.0", "1.1"],
+		["1.2", "1.3"],
+		(ir) =>
+			ir.scopes.push({
+				id: "extra",
+				composition: "extra",
+				pack: "fixtures",
+				ports: {},
+			}),
+		{},
+	],
+	["/schemas", ["1.0", "1.1", "1.2"], ["1.3"], (ir) => (ir.schemas = {}), {}],
+	[
+		"/schemas",
+		["1.0", "1.1", "1.2"],
+		["1.3"],
+		(ir) => (ir.schemas = { text: { type: "string" } }),
+		{},
+	],
+	[
+		"/nodes/1/in/prompt",
+		["1.0", "1.1", "1.2"],
+		["1.3"],
+		(ir) => (ir.nodes[1].in.prompt = "text"),
+		{ schemas: { text: { type: "string" } } },
+	],
+	[
+		"/nodes/1/out/text",
+		["1.0", "1.1", "1.2"],
+		["1.3"],
+		(ir) => (ir.nodes[1].out.text = "text"),
+		{ schemas: { text: { type: "string" } } },
+	],
+	[
+		"/nodes/0/inner/item",
+		["1.0", "1.1", "1.2"],
+		["1.3"],
+		(ir) => (ir.nodes[0].inner.item = "text"),
+		{ schemas: { text: { type: "string" } } },
+	],
+	[
+		"/scopes/0/ports/text",
+		["1.0", "1.1", "1.2"],
+		["1.3"],
+		(ir) => (ir.scopes[0].ports.text = "text"),
+		{ schemas: { text: { type: "string" } } },
+	],
+])(
+	"field %s is refused below its minor and accepted from its minor onward",
+	(path, older, supported, mutate, acceptedFields) => {
+		const ir = structuredClone(fanoutFaninLoop);
+		mutate(ir);
+		const schemaError = expect.objectContaining({
+			code: "IR.schema",
+			severity: "error",
+			path,
+		});
+		const refusal = {
+			ok: false as const,
+			diagnostics: expect.arrayContaining([schemaError]),
+		};
+		const refused = older.map((irVersion) => parseIr({ ...ir, irVersion }));
+		expect(refused).toEqual(older.map(() => refusal));
+		const accepted = supported.map(
+			(irVersion) => parseIr({ ...ir, ...acceptedFields, irVersion }).ok,
+		);
+		expect(accepted).toEqual(supported.map(() => true));
+	},
+);
+
+// Seam: parseIr reports unsupported versions before examining the document's shape.
+test.each(["0.0", "2.0", "1.4"])(
+	"unsupported version %s gets IR.version alone even with newer fields and a broken shape",
+	(irVersion) => {
+		const result = parseIr({
+			...fanoutFaninLoop,
+			irVersion,
+			schemas: {},
+			scopes: [
+				{
+					id: "extra",
+					composition: "extra",
+					pack: "fixtures",
+					ports: { text: "text" },
+				},
+			],
+			nodes: "not an array",
+		});
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(
+			result.diagnostics.map(({ code, path }) => ({ code, path })),
+		).toEqual([{ code: "IR.version", path: "/irVersion" }]);
+	},
+);
+
 const withVersion = (irVersion: unknown) => ({ ...minimal, irVersion });
 
 test("an unknown major version is rejected with a clear error", () => {

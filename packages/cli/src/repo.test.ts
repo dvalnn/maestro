@@ -1217,13 +1217,16 @@ describe("profiles", () => {
 		const w = await repoWorld(SMOKE_RUNTIME("stub"));
 		const gate = join(w.cwd, "gate");
 		const file = await gated(gate);
-		const legacy = (ir: {
-			irVersion: string;
-			nodes: { id: string; config?: unknown }[];
-		}) => {
+		// A genuine 1.0 shape: inline ports and no schemas table, which 1.3 added.
+		const legacy = (shared: unknown) => {
+			const parsed = parseIr(shared);
+			if (!parsed.ok) throw new Error("composed IR does not parse");
+			const ir = parsed.ir;
 			const agent = ir.nodes.find((n) => n.id === "a");
 			if (agent)
-				agent.config = { role: { name: "smoke" }, lane: { mode: "fresh" } };
+				Object.assign(agent, {
+					config: { role: { name: "smoke" }, lane: { mode: "fresh" } },
+				});
 			return { ...ir, irVersion: "1.0" };
 		};
 		const refusal =
