@@ -3758,7 +3758,16 @@ describe("the record", () => {
 		const { w, host, id } = await loopFanConcert();
 		const actor: Host = {
 			...host,
-			text: { ...host.text, actorFields: () => ({ kind: "assistant" }) },
+			text: {
+				...host.text,
+				actorFields: () => ({
+					kind: "assistant",
+					status: "host",
+					metrics: "host",
+					profile: "reviewer",
+				}),
+				details: () => ({ kind: "assistant", profile: "other" }),
+			},
 		};
 		const listing = await w.call(["ls", id, "--json"], { hosts: [actor] });
 		expect(listing.code).toBe(0);
@@ -3766,11 +3775,216 @@ describe("the record", () => {
 			(i: { node: string }) => i.node === "init",
 		);
 		expect(init.kind).toBe("fake.task");
+		expect(init.status).toBe("ok");
+		expect(init).not.toHaveProperty("metrics");
+		expect(init.profile).toBe("reviewer");
+		expect(
+			Object.keys(init).filter((key) => ["profile", "kind"].includes(key)),
+		).toEqual(["profile", "kind"]);
 		const detail = await w.call(["ls", id, "init", "--json"], {
 			hosts: [actor],
 		});
 		expect(detail.code).toBe(0);
 		expect(json(detail).kind).toBe("fake.task");
+		expect(json(detail).status).toBe("ok");
+		expect(json(detail).metrics).toEqual({});
+		expect(json(detail).profile).toBe("reviewer");
+		expect(listing.err).toBe("");
+		expect(detail.err).toBe("");
+	});
+
+	test("ls JSON drops actor fields reserved for either instance document even when absent", async () => {
+		const { w, host, id } = await loopFanConcert();
+		const actor: Host = {
+			...host,
+			text: {
+				...host.text,
+				actorFields: () => ({
+					name: "host",
+					node: "host",
+					expansion: "host",
+					status: "host",
+					stale: "host",
+					startedAt: "host",
+					settledAt: "host",
+					elapsedMs: "host",
+					tokens: "host",
+					reason: "host",
+					kind: "host",
+					notes: "host",
+					metrics: "host",
+					report: "host",
+					outputs: "host",
+					inputs: "host",
+					artifacts: "host",
+				}),
+			},
+		};
+		const listing = await w.call(["ls", id, "--json"], { hosts: [actor] });
+		expect(listing.code).toBe(0);
+		const init = json(listing).instances[0];
+		expect(init).toMatchObject({
+			name: "init",
+			node: "init",
+			expansion: "",
+			status: "ok",
+			stale: false,
+			startedAt: expect.any(Number),
+			settledAt: expect.any(Number),
+			elapsedMs: expect.any(Number),
+			tokens: 0,
+			kind: "fake.task",
+		});
+		for (const key of [
+			"reason",
+			"notes",
+			"metrics",
+			"report",
+			"outputs",
+			"inputs",
+			"artifacts",
+		])
+			expect(init).not.toHaveProperty(key);
+		const detail = await w.call(["ls", id, "init", "--json"], {
+			hosts: [actor],
+		});
+		expect(detail.code).toBe(0);
+		expect(json(detail)).toMatchObject({
+			name: "init",
+			node: "init",
+			expansion: "",
+			status: "ok",
+			stale: false,
+			startedAt: expect.any(Number),
+			settledAt: expect.any(Number),
+			elapsedMs: expect.any(Number),
+			tokens: 0,
+			kind: "fake.task",
+			metrics: {},
+			report: { summary: "reviewed" },
+			outputs: { text: "done" },
+			inputs: {},
+		});
+		for (const key of ["reason", "notes", "artifacts"])
+			expect(json(detail)).not.toHaveProperty(key);
+	});
+
+	test("ls instance JSON drops host details reserved for either document or held by its actor", async () => {
+		const { w, host, id } = await loopFanConcert();
+		const actor: Host = {
+			...host,
+			text: {
+				...host.text,
+				actorFields: () => ({ profile: "reviewer" }),
+				details: () => ({
+					name: "host",
+					node: "host",
+					expansion: "host",
+					status: "host",
+					stale: "host",
+					startedAt: "host",
+					settledAt: "host",
+					elapsedMs: "host",
+					tokens: "host",
+					reason: "host",
+					kind: "host",
+					notes: "host",
+					metrics: "host",
+					report: "host",
+					outputs: "host",
+					inputs: "host",
+					artifacts: "host",
+					profile: "other",
+					session: "session-1",
+				}),
+			},
+		};
+		const shown = await w.call(["ls", id, "init", "--json"], {
+			hosts: [actor],
+		});
+		expect(shown.code).toBe(0);
+		const detail = json(shown);
+		expect(detail).toMatchObject({
+			name: "init",
+			node: "init",
+			expansion: "",
+			status: "ok",
+			stale: false,
+			startedAt: expect.any(Number),
+			settledAt: expect.any(Number),
+			elapsedMs: expect.any(Number),
+			tokens: 0,
+			kind: "fake.task",
+			metrics: {},
+			report: { summary: "reviewed" },
+			outputs: { text: "done" },
+			inputs: {},
+			profile: "reviewer",
+			session: "session-1",
+		});
+		for (const key of ["reason", "notes", "artifacts"])
+			expect(detail).not.toHaveProperty(key);
+		expect(shown.err).toBe("");
+	});
+
+	test("ls JSON keeps row and detail field order when host keys do not collide", async () => {
+		const { w, host, id } = await loopFanConcert();
+		const actor: Host = {
+			...host,
+			text: {
+				...host.text,
+				actorFields: () => ({ harness: "fake", profile: "reviewer" }),
+				details: () => ({ session: "session-1" }),
+			},
+		};
+		const listing = await w.call(["ls", id, "--json"], { hosts: [actor] });
+		expect(listing.code).toBe(0);
+		const init = json(listing).instances.find(
+			(i: { node: string }) => i.node === "init",
+		);
+		expect(Object.keys(init)).toEqual([
+			"name",
+			"node",
+			"expansion",
+			"status",
+			"stale",
+			"startedAt",
+			"settledAt",
+			"elapsedMs",
+			"tokens",
+			"harness",
+			"profile",
+			"kind",
+		]);
+		const shown = await w.call(["ls", id, "init", "--json"], {
+			hosts: [actor],
+		});
+		expect(shown.code).toBe(0);
+		expect(Object.keys(json(shown))).toEqual([
+			"name",
+			"node",
+			"expansion",
+			"status",
+			"stale",
+			"startedAt",
+			"settledAt",
+			"elapsedMs",
+			"tokens",
+			"harness",
+			"profile",
+			"kind",
+			"metrics",
+			"report",
+			"outputs",
+			"inputs",
+			"session",
+		]);
+		expect(json(shown)).toMatchObject({
+			metrics: {},
+			report: { summary: "reviewed" },
+			outputs: { text: "done" },
+			inputs: {},
+		});
 	});
 
 	test("ls <concert> <instance> --json gives the same node kind as its listing row", async () => {

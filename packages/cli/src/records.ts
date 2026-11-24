@@ -447,6 +447,41 @@ type Step = ReturnType<typeof instancesInOrder>[number];
 /** The text hooks of the host of each node of a concert, by node id. */
 type TextLookup = ReturnType<typeof hostTextOf>;
 
+/** The keys of a step's row and of its detail document, and `toJSON`, which a host's fields never replace. */
+const RESERVED_KEYS: ReadonlySet<string> = new Set([
+	"name",
+	"node",
+	"expansion",
+	"status",
+	"stale",
+	"startedAt",
+	"settledAt",
+	"elapsedMs",
+	"tokens",
+	"reason",
+	"kind",
+	"notes",
+	"metrics",
+	"report",
+	"outputs",
+	"inputs",
+	"artifacts",
+	// JSON serialization calls a `toJSON` function, which would replace the whole document.
+	"toJSON",
+]);
+
+/** `fields` without the reserved keys and the keys of `held`. */
+function unreserved<T>(
+	fields: Readonly<Record<string, T>> | undefined,
+	held: object = {},
+): Record<string, T> {
+	return Object.fromEntries(
+		Object.entries(fields ?? {}).filter(
+			([key]) => !RESERVED_KEYS.has(key) && !Object.hasOwn(held, key),
+		),
+	);
+}
+
 /**
  * A step's row in `ls <concert> --json`, which leads its `ls <concert> <instance> --json` document: `elapsedMs` is its
  * run time, up to now while it runs, and who ran it and its notes are left out when its host gives none.
@@ -457,6 +492,7 @@ function stepRow(i: Step, ir: Ir, hostText: TextLookup) {
 		i.startedAt === undefined
 			? undefined
 			: (i.settledAt ?? Date.now()) - i.startedAt;
+	const actorFields = unreserved(actorFieldsOf(i.enrichment, i.node, hostText));
 	return {
 		name: i.name,
 		node: i.node,
@@ -468,8 +504,7 @@ function stepRow(i: Step, ir: Ir, hostText: TextLookup) {
 		elapsedMs,
 		tokens: tokensOf(i.metrics),
 		reason: i.reason,
-		...actorFieldsOf(i.enrichment, i.node, hostText),
-		// After the actor fields, which name any field a host likes: the kind is the recorded node's.
+		...actorFields,
 		kind: ir.nodes.find((n) => n.id === i.node)?.kind,
 		notes: Object.keys(notes).length > 0 ? notes : undefined,
 	};
@@ -485,14 +520,19 @@ function stepDetail(row: ConcertRecord, i: Step, hostText: TextLookup) {
 		port,
 		path: ref.path,
 	}));
+	const stepRowOf = stepRow(i, row.ir, hostText);
+	const details = unreserved(
+		detailsOf(i.enrichment, i.node, hostText),
+		stepRowOf,
+	);
 	return {
-		...stepRow(i, row.ir, hostText),
+		...stepRowOf,
 		metrics: i.metrics,
 		report: i.stale ? undefined : reportOf(i.enrichment, i.node, hostText),
 		outputs: valuesOf(row.ir, i.node, i.outputs, hostText),
 		inputs: i.inputs && withArtifactPaths(ports, i.inputs),
 		artifacts: artifacts.length > 0 ? artifacts : undefined,
-		...detailsOf(i.enrichment, i.node, hostText),
+		...details,
 	};
 }
 

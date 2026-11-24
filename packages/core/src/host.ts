@@ -232,13 +232,14 @@ export interface HostText {
 	 */
 	report?(enrichment: Enrichment): Record<string, unknown> | undefined;
 	/**
-	 * Who ran an instance as named one-line fields, such as `{ harness, model }`, for its `ls <concert> --json` row. Called
-	 * on a settled instance's enrichment; undefined when no one the host names ran it.
+	 * Who ran an instance as named one-line fields, such as `{ harness, model }`, for its `ls <concert> --json` row, called
+	 * on a settled instance's enrichment; undefined when no one ran it. A key the row or the detail already names is left out.
 	 */
 	actorFields?(enrichment: Enrichment): Record<string, string> | undefined;
 	/**
 	 * What `ls <concert> <instance> --json` adds of an instance beyond its row, report and values, such as the session it
-	 * ran in, each field left out when it has none. Called on a settled instance's enrichment.
+	 * ran in, called on a settled instance's enrichment. A key the row, the detail or an actor field already names is left
+	 * out.
 	 */
 	details?(enrichment: Enrichment): Record<string, unknown>;
 	/** What each field of the objects `report` gives means, in one short line each, for `ls --help`. */
