@@ -53,7 +53,7 @@ const LENSES: Record<string, Runtime> = {
 	"classics/top-lens": ["claude", "claude-opus-5-5", "medium"],
 	"classics/cross-lens": ["pi", "github-copilot/gpt-6.1-sol", "medium"],
 };
-const WRITER: Runtime = ["claude", "claude-haiku-5-5", "high"];
+const WRITER: Runtime = ["claude", "claude-sonnet-5-5", "high"];
 
 /** The runtime of each profile a risk preset seats, as `.maestro/presets/<risk>.yaml` and the config set it. */
 const seated: [string, Record<string, Runtime>][] = [

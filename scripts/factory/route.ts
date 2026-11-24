@@ -993,9 +993,12 @@ function capped(pr: string) {
 		.trimEnd();
 }
 
-function dangerLine({ risk, result }: Landed) {
+function dangerLine({ risk, result }: Landed, pr = "") {
 	const area = result.area ? ` · **Area:** ${result.area}` : "";
-	const door = result.contract;
+	// A writer's Merge line that calls the door one-way has said it: the plan's line shows only when they differ.
+	const door = /^\*\*Merge:\*\* one-way door/im.test(pr)
+		? undefined
+		: result.contract;
 	return [
 		`**Risk:** ${risk}${area}`,
 		...(door ? ["", `**One-way door:** ${oneLine(door)}`] : []),
@@ -1040,9 +1043,9 @@ const closing = ({ issue, result }: Landed) =>
 	`Closes #${issue}${result.related?.length ? ` · relates to ${refs(result.related)}` : ""}`;
 
 /**
- * The writer's `pr` capped to VISIBLE_MAX lines, then the tests line, the risk and area with the planner's contract as
- * the one-way door, then the folds: the tests, findings upheld, the plan, the review's agents and the spend under its total; the closing line
- * last.
+ * The writer's `pr` capped to VISIBLE_MAX lines, then the tests line, the risk and area, the planner's contract as the
+ * one-way door unless the writer's Merge line says it, then the folds: the tests, findings upheld, the plan, the
+ * review's agents and the spend under its total; the closing line last.
  */
 function writtenBody(landed: Landed, pr: string) {
 	const { spend } = landed;
@@ -1051,7 +1054,7 @@ function writtenBody(landed: Landed, pr: string) {
 		capped(pr),
 		"",
 		...testsLine(landed),
-		...dangerLine(landed),
+		...dangerLine(landed, pr),
 		"",
 		...testsRecord(landed),
 		...findingsRecord(landed),

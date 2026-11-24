@@ -11,7 +11,7 @@
 	".maestro/prompts/_grounds.md": 1,
 	".maestro/prompts/_plain.md": 1,
 	".maestro/prompts/_test-grounds.md": 4,
-	".maestro/slice/prompts/writer.md": 6,
+	".maestro/slice/prompts/writer.md": 5,
 	".maestro/triage/prompts/checker.md": 5,
 	".maestro/triage/prompts/planner.md": 15,
 	".maestro/triage/prompts/revise.md": 1,

@@ -672,6 +672,25 @@ test("a PR body names the planner's contract as the one-way door", () => {
 		result: { ...ready, contract: "the --json flag" },
 	});
 	expect(body).toContain("**Risk:** high\n\n**One-way door:** the --json flag");
+	const landed = {
+		issue: 5,
+		spend: [SPENT],
+		risk: "high",
+		result: { ...ready, contract: "the --json flag" },
+	} as const;
+	// A writer that calls the door one-way has said it; one that does not leaves the plan's line to say it.
+	expect(
+		pullBody({
+			...landed,
+			pr: "**Merge:** one-way door · cli. Scripts break.",
+		}),
+	).not.toContain("**One-way door:**");
+	expect(
+		pullBody({
+			...landed,
+			pr: "No one-way door here.\n\n**Merge:** two-way door · cli. Nothing.",
+		}),
+	).toContain("**One-way door:** the --json flag");
 });
 
 test("a PR body from the writer keeps its sections up to 40 visible lines and folds the rest, then the risk, the spend folded, and closes last", () => {

@@ -67,11 +67,14 @@ patches move no file under a `transcripts/` directory, an `## Evidence` section 
 
 ## Shape
 
-One `diff` fenced block over a call tree, file tree or pseudocode: indented text, `+` and `-` lines for what changed,
-unmarked lines for the surrounding shape that already existed. Keep only the calls, files and boundaries the change
-needs. When most of the shape is new, show the whole block. Redraw a spec figure, by Figures below, only when the shape
-moved; the figure's source is then the block. When no sketch says it faster than a sentence, say the shape in a
-sentence.
+One figure, picked by Figures below from what the change does to the system. A one-way door takes a `contract`, and may
+add a second figure beside it. A dependency that moves takes `seams`; a flow or a lifecycle that changes takes a
+`sequence` or a `state`. When none of those fits, a `diff` sketch over a call tree, file tree or pseudocode says a call,
+a file or logic that moved.
+
+Keep only the calls, files and boundaries the change needs. Mark what changed with `+` and `-`, leave the shape that
+already existed unmarked, and show the whole block when most of it is new. When the spec drew a figure, redraw it only
+when the shape moved. When no figure says it faster than a sentence, say the shape in a sentence.
 
 For Direct, put the builder's calls as a numbered list under the block: with no spec gate, they are what the owner
 reviews.

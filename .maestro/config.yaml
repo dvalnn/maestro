@@ -65,6 +65,7 @@ profiles:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before judging any Mermaid diagram: SKILL.md" }
       docs: { path: docs/README.md, hint: "before judging any doc: each topic's home and the doc conventions" }
   writer:
+    runtime: { harness: claude, model: claude-sonnet-5-5, thinking: high }
     attachments:
       diagrams: { path: .claude/skills/forge-diagrams, hint: "before drawing any Mermaid diagram: SKILL.md" }
   classics/tester:

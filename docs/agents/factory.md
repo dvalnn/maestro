@@ -427,28 +427,29 @@ flowchart TD
   `.maestro/slice/prompts/writer.md` gives. It holds a Verdict, a Shape view with the merge line, and the requirements
   or the builder's gaps folded. The tick shows at most 40 visible lines of it and folds the sections past that under
   "More from the writer". The first section stays even when it alone passes 40. Below it the tick adds one line of risk
-  and area, with the planner's contract as the one-way door. Above that line the tick adds a tests line, with no model.
-  The slice's `guarded` step runs `just guards`, which runs the tests the change adds or edits on this tree and on the
-  base's source. The line counts those that fail on the base and pass here, and counts those that do not load on the
-  base. It names the new ones that pass on both, which guard nothing, up to three. A fold lists every test by group.
-  Then come folds it computes from the concert's record. They are the findings left upheld after the last fix round, the
-  plan held against the change, the review's agents with their runtime and how each settled, and the spend. The spend is
-  a row per slice concert of the ticket's tour, a build or an encore as its record says, then a total. `Closes #N` with
-  the `Relates to` links comes last. The plan fold names the paths the spec's `touches` planned that the change left
-  alone, and those it touches unplanned. Tests and the transcripts they write are left out of the unplanned: the tester
-  chooses them. A change that moved a transcript opens its body, after any draft notice, with "What the user sees". The
-  slice's `seen` step, not the writer, runs `just pictures` in the review's sandbox, against the PR's base on a revision
-  too. The tick attaches each picture, one at a time, and shows the diffs. A picture the forge refuses is left out with
-  its reason and never costs the landing. A writer that fails costs the build nothing: the tick builds the body from its
-  data alone, with the upheld findings folded under `Findings` and no gaps. A PR is a draft, opened with the `WIP: `
-  title prefix, which Forgejo treats as a draft and refuses to merge, when the review left findings upheld, no lens
-  delivered a review, or the change, or an earlier round of the same PR, edits `docs/rulings.md` or `docs/adr/`. The
-  slice's result node decides it and writes the notice that opens the body, a line per reason, which the writer does not
-  write. A draft is never armed, a last child's after its stack review clears included: the owner merges it. Every
-  landing, an encore's included, rewrites the title and body of the PR already open on the branch, so an encore that
-  clears the draft drops the prefix. A revision's landing then comments on the PR that it was revised, by which concert,
-  with the conflicts it resolved, and asks each official reviewer who requested changes on the PR to review it again,
-  before the ticket moves to `in-review`, so a tick cut in between lands and answers again.
+  and area, with the planner's contract as the one-way door. It leaves the door out when the writer's merge line already
+  calls it one-way. Above that line the tick adds a tests line, with no model. The slice's `guarded` step runs
+  `just guards`, which runs the tests the change adds or edits on this tree and on the base's source. The line counts
+  those that fail on the base and pass here, and counts those that do not load on the base. It names the new ones that
+  pass on both, which guard nothing, up to three. A fold lists every test by group. Then come folds it computes from the
+  concert's record. They are the findings left upheld after the last fix round, the plan held against the change, the
+  review's agents with their runtime and how each settled, and the spend. The spend is a row per slice concert of the
+  ticket's tour, a build or an encore as its record says, then a total. `Closes #N` with the `Relates to` links comes
+  last. The plan fold names the paths the spec's `touches` planned that the change left alone, and those it touches
+  unplanned. Tests and the transcripts they write are left out of the unplanned: the tester chooses them. A change that
+  moved a transcript opens its body, after any draft notice, with "What the user sees". The slice's `seen` step, not the
+  writer, runs `just pictures` in the review's sandbox, against the PR's base on a revision too. The tick attaches each
+  picture, one at a time, and shows the diffs. A picture the forge refuses is left out with its reason and never costs
+  the landing. A writer that fails costs the build nothing: the tick builds the body from its data alone, with the
+  upheld findings folded under `Findings` and no gaps. A PR is a draft, opened with the `WIP: ` title prefix, which
+  Forgejo treats as a draft and refuses to merge, when the review left findings upheld, no lens delivered a review, or
+  the change, or an earlier round of the same PR, edits `docs/rulings.md` or `docs/adr/`. The slice's result node
+  decides it and writes the notice that opens the body, a line per reason, which the writer does not write. A draft is
+  never armed, a last child's after its stack review clears included: the owner merges it. Every landing, an encore's
+  included, rewrites the title and body of the PR already open on the branch, so an encore that clears the draft drops
+  the prefix. A revision's landing then comments on the PR that it was revised, by which concert, with the conflicts it
+  resolved, and asks each official reviewer who requested changes on the PR to review it again, before the ticket moves
+  to `in-review`, so a tick cut in between lands and answers again.
 
 ### Masterclass
 
