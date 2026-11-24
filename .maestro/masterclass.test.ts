@@ -415,17 +415,24 @@ test("masterclass records the planner's lessons, reports and backlog contents", 
 	const inputs = instances.find(
 		(instance) => instance.node === "planner",
 	)?.inputs;
-	for (const [port, file] of Object.entries(files)) {
-		const path = inputs?.[port];
-		expect(path).toBeDefined();
-		expect(basename(path ?? "")).toBe(basename(file.path));
-		expect(
-			readFileSync(
-				join(data, "maestro/concerts", concert.id, "artifacts", path ?? ""),
-				"utf8",
-			),
-		).toBe(file.text);
-	}
+	const entries = Object.entries(files);
+	expect(entries.length).toBeGreaterThan(0);
+	const read = (path: string | undefined) =>
+		readFileSync(
+			join(data, "maestro/concerts", concert.id, "artifacts", path ?? ""),
+			"utf8",
+		);
+	expect(
+		entries.map(([port]) => ({
+			name: basename(inputs?.[port] ?? ""),
+			text: inputs?.[port] === undefined ? undefined : read(inputs[port]),
+		})),
+	).toEqual(
+		entries.map(([, file]) => ({
+			name: basename(file.path),
+			text: file.text,
+		})),
+	);
 });
 
 test("a masterclass drops report clusters citing only read concerts and keeps a fresh reports-only cluster", async () => {

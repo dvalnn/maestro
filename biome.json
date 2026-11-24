@@ -9,7 +9,7 @@
 		"ignoreUnknown": true,
 		"includes": ["**", "!.claude", "!.zed", "!docs", "!.scratch"]
 	},
-	"plugins": ["./lint/cp-links.grit"],
+	"plugins": ["./lint/cp-links.grit", "./lint/loop-expects.grit"],
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab"
@@ -446,10 +446,6 @@
 					}
 				}
 			}
-		},
-		{
-			"includes": ["packages/**", "packs/**", "scripts/**"],
-			"plugins": ["./lint/loop-expects.grit"]
 		}
 	],
 	"markdown": {

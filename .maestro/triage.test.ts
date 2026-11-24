@@ -974,15 +974,15 @@ test("the triager's and the revision's tasks hold no JSON example of a question"
 				: typeof v === "object" && v !== null
 					? keys.every((k) => k in v) || Object.values(v).some(found)
 					: false;
-		for (const [, body] of blocks) {
-			let parsed: unknown;
+		const parses = (body: string): unknown => {
 			try {
-				parsed = JSON.parse(body ?? "");
+				return JSON.parse(body);
 			} catch {
-				continue;
+				return undefined;
 			}
-			expect(found(parsed)).toBe(false);
-		}
+		};
+		const offenders = blocks.filter(([, body]) => found(parses(body ?? "")));
+		expect(offenders).toEqual([]);
 	}
 });
 
@@ -1468,29 +1468,49 @@ test("designers compose fresh on Sonnet at medium with the planner's evidence, n
 	const shape = await designsComposed("--designs", "--sightings", sightings);
 	const designers = designerNodes(shape);
 	expect(designers.length).toBeGreaterThan(0);
-	for (const node of designers) {
-		expect(node.config.encore).toBe(false);
-		for (const port of ["issue", "answers", "backlog"]) {
-			expect(node.config.attachments?.[port]?.type).toBe("core.markdown");
-			expect(sourcesOf(shape, node.id, port)).toEqual(
-				sourcesOf(shape, "planner", port),
-			);
-		}
-		expect(node.config.attachments?.sightings).toBeUndefined();
-		expect(
-			shape.plan.ir.edges.filter(
+	const ports = ["issue", "answers", "backlog"];
+	const portFacts = (node: (typeof designers)[number]) =>
+		Object.fromEntries(
+			ports.map((port) => [
+				port,
+				{
+					type: node.config.attachments?.[port]?.type,
+					sources: sourcesOf(shape, node.id, port),
+				},
+			]),
+		);
+	const expectedPorts = Object.fromEntries(
+		ports.map((port) => [
+			port,
+			{ type: "core.markdown", sources: sourcesOf(shape, "planner", port) },
+		]),
+	);
+	expect(
+		designers.map((node) => ({
+			encore: node.config.encore,
+			ports: portFacts(node),
+			sightings: node.config.attachments?.sightings,
+			fromPlanner: shape.plan.ir.edges.filter(
 				(edge) => edge.to.node === node.id && edge.from.node === "planner",
 			),
-		).toEqual([]);
-		expect(
-			Object.values(node.config.out ?? {}).map((out) => out.format),
-		).toEqual(["markdown"]);
-		expect(shape.agents.find((agent) => agent.node === node.id)).toMatchObject({
-			profile: "designer",
-			model: "claude-sonnet-5-5",
-			thinking: "medium",
-		});
-	}
+			formats: Object.values(node.config.out ?? {}).map((out) => out.format),
+			agent: shape.agents.find((agent) => agent.node === node.id),
+		})),
+	).toEqual(
+		designers.map((node) => ({
+			encore: false,
+			ports: expectedPorts,
+			sightings: undefined,
+			fromPlanner: [],
+			formats: ["markdown"],
+			agent: expect.objectContaining({
+				node: node.id,
+				profile: "designer",
+				model: "claude-sonnet-5-5",
+				thinking: "medium",
+			}),
+		})),
+	);
 });
 
 test("merge continues the planner's seat and session and hands its whole plan to checking and revision", async () => {
@@ -1615,10 +1635,13 @@ test("an encore with designs starts both designers in new sessions", async () =>
 	const sessions = ranDesigners(shape, first.instances).map(
 		(instance) => instance.session?.id,
 	);
-	for (const designer of designers) {
-		expect(designer.session?.id).toBeDefined();
-		expect(sessions).not.toContain(designer.session?.id);
-	}
+	expect(sessions).toHaveLength(2);
+	expect(designers.map((designer) => designer.session?.id)).not.toContain(
+		undefined,
+	);
+	expect(
+		designers.filter((designer) => sessions.includes(designer.session?.id)),
+	).toEqual([]);
 }, 60_000);
 
 test.each<Ruling>([
@@ -1854,11 +1877,15 @@ test.each([
 		expect(output.verdict).toBe("needs-info");
 		expect(output.spec).toEqual({ touches: ready.touches, ...spec });
 		expect(output.questions).toHaveLength(2);
-		for (const question of output.questions) {
-			const text = JSON.stringify(question);
-			expect(text).toContain(unsure.question);
-			expect(text).toContain(deepMissing);
-		}
+		const texts = output.questions.map((question: unknown) =>
+			JSON.stringify(question),
+		);
+		expect(
+			texts.filter(
+				(text: string) =>
+					!text.includes(unsure.question) || !text.includes(deepMissing),
+			),
+		).toEqual([]);
 	},
 );
 

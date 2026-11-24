@@ -45,7 +45,6 @@ const LOUD = join(FIXTURES, "loud.ts");
 const DESCRIBED = join(FIXTURES, "described.ts");
 const USES_ECHO = join(FIXTURES, "uses_echo.ts");
 const ESC = "\u001b";
-const tuple = <const T extends readonly unknown[]>(...cells: T): T => cells;
 const SGR = new RegExp(`${ESC}\\[[\\d;]*m`);
 
 function expectPlainClosing(
@@ -619,30 +618,30 @@ describe("compose and config", () => {
 		expect(recorded).toEqual(await planOf(GREET));
 		expect(recorded).not.toEqual(await planOf(["demo.greet", "--name", "y"]));
 		for (const [args, err] of [
-			tuple(
+			[
 				["--concert", id, "--name", "y"],
 				/^error: unknown flag --name\n {2}See 'maestro compose --help'; 'maestro encore <id>'/,
-			),
-			tuple(
+			] as const,
+			[
 				[...GREET, "--concert", id],
 				/^error: maestro compose --concert takes no composition, got 'demo.greet'\n/,
-			),
-			tuple(
+			] as const,
+			[
 				["--concert", id, "demo.greet"],
 				/^error: maestro compose --concert takes no composition, got 'demo.greet'\n/,
-			),
-			tuple(
+			] as const,
+			[
 				["--concert", "--plan"],
 				/^error: maestro compose --concert needs a concert\n/,
-			),
-			tuple(
+			] as const,
+			[
 				["--plan", "--concert"],
 				/^error: maestro compose --concert needs a concert\n/,
-			),
-			tuple(
+			] as const,
+			[
 				["--concert", "fffffff"],
 				/^error: no concert 'fffffff' in the record\n/,
-			),
+			] as const,
 		])
 			expect((await w.call(["c", ...args])).err).toMatch(err);
 	});
@@ -951,8 +950,8 @@ describe("compose and config", () => {
 		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
 		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
 		for (const [snapshot, why] of [
-			tuple(null, /predates config snapshots/),
-			tuple("[", /not one this maestro reads/),
+			[null, /predates config snapshots/] as const,
+			["[", /not one this maestro reads/] as const,
 		]) {
 			db.run("UPDATE concerts SET snapshot = ? WHERE id = ?", [snapshot, id]);
 			const refused = await w.call(["config", id]);
@@ -1046,9 +1045,9 @@ describe("compose and config", () => {
 		const dir = join(w.root, "out");
 		const concert = idOf(await w.call(["p", HELLO], { hosts: [] }));
 		for (const [name, target] of [
-			tuple("greet", GREET),
-			tuple("hello", [HELLO]),
-			tuple("again", ["--concert", concert]),
+			["greet", GREET] as const,
+			["hello", [HELLO]] as const,
+			["again", ["--concert", concert]] as const,
 		])
 			expect(
 				await w.call([
@@ -1069,9 +1068,9 @@ describe("compose and config", () => {
 			"hello.json",
 		]);
 		for (const [name, hosts] of [
-			tuple("greet", [hostOf()]),
-			tuple("hello", []),
-			tuple("again", []),
+			["greet", [hostOf()]] as const,
+			["hello", []] as const,
+			["again", []] as const,
 		])
 			expect(
 				await w.call(["perform", join(dir, `${name}.json`)], { hosts }),
@@ -2545,9 +2544,9 @@ describe("usage errors", () => {
 				err: "",
 			});
 		for (const [alias, verb] of [
-			tuple("r", "resume"),
-			tuple("e", "encore"),
-			tuple("ag", "agent"),
+			["r", "resume"] as const,
+			["e", "encore"] as const,
+			["ag", "agent"] as const,
 		]) {
 			expect((await w.call([alias, "--help"])).out).toBe(
 				(await w.call([verb, "--help"])).out,
@@ -2559,11 +2558,11 @@ describe("usage errors", () => {
 		expect(verbs.length).toBeGreaterThan(0);
 		expect(offenders).toEqual([]);
 		for (const [form, takes] of [
-			tuple(["compose", "--concert", "x"], false),
-			tuple(["compose", "demo.greet"], true),
-			tuple(["cs", "show"], false),
-			tuple(["cs", "apply"], false),
-			tuple(["cs", "drop"], true),
+			[["compose", "--concert", "x"], false] as const,
+			[["compose", "demo.greet"], true] as const,
+			[["cs", "show"], false] as const,
+			[["cs", "apply"], false] as const,
+			[["cs", "drop"], true] as const,
 		]) {
 			const flags = flagsOf((await w.call([...form, "--help"])).out);
 			expect([
@@ -3073,8 +3072,8 @@ describe("the record", () => {
 		expect(done.code).toBe(0);
 		const every = [idOf(done), ...failed];
 		for (const [flags, expected] of [
-			tuple([], every),
-			tuple(["--status", "failed"], failed),
+			[[], every] as const,
+			[["--status", "failed"], failed] as const,
 		]) {
 			const table = await w.call(["ls", "--all", ...flags], {
 				terminal: () => ({ columns: 200, rows: 24 }),
@@ -3780,10 +3779,10 @@ describe("the record", () => {
 		expect(listing.code).toBe(0);
 		const instances = json(listing).instances;
 		for (const [name, kind] of [
-			tuple("rounds", "loop"),
-			tuple("rounds[0]/fan", "parMap"),
-			tuple("rounds[0]/fan[lens]/worker", "fake.task"),
-			tuple("rounds[0]/firstOk", "code"),
+			["rounds", "loop"] as const,
+			["rounds[0]/fan", "parMap"] as const,
+			["rounds[0]/fan[lens]/worker", "fake.task"] as const,
+			["rounds[0]/firstOk", "code"] as const,
 		]) {
 			const row = instances.find((i: { name: string }) => i.name === name);
 			const result = await w.call(["ls", id, name, "--json"], {

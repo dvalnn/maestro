@@ -1083,9 +1083,10 @@ function sectionsOf(pr: string) {
  */
 function capped(pr: string) {
 	const [first, ...rest] = sectionsOf(pr) as [Section, ...Section[]];
-	const totals: number[] = [];
-	for (const { visible } of rest)
-		totals.push((totals.at(-1) ?? first.visible) + visible);
+	const totals = rest.reduce<number[]>(
+		(t, { visible }) => [...t, (t.at(-1) ?? first.visible) + visible],
+		[],
+	);
 	const over = totals.findIndex((total) => total > VISIBLE_MAX);
 	if (over < 0) return pr;
 	const trim = (sections: Section[]) =>

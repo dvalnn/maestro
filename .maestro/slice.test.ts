@@ -157,22 +157,26 @@ test.each(seated)(
 	"under --preset %s, each agent runs its profile's runtime, and only the agents that write the lane may run the project's checks",
 	async (risk, runtimes) => {
 		const { nodes, agents } = await composed([risk]);
-		for (const a of agents)
-			expect([a.harness, a.model, a.thinking]).toEqual(
-				runtimes[a.profile] ?? [],
-			);
+		expect(agents.map((a) => [a.harness, a.model, a.thinking])).toEqual(
+			agents.map((a) => runtimes[a.profile] ?? []),
+		);
 		expect(new Set(agents.map((a) => a.profile))).toEqual(
 			new Set(Object.keys(runtimes)),
 		);
-		for (const a of agents)
-			expect(nodes.find((n) => n.id === a.node)?.config.checks ?? []).toEqual(
-				WRITERS.includes(a.profile) ? projectChecks : [],
-			);
+		expect(
+			agents.map(
+				(a) => nodes.find((n) => n.id === a.node)?.config.checks ?? [],
+			),
+		).toEqual(
+			agents.map((a) => (WRITERS.includes(a.profile) ? projectChecks : [])),
+		);
 		const fixes = nodes.filter((n) =>
 			/gate\/(loop\[\d+\]\/)?(fix|refix)$/.test(n.id),
 		);
 		expect(fixes.length).toBeGreaterThan(0);
-		for (const n of fixes) expect(n.config.check).toBe("fmt");
+		expect(
+			fixes.filter((n) => n.config.check !== "fmt").map((n) => n.id),
+		).toEqual([]);
 	},
 );
 
@@ -193,9 +197,14 @@ test.each([
 		expect(from(edges, "writer", "spec")).toEqual(spec);
 		const lenses = ids.filter((id) => /tiered_review\/[^/]+\/lens$/.test(id));
 		expect(lenses.length).toBeGreaterThan(0);
-		for (const id of lenses) expect(from(edges, id, "spec")).toEqual(spec);
-		for (const n of nodes.filter((n) => n.id.endsWith("/tieredOf")))
-			expect(n.literals?.floor).toBe(floor);
+		expect(lenses.map((id) => from(edges, id, "spec"))).toEqual(
+			lenses.map(() => spec),
+		);
+		const tiered = nodes.filter((n) => n.id.endsWith("/tieredOf"));
+		expect(tiered.length).toBeGreaterThan(0);
+		expect(tiered.map((n) => n.literals?.floor)).toEqual(
+			tiered.map(() => floor),
+		);
 	},
 );
 
@@ -337,8 +346,12 @@ test.each(["low", "medium", "high"])(
 		const { nodes } = await composed([risk]);
 		const judges = nodes.filter((n) => n.id.endsWith("/consolidator"));
 		expect(judges.length).toBeGreaterThan(0);
-		for (const n of judges)
-			expect(JSON.stringify(n)).toContain(JSON.stringify(JUDGED).slice(1, -1));
+		const wording = JSON.stringify(JUDGED).slice(1, -1);
+		expect(
+			judges
+				.filter((n) => !JSON.stringify(n).includes(wording))
+				.map((n) => n.id),
+		).toEqual([]);
 	},
 );
 
@@ -376,11 +389,18 @@ test.each(["low", "medium", "high"])(
 		const keys = Object.keys(
 			projectConfig.profiles["classics/lens"].attachments,
 		).sort();
-		for (const profile of profiles) {
-			const attached = await profileAttachments(profile, risk);
-			expect(Object.keys(attached).sort()).toEqual(keys);
-			for (const key of keys) expect(attached[key]?.path).toBe(lens[key]?.path);
-		}
+		const attached = await Promise.all(
+			[...profiles].map((profile) => profileAttachments(profile, risk)),
+		);
+		expect(attached.length).toBeGreaterThan(0);
+		expect(
+			attached.map((one) => ({
+				keys: Object.keys(one).sort(),
+				paths: keys.map((key) => one[key]?.path),
+			})),
+		).toEqual(
+			attached.map(() => ({ keys, paths: keys.map((key) => lens[key]?.path) })),
+		);
 	},
 );
 
