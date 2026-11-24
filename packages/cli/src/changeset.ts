@@ -15,7 +15,12 @@ import {
 	patchFiles,
 } from "@maestro/host-repo";
 import { type Ir, isPlainObject } from "@maestro/ir";
-import { type Changes, shortIds, stateWord } from "@maestro/render-text/live";
+import {
+	type Changes,
+	hintLine,
+	shortIds,
+	stateWord,
+} from "@maestro/render-text/live";
 import {
 	type Command,
 	colorOf,
@@ -545,18 +550,17 @@ async function applied(stored: Stored, prefix: string) {
 	}
 	const color = colorFlag(deps, values);
 	print(deps, output(p.checkout, ["diff", color, "--cached", "--stat"]));
+	const err = colorOf(deps, values).err;
+	const head = `applied ${shortIds(stored.store.ids()).label(p.row.id, err)} (node ${p.instance}, concert ${stateWord(p.row.status, err)})`;
 	if (commit) {
 		git(p.checkout, ["commit", "-q", "-m", p.message ?? ""]);
 		const made = git(p.checkout, ["rev-parse", "--short", "HEAD"]);
-		deps.stderr(
-			`applied ${p.short} (node ${p.instance}, concert ${p.row.status}) and committed it as ${made}`,
-		);
+		deps.stderr(`${head} and committed it as ${made}`);
 		return EXIT.ok;
 	}
-	const head = git(p.checkout, ["rev-parse", "--short", "HEAD"]);
-	deps.stderr(
-		`applied ${p.short} (node ${p.instance}, concert ${p.row.status}) on ${head}, staged. Next: commit it, or 'maestro cs drop'`,
-	);
+	const at = git(p.checkout, ["rev-parse", "--short", "HEAD"]);
+	deps.stderr(`${head} on ${at}, staged`);
+	deps.stderr(hintLine("Next: commit it, or 'maestro cs drop'", err));
 	return EXIT.ok;
 }
 

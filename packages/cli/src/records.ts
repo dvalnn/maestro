@@ -200,10 +200,7 @@ function notesLines(
 		return ["", paint("bold", head, color), ...laid.text.split("\n")];
 	});
 	if (!cut) return lines;
-	return [
-		...lines,
-		hintLine(`Full notes: ${command}`, color),
-	];
+	return [...lines, hintLine(`Full notes: ${command}`, color)];
 }
 
 /** How many entries the notes of each of `concerts`' current instances hold, by concert id, then by heading. */

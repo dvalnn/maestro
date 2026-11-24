@@ -2015,9 +2015,11 @@ export const nestedfans = composition("nestedfans", { examples: [{}] }, () => {
 			/^Edit a\.txt\n\nIt now says edited\.\n/,
 		);
 		const head = git(w.target, "rev-parse", "HEAD");
-		expect(await w.cs("apply", w.id, "--commit")).toMatchObject({
+		expect(await w.cs("apply", w.id, "--commit", "--color")).toMatchObject({
 			code: 0,
-			err: expect.stringMatching(/and committed it as \w+$/),
+			err: expect.stringContaining(
+				"\u001b[32mok\u001b[39m) and committed it as",
+			),
 		});
 		expect(git(w.target, "rev-list", "--count", `${head}..HEAD`)).toBe("1");
 		expect(git(w.target, "log", "-1", "--format=%B")).toBe(
@@ -2035,7 +2037,7 @@ export const nestedfans = composition("nestedfans", { examples: [{}] }, () => {
 			code: 0,
 			out: expect.stringContaining("a.txt | 2"),
 			err: expect.stringMatching(
-				/^applied \S+ \(node \S+, concert ok\) on \w+, staged\. Next: commit it, or 'maestro cs drop'$/,
+				/^applied \S+ \(node \S+, concert ok\) on \w+, staged\nNext: commit it, or 'maestro cs drop'$/,
 			),
 		});
 		expect(git(w.target, "diff", "--cached", "--name-only")).toBe("a.txt");

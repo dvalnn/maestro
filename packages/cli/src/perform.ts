@@ -17,7 +17,7 @@ import {
 	unresumable,
 } from "@maestro/core/perform";
 import { MS_PER_UNIT, mapWorkers } from "@maestro/ir";
-import { shortIds } from "@maestro/render-text/live";
+import { hintLine, shortIds } from "@maestro/render-text/live";
 import { STDLIB_HASH, STDLIB_MODULE } from "@maestro/sdk/loader";
 import { changesOf } from "./changeset";
 import {
@@ -178,8 +178,9 @@ async function detach(
 	deps: Deps,
 	command: string,
 	args: readonly string[],
-	json: boolean,
+	values: Values,
 ): Promise<number> {
+	const json = isSet(values, "json");
 	const started = await detached(deps, command, args);
 	if ("exit" in started) {
 		if (started.out.length > 0) deps.stdoutBytes(started.out);
@@ -190,15 +191,19 @@ async function detach(
 	deps.stdout(
 		json ? jsonOf(resultDoc(started.id, undefined), deps) : started.id,
 	);
-	if (deps.stderrTerminal && !json) await followHint(deps, started.id);
+	if (deps.stderrTerminal && !json)
+		await followHint(deps, started.id, colorOf(deps, values).err);
 	return EXIT.ok;
 }
 
 /** Prints how to follow the concert `id`, by the short id the foreground path hints. */
-async function followHint(deps: Deps, id: string) {
+async function followHint(deps: Deps, id: string, color: boolean) {
 	await withLocated(deps, async (_located, store) => {
 		deps.stderr(
-			`Follow it: maestro watch ${shortIds(store.ids()).label(id, false)}`,
+			hintLine(
+				`Follow it: maestro watch ${shortIds(store.ids()).label(id, false)}`,
+				color,
+			),
 		);
 	});
 }
@@ -363,7 +368,10 @@ async function report(
 	if (stopped === undefined) return exitOf(result.outcome);
 	if (stopped === EXIT.interrupted && !json)
 		deps.stderr(
-			`Resume it: maestro resume ${shortIds(store.ids()).label(id, false)}`,
+			hintLine(
+				`Resume it: maestro resume ${shortIds(store.ids()).label(id, false)}`,
+				color.err,
+			),
 		);
 	return stopped;
 }
@@ -417,7 +425,10 @@ async function conducted(
 	deps.stderr(`concert ${concert.id}`);
 	if (deps.stderrTerminal && !json)
 		deps.stderr(
-			`Follow it: maestro watch ${shortIds(store.ids()).label(concert.id, false)}`,
+			hintLine(
+				`Follow it: maestro watch ${shortIds(store.ids()).label(concert.id, false)}`,
+				color.err,
+			),
 		);
 	const stopBlock = liveBlock(deps, store, concert.id, color, json);
 	const settledConcert = await settled(concert, stopBlock);
@@ -485,8 +496,7 @@ export const perform: Command = {
 	help: compositionHelp,
 	async execute(args, deps) {
 		const early = peek(PERFORM_OPTIONS, args);
-		if (isSet(early, "detach"))
-			return detach(deps, "perform", args, isSet(early, "json"));
+		if (isSet(early, "detach")) return detach(deps, "perform", args, early);
 		const session = await openSession(deps, overridesOf(early));
 		const start = await begin(session, args);
 		await warned(start);
@@ -517,8 +527,7 @@ export const resume: Command = {
 			"Flags are listed in 'maestro resume --help'",
 		);
 		const prefix = only(positionals, "concert", NAME_CONCERT);
-		if (isSet(values, "detach"))
-			return detach(deps, "resume", args, isSet(values, "json"));
+		if (isSet(values, "detach")) return detach(deps, "resume", args, values);
 		return inStore(deps, isSet(values, "json"), (located, store) =>
 			restart(located, store, prefix, values),
 		);
@@ -551,8 +560,7 @@ export const encore: Command = {
 			NAME_CONCERT,
 		);
 		const early = peek(ENCORE_OPTIONS, rest);
-		if (isSet(early, "detach"))
-			return detach(deps, "encore", args, isSet(early, "json"));
+		if (isSet(early, "detach")) return detach(deps, "encore", args, early);
 		return inStore(deps, isSet(early, "json"), (located, store) =>
 			encored(located, store, prefix, textsOf(early, "config"), rest),
 		);
