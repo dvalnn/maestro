@@ -357,12 +357,13 @@ flowchart TD
   - a `ready-for-agent` ticket whose `encore` is set: each comment mentioning `@<login>` above `read`, a question
     comment excepted, headed `## Reply by <author>`; `read` moves to the newest comment it considered;
   - an `in-review` ticket whose PR holds an official review requesting changes, not dismissed, above `review`, whose PR
-    to `main` conflicts with the tick's `main`, or whose `findings` name a stack review: its landed concert, fed each
-    such review headed `## Review by <author>`, its body then its inline comments as `path:line` items, then the
-    conflict under `## Conflict with main`, then the stack review's under `## Stack review`. The ticket moves to
-    `in-progress`, `review` moves to the newest, and the build is cut at, and the settle lands folded into, its
-    `revisionBase`, so the PR keeps one commit per ticket: the PR's head, or under Conflict its merge onto `main`. The
-    build passes `--revises <revisionBase>^!`, so the writer's body covers that commit and the revision as one change.
+    to `main` conflicts with the tick's `main`, whose `findings` name a stack review, or which is `unresolved`: its
+    landed concert, fed each such review headed `## Review by <author>`, its body then its inline comments as
+    `path:line` items, then the conflict under `## Conflict with main`, then the stack review's under `## Stack review`,
+    then the findings its own review left upheld under `## Unresolved review`. The ticket moves to `in-progress`,
+    `review` moves to the newest, and the build is cut at, and the settle lands folded into, its `revisionBase`, so the
+    PR keeps one commit per ticket: the PR's head, or under Conflict its merge onto `main`. The build passes
+    `--revises <revisionBase>^!`, so the writer's body covers that commit and the revision as one change.
   - **Conflict.** A conflicting PR's `revisionBase` is the PR merged onto the tick's `main` with git's conflict markers
     left in, `main` its parent, and its conflicted paths are recorded as `conflicted`. The request names the paths
     holding markers and which side each marker opens, and apart the paths one side deleted while the other changed,
@@ -387,8 +388,10 @@ flowchart TD
     line an open issue carries is not filed again.
   - The encore's own slice review covers the fix; the stack review does not run again.
 - **Attempts.** A `rejected` slice, an empty one included, spends an attempt and is retried with a fresh perform. After
-  2 attempts the ticket goes to `needs-info`. An answer does not reset them: an answered ticket out of attempts gets one
-  encore, and a rejected one goes back to `needs-info`.
+  2 attempts the ticket goes to `needs-info`. A slice whose review left findings upheld spends an attempt too, and lands
+  as a draft PR all the same. While an attempt is left the PR is marked interim, and that attempt takes the findings as
+  an encore, unasked. Out of attempts, the ticket stays `in-review` and its draft PR waits for the owner. An answer does
+  not reset them: an answered ticket out of attempts gets one encore, and a rejected one goes back to `needs-info`.
 - **Blocked.** A blocked agent moves its ticket to `needs-info` and spends no attempt. Its reason shows once, under the
   spec comment's Last failure, and a question comment asks how to go on, offering `ready-for-agent` (continue with my
   answer) or `needs-triage`, answered as under Triage: Answers; on `ready-for-agent` the slice continues as an encore.
@@ -633,28 +636,29 @@ Reasons: <reason>; <reason> · Relates to #<n> · Last concert: `<concert id>`
 The `<data>` line is one JSON object, the tick's only state. The `read`, `review` and `revisionBase` fields are
 positions a later tick resumes from. A line the tick cannot read halts the tour manager.
 
-| Field          | Holds                                              | Set by                             | Cleared by                                                   |
-| -------------- | -------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------ |
-| `concert`      | The last concert the tick routed                   | a routed settle                    | not cleared                                                  |
-| `triage`       | The last ok triage, which a re-triage continues    | a routed or dropped ok triage      | not cleared                                                  |
-| `read`         | Id of the newest comment a triage was fed          | a triage or encore, a reply ask    | a failed triage                                              |
-| `version`      | The spec's version                                 | a routed triage                    | not cleared                                                  |
-| `specBase`     | The `main` commit the routed triage was cut from   | a routed triage                    | not cleared                                                  |
-| `approved`     | The spec version a stale bounce took off ready     | a stale bounce                     | a routed triage                                              |
-| `result`       | That triage's output; a string is a question's ask | a routed triage                    | the owner moving the ticket in its triage                    |
-| `pending`      | A result whose labels are not yet applied          | a routed triage                    | the labels applied                                           |
-| `filed`        | An approved split's children                       | the split's approval               | not cleared                                                  |
-| `slice`        | The slice concert the last build started           | a build                            | not cleared                                                  |
-| `attempts`     | The rejected slices spent                          | a rejected slice                   | not cleared                                                  |
-| `failure`      | The reason the last slice failed                   | a slice that does not land         | a landing                                                    |
-| `parked`       | A slice concert routed but not applied             | a settle moved during its run      | routing it, or any other move                                |
-| `revisionBase` | The commit a revision is cut at and lands on       | an encore of a reviewed PR         | a landing, a fresh build, a re-triage, an infra halt         |
-| `conflicted`   | The paths a revision's PR conflicted in with main  | an encore of a conflicting PR      | as `revisionBase` is                                         |
-| `encore`       | The slice concert to continue                      | a slice blocked or out of attempts | a retry, a landing, a parked one, a re-triage, an infra halt |
-| `review`       | Id of the newest review an encore was fed          | an encore of a reviewed PR         | not cleared                                                  |
-| `base`         | An epic's `main` head when its children were filed | an approved split's filing         | not cleared                                                  |
-| `stackReview`  | The stack review an epic started                   | a stack review                     | a stack review that failed                                   |
-| `findings`     | The stack review whose findings a child awaits     | a rejected stack review            | the encore fed them                                          |
+| Field          | Holds                                                | Set by                             | Cleared by                                                   |
+| -------------- | ---------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------ |
+| `concert`      | The last concert the tick routed                     | a routed settle                    | not cleared                                                  |
+| `triage`       | The last ok triage, which a re-triage continues      | a routed or dropped ok triage      | not cleared                                                  |
+| `read`         | Id of the newest comment a triage was fed            | a triage or encore, a reply ask    | a failed triage                                              |
+| `version`      | The spec's version                                   | a routed triage                    | not cleared                                                  |
+| `specBase`     | The `main` commit the routed triage was cut from     | a routed triage                    | not cleared                                                  |
+| `approved`     | The spec version a stale bounce took off ready       | a stale bounce                     | a routed triage                                              |
+| `result`       | That triage's output; a string is a question's ask   | a routed triage                    | the owner moving the ticket in its triage                    |
+| `pending`      | A result whose labels are not yet applied            | a routed triage                    | the labels applied                                           |
+| `filed`        | An approved split's children                         | the split's approval               | not cleared                                                  |
+| `slice`        | The slice concert the last build started             | a build                            | not cleared                                                  |
+| `attempts`     | The slices spent, rejected or left with findings     | a rejected slice, upheld findings  | not cleared                                                  |
+| `failure`      | The reason the last slice failed                     | a slice that does not land         | a landing                                                    |
+| `parked`       | A slice concert routed but not applied               | a settle moved during its run      | routing it, or any other move                                |
+| `revisionBase` | The commit a revision is cut at and lands on         | an encore of a reviewed PR         | a landing, a fresh build, a re-triage, an infra halt         |
+| `conflicted`   | The paths a revision's PR conflicted in with main    | an encore of a conflicting PR      | as `revisionBase` is                                         |
+| `encore`       | The slice concert to continue                        | a slice blocked or out of attempts | a retry, a landing, a parked one, a re-triage, an infra halt |
+| `review`       | Id of the newest review an encore was fed            | an encore of a reviewed PR         | not cleared                                                  |
+| `base`         | An epic's `main` head when its children were filed   | an approved split's filing         | not cleared                                                  |
+| `stackReview`  | The stack review an epic started                     | a stack review                     | a stack review that failed                                   |
+| `findings`     | The stack review whose findings a child awaits       | a rejected stack review            | the encore fed them                                          |
+| `unresolved`   | A landed slice left findings upheld, an attempt left | such a landing                     | the encore fed them, a landing                               |
 
 ### Stack review comment
 

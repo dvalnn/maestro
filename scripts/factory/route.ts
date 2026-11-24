@@ -63,7 +63,8 @@ export type Option = Question["options"][number];
  * head of the PR a revision is cut at and lands on, until it lands, and `conflicted` the paths it conflicted in with
  * `main` when it is cut at their merge instead. On an epic, `base` is `main`'s head when its
  * children were filed and `stackReview` the stack review it started; on its child, `findings` is the stack review whose
- * findings an encore has yet to be fed.
+ * findings an encore has yet to be fed. `unresolved` marks a landed slice whose review left findings upheld, which an
+ * encore has yet to be fed.
  */
 export type Data = {
 	concert?: string;
@@ -86,6 +87,7 @@ export type Data = {
 	base?: string;
 	stackReview?: string;
 	findings?: string;
+	unresolved?: true;
 };
 
 export const VERDICT_STATE: Record<Verdict, State> = {
@@ -278,6 +280,7 @@ export function dataOf(comment: string): Data {
 		base: optional(data, "base", isString, "a commit"),
 		stackReview: optional(data, "stackReview", isString, "a concert id"),
 		findings: optional(data, "findings", isString, "a concert id"),
+		unresolved: data.unresolved === true || undefined,
 	};
 }
 
@@ -734,6 +737,8 @@ export type Landed = {
 	pr?: string;
 	/** The draft notice, which opens the body. */
 	notice?: string;
+	/** Whether another attempt takes the upheld findings, which the body says under the notice. */
+	interim?: boolean;
 	/** The "What the user sees" section, which follows the notice. */
 	userSees?: string;
 	/** The paths the change touches, to hold against the spec's `touches`. */
@@ -872,6 +877,17 @@ function reviewRecord(landed: Landed) {
 	];
 }
 
+/** The line an interim PR opens with, under its draft notice. */
+const INTERIM =
+	"Interim: the next attempt takes the upheld findings and rewrites this PR.";
+
+/**
+ * Whether a slice whose review left `upheld` findings is interim: one of the ticket's attempts is left to take them,
+ * once this slice spends its own on top of the `attempts` already spent.
+ */
+export const isInterim = (upheld: string | undefined, attempts = 0) =>
+	unresolvedOf(upheld) !== undefined && attempts + 1 < ATTEMPTS;
+
 /** The findings the review left upheld after its last fix round, under their own heading; none when it left none. */
 function unresolvedLines({ upheld }: Landed) {
 	const found = unresolvedOf(upheld);
@@ -966,7 +982,9 @@ function writtenBody(landed: Landed, pr: string) {
  */
 export function pullBody(landed: Landed) {
 	const body = landed.pr ? writtenBody(landed, landed.pr) : builtBody(landed);
-	return [landed.notice, landed.userSees, body].filter(Boolean).join("\n\n");
+	return [landed.notice, landed.interim && INTERIM, landed.userSees, body]
+		.filter(Boolean)
+		.join("\n\n");
 }
 
 /**

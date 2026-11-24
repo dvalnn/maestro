@@ -78,6 +78,7 @@ import {
 	specCommentOf,
 	type Triage,
 	triaged,
+	unresolvedOf,
 	VERDICT_STATE,
 } from "./route";
 import {
@@ -868,9 +869,35 @@ async function conflictsOf(tick: Tick, pull: Pull) {
 }
 
 /**
+ * What a ticket's own record feeds the encore of its landed `concert`: its stack review's `findings`, then those its
+ * own review left upheld while it is `unresolved`.
+ */
+async function recorded(
+	tick: Tick,
+	concert: string,
+	{ findings, unresolved }: Data,
+) {
+	const upheld = unresolved
+		? unresolvedOf((await tick.maestro.report(concert)).upheld)
+		: undefined;
+	return [
+		...(findings
+			? [
+					{
+						heading: "Stack review",
+						body: findingsText(await tick.maestro.report(findings)),
+					},
+				]
+			: []),
+		...(upheld ? [{ heading: "Unresolved review", body: upheld }] : []),
+	];
+}
+
+/**
  * The encore of in-review `entry`'s landed concert its PR among `pulls` asks for with changes requested, a conflict
- * with `main`, or its stack review's `findings`, if any, and none while it conflicts in a way no build can be told. It is fed each review above `review`, the conflict and the
- * findings, moves `review` to the newest, clears `findings`, and records as `revisionBase` the commit the build is cut
+ * with `main`, its stack review's `findings` or its own `unresolved` ones, if any, and none while it conflicts in a way
+ * no build can be told. It is fed each review above `review`, the conflict and the findings, moves `review` to the
+ * newest, clears `findings` and `unresolved`, and records as `revisionBase` the commit the build is cut
  * at and lands folded into, so the PR keeps one commit per ticket: the PR's head, or its merge onto `main` when they
  * conflict, with the conflicted paths as `conflicted`.
  */
@@ -890,11 +917,7 @@ async function revision(
 	);
 	const changes = reviews.map(reviewChange);
 	if (conflicts) changes.push(conflictChange(pull, tick.main, conflicts));
-	if (data.findings)
-		changes.push({
-			heading: "Stack review",
-			body: findingsText(await tick.maestro.report(data.findings)),
-		});
+	changes.push(...(await recorded(tick, data.concert, data)));
 	if (!changes.length) return undefined;
 	return {
 		request: encoreRequest(requestOf(issue, spec), changes),
@@ -905,6 +928,7 @@ async function revision(
 				? Math.max(...reviews.map((r) => r.id))
 				: data.review,
 			findings: undefined,
+			unresolved: undefined,
 			revisionBase: conflicts?.commit ?? pull.sha,
 			conflicted: conflicts?.paths,
 		},

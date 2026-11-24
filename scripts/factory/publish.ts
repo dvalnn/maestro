@@ -14,10 +14,12 @@ import { riskOf } from "./pick";
 import {
 	type Data,
 	dataOf,
+	isInterim,
 	type Moved,
 	pullBody,
 	seenSection,
 	specCommentOf,
+	unresolvedOf,
 } from "./route";
 import {
 	BASE,
@@ -125,6 +127,7 @@ function pullText(
 		result,
 		pr: report.pr,
 		notice: report.notice,
+		interim: isInterim(report.upheld, data.attempts),
 		review: report.review,
 		reviewers: report.reviewers,
 		touched: report.touched,
@@ -267,21 +270,31 @@ async function attachMoved(forge: Forge, dir: string, pull: number) {
 	return moved;
 }
 
-/** Writes `entry`'s landed slice `concert` back: `in-review` with its PR `pull`. */
+/**
+ * Writes `entry`'s landed slice `concert` back: `in-review` with its PR `pull`. A slice whose review left `upheld`
+ * findings spends an attempt as a rejected one does, and while one is left the ticket is marked `unresolved`, for an
+ * encore to take them (factory.md, Rules, Build: Attempts).
+ */
 async function record(
 	tick: Tick,
 	{ issue, data }: Entry,
 	concert: string | undefined,
 	pull: number,
+	upheld: string | undefined,
 ) {
+	const left = unresolvedOf(upheld) !== undefined;
 	await move(tick, issue.number, "in-review");
 	await writeSpec(tick, issue.number, "in-review", {
 		...data,
 		...UNCONTINUED,
 		concert,
 		failure: undefined,
+		attempts: left ? (data.attempts ?? 0) + 1 : data.attempts,
+		unresolved: isInterim(upheld, data.attempts) || undefined,
 	});
-	tick.say(`#${issue.number} is in review as PR #${pull}`);
+	tick.say(
+		`#${issue.number} is in review as PR #${pull}${isInterim(upheld, data.attempts) ? ", interim: its upheld findings go to the next attempt" : ""}`,
+	);
 }
 
 /**
@@ -327,6 +340,6 @@ export async function land(
 		(dir) => landIn(tick, entry, id, report, dir),
 	);
 	if (pull === undefined) return false;
-	await record(tick, entry, id, pull);
+	await record(tick, entry, id, pull, report.upheld);
 	return true;
 }

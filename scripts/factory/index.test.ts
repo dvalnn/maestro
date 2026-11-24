@@ -1516,14 +1516,19 @@ describe("a build", () => {
 	const NOTICE =
 		"Draft: 1 finding remains upheld after the last fix round; see Unresolved review.";
 
-	test("lands an ok slice in a fresh workspace and opens its draft PR, unarmed, with its notice first, the plan held against the change and its review's record", async () => {
+	test("lands an ok slice in a fresh workspace and opens its draft PR, unarmed, with its notice first, the plan held against the change and its review's record, then gives its upheld findings to the attempt left", async () => {
+		const concerts = [sliceConcert("s1", 7)];
+		const results: Record<string, Result> = {
+			s1: { status: "ok", outputs: {} },
+		};
+		const reports: Record<string, Report> = {};
 		const t = setup(
 			[specced(7, "in-progress", { slice: "s1" })],
-			[sliceConcert("s1", 7)],
-			{ s1: { status: "ok", outputs: {} } },
+			concerts,
+			results,
 			undefined,
 			{
-				reports: {
+				reports: Object.assign(reports, {
 					s1: {
 						obstacles: [],
 						sightings: [],
@@ -1535,7 +1540,7 @@ describe("a build", () => {
 						reviewers: [{ name: "lens", runtime: "stub", status: "ok" }],
 						touched: ["greet.sh", "x.sh"],
 					},
-				},
+				}),
 			},
 		);
 		await t.run();
@@ -1549,10 +1554,13 @@ describe("a build", () => {
 			`push abc123 as maestro-tm/i7 from ${CACHED}`,
 			"pull maestro-tm/i7 to main: WIP: feat: greet by name",
 			"labels #7 kind/enhancement risk/low state/in-review",
+			"labels #7 kind/enhancement risk/low state/in-progress",
 		]);
 		expect(t.opened[0]?.body).toBe(
 			[
 				NOTICE,
+				"",
+				"Interim: the next attempt takes the upheld findings and rewrites this PR.",
 				"",
 				"Closes #7 · relates to #4",
 				"",
@@ -1615,10 +1623,49 @@ describe("a build", () => {
 				"",
 			].join("\n"),
 		);
-		expect(dataAt(t.find(7)).concert).toBe("s1");
+		// Findings left upheld spend an attempt, and the one left takes them as an encore at once, unasked.
+		expect(t.starts.map(started)).toEqual(["encore s1"]);
+		expect(argAfter(t.starts[0] ?? [], "--request")).toEndWith(
+			"\n## Unresolved review\n\n- F1, a.ts:3: too wide\n",
+		);
+		expect(dataAt(t.find(7))).toMatchObject({ concert: "s1", attempts: 1 });
+		expect(dataAt(t.find(7)).unresolved).toBeUndefined();
+		// Out of attempts, the findings wait for the owner on the draft PR.
+		concerts.unshift(sliceConcert("s2", 7));
+		results.s2 = { status: "ok", outputs: {} };
+		reports.s2 = {
+			...NO_REPORT,
+			upheld: "- F1, a.ts:3: too wide",
+			draft: true,
+		};
+		await t.run();
+		const body = t.pulls.find((p) => p.number === FIRST_PULL)?.body ?? "";
+		expect(body).toContain("## Unresolved review");
+		expect(body).not.toContain("Interim:");
+		expect(dataAt(t.find(7))).toMatchObject({ concert: "s2", attempts: 2 });
+		expect(stateOf(t.find(7))).toBe("in-review");
 		const writes = t.writes.length;
 		await t.run();
+		expect(t.starts).toHaveLength(1);
 		expect(t.writes).toHaveLength(writes);
+	});
+
+	test("a slice that leaves findings upheld after a rejected one is out of attempts: its draft PR waits for the owner", async () => {
+		const t = setup(
+			[specced(7, "in-progress", { slice: "s1", attempts: 1 })],
+			[sliceConcert("s1", 7)],
+			{ s1: { status: "ok", outputs: {} } },
+			undefined,
+			{
+				reports: {
+					s1: { ...NO_REPORT, upheld: "- F1, a.ts:3: too wide", draft: true },
+				},
+			},
+		);
+		await t.run();
+		expect(t.starts).toEqual([]);
+		expect(t.opened[0]?.body).not.toContain("Interim:");
+		expect(dataAt(t.find(7)).attempts).toBe(2);
 	});
 
 	const ATTACHED = "https://forge.example/attachments/a.png";
@@ -2265,6 +2312,7 @@ describe("a merge", () => {
 			"arm #30",
 		]);
 		expect(t.find(8).labels).toContain("state/in-review");
+		expect(dataAt(t.find(8)).attempts).toBeUndefined();
 		const writes = t.writes.length;
 		await t.run();
 		expect(t.writes).toHaveLength(writes);
@@ -2872,21 +2920,27 @@ describe("a stack review", () => {
 		expect(merging(t.writes)).toEqual(armed);
 	});
 
-	test("records rejected findings on the epic, feeds them to the last child's encore, then arms its PR once that lands", async () => {
-		const t = epicWith("in-review", { stackReview: "r1" }, { review: 3 });
+	test("records rejected findings on the epic, feeds them to the last child's encore ahead of its own upheld ones, then arms its PR once that lands", async () => {
+		const t = epicWith(
+			"in-review",
+			{ stackReview: "r1" },
+			{ review: 3, unresolved: true },
+		);
 		t.concerts.push(reviewConcert("r1", "rejected"));
 		t.results.r1 = rejected("the consolidator blocked");
 		t.reports.r1 = FINDINGS;
+		t.reports.s1 = { ...NO_REPORT, upheld: "- F1, a.ts:3: too wide" };
 		await t.run();
 		expect(t.find(9).comments.at(-1)?.body).toBe(
 			"### Stack review · `r1`\n\n# Review\n\nA seam breaks.\n\nIts findings go to the next encore of #7.\n",
 		);
 		expect(t.starts.map(started)).toEqual(["encore s1"]);
 		expect(argAfter(t.starts[0] ?? [], "--request")).toBe(
-			`${requestFor(7).replace(`${ASK}\n`, `Part of #9\n\n${ASK}\n`)}\n## Stack review\n\n# Review\n\nA seam breaks.\n`,
+			`${requestFor(7).replace(`${ASK}\n`, `Part of #9\n\n${ASK}\n`)}\n## Stack review\n\n# Review\n\nA seam breaks.\n\n## Unresolved review\n\n- F1, a.ts:3: too wide\n`,
 		);
 		expect(configsOf(t.starts[0])).toEqual([ENCORE_CONFIG, "target.base=sha7"]);
 		expect(dataAt(t.find(7)).findings).toBeUndefined();
+		expect(dataAt(t.find(7)).unresolved).toBeUndefined();
 		expect(dataAt(t.find(7)).review).toBe(3);
 		expect(merging(t.writes)).toEqual([]);
 		t.concerts.unshift(sliceConcert("s3", 7));
