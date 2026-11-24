@@ -58,7 +58,7 @@ transcripts *paths:
 # draw the transcripts as PNGs in <out>; with a base revision, only the sections that differ from it, before beside after
 [positional-arguments]
 pictures out base="":
-    bun packages/transcript/src/pictures.ts "$@"
+    bun scripts/pictures.ts "$@"
 
 # sort the tests this tree adds or edits by what they guard, as <out>/guards.json: red, unloaded or green on <base>'s source
 [positional-arguments]

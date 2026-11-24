@@ -1,9 +1,13 @@
-// Draws the transcripts as pictures: bun packages/transcript/src/pictures.ts <out> [<base rev>]
+// Draws the transcripts as pictures: bun scripts/pictures.ts <out> [<base rev>]
 import { cp, mkdir, rm } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { run, withBaseTree } from "../../../scripts/base-tree";
-import { differing, picture, sectionsOf } from "./picture";
+import {
+	differing,
+	picture,
+	sectionsOf,
+} from "../packages/transcript/src/picture";
+import { run, withBaseTree } from "./base-tree";
 
 /** The test files of the tree at `cwd` that hold a transcript. */
 async function transcriptTests(cwd: string) {
