@@ -45,6 +45,7 @@ const LOUD = join(FIXTURES, "loud.ts");
 const DESCRIBED = join(FIXTURES, "described.ts");
 const USES_ECHO = join(FIXTURES, "uses_echo.ts");
 const ESC = "\u001b";
+const tuple = <const T extends readonly unknown[]>(...cells: T): T => cells;
 const SGR = new RegExp(`${ESC}\\[[\\d;]*m`);
 
 function expectPlainClosing(
@@ -263,10 +264,11 @@ describe("compose and config", () => {
 			l.split(`${ESC}[${code}m`).length - 1;
 		expect(rows.some((l) => l.includes(`…${ESC}[0m`))).toBe(true);
 		// Bold and dim both end at 22, or at a reset.
-		for (const l of rows)
-			expect(count(l, "1") + count(l, "2")).toBe(
-				count(l, "22") + count(l, "0"),
-			);
+		expect(
+			rows.filter(
+				(l) => count(l, "1") + count(l, "2") !== count(l, "22") + count(l, "0"),
+			),
+		).toEqual([]);
 	});
 
 	// Seam: config's table on a terminal and in a pipe, for a composition and a recorded concert.
@@ -617,31 +619,31 @@ describe("compose and config", () => {
 		expect(recorded).toEqual(await planOf(GREET));
 		expect(recorded).not.toEqual(await planOf(["demo.greet", "--name", "y"]));
 		for (const [args, err] of [
-			[
+			tuple(
 				["--concert", id, "--name", "y"],
 				/^error: unknown flag --name\n {2}See 'maestro compose --help'; 'maestro encore <id>'/,
-			],
-			[
+			),
+			tuple(
 				[...GREET, "--concert", id],
 				/^error: maestro compose --concert takes no composition, got 'demo.greet'\n/,
-			],
-			[
+			),
+			tuple(
 				["--concert", id, "demo.greet"],
 				/^error: maestro compose --concert takes no composition, got 'demo.greet'\n/,
-			],
-			[
+			),
+			tuple(
 				["--concert", "--plan"],
 				/^error: maestro compose --concert needs a concert\n/,
-			],
-			[
+			),
+			tuple(
 				["--plan", "--concert"],
 				/^error: maestro compose --concert needs a concert\n/,
-			],
-			[
+			),
+			tuple(
 				["--concert", "fffffff"],
 				/^error: no concert 'fffffff' in the record\n/,
-			],
-		] as const)
+			),
+		])
 			expect((await w.call(["c", ...args])).err).toMatch(err);
 	});
 
@@ -948,11 +950,10 @@ describe("compose and config", () => {
 		const w = await world();
 		const id = idOf(await w.call(["perform", ...GREET], { hosts: [hostOf()] }));
 		const db = new Database(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
-		const cases: [string | null, RegExp][] = [
-			[null, /predates config snapshots/],
-			["[", /not one this maestro reads/],
-		];
-		for (const [snapshot, why] of cases) {
+		for (const [snapshot, why] of [
+			tuple(null, /predates config snapshots/),
+			tuple("[", /not one this maestro reads/),
+		]) {
 			db.run("UPDATE concerts SET snapshot = ? WHERE id = ?", [snapshot, id]);
 			const refused = await w.call(["config", id]);
 			expect(refused.code).toBe(1);
@@ -1045,10 +1046,10 @@ describe("compose and config", () => {
 		const dir = join(w.root, "out");
 		const concert = idOf(await w.call(["p", HELLO], { hosts: [] }));
 		for (const [name, target] of [
-			["greet", GREET],
-			["hello", [HELLO]],
-			["again", ["--concert", concert]],
-		] as const)
+			tuple("greet", GREET),
+			tuple("hello", [HELLO]),
+			tuple("again", ["--concert", concert]),
+		])
 			expect(
 				await w.call([
 					"compose",
@@ -1068,10 +1069,10 @@ describe("compose and config", () => {
 			"hello.json",
 		]);
 		for (const [name, hosts] of [
-			["greet", [hostOf()]],
-			["hello", []],
-			["again", []],
-		] as const)
+			tuple("greet", [hostOf()]),
+			tuple("hello", []),
+			tuple("again", []),
+		])
 			expect(
 				await w.call(["perform", join(dir, `${name}.json`)], { hosts }),
 			).toMatchObject({
@@ -1439,8 +1440,9 @@ describe("perform", () => {
 		const up = new RegExp(`${ESC}\\[(\\d+)F`).exec(writes[drawn] ?? "");
 		expect(Number(up?.[1])).toBeGreaterThan(wide);
 		const after = stripVTControlCharacters(writes.slice(mark, end).join("\n"));
-		for (const line of after.split("\n"))
-			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(20);
+		const afterLines = after.split("\n");
+		expect(afterLines.some((l) => l.trim() !== "")).toBe(true);
+		expect(afterLines.filter((l) => Bun.stringWidth(l) > 20)).toEqual([]);
 	});
 
 	test("keeps redrawing the elapsed time after a host's progress text throws", async () => {
@@ -1722,12 +1724,15 @@ describe("perform", () => {
 		const logged = await w.call(["wait", id], { terminal, env });
 		expect(logged.err).not.toContain(ESC);
 		expect(logged.out).toContain(ESC);
-		const offs: { env: Record<string, string>; flags: string[] }[] = [
-			{ env: { NO_COLOR: "1" }, flags: [] },
-			{ env: { TERM: "dumb" }, flags: [] },
-			{ env: {}, flags: ["--no-color"] },
-		];
-		for (const off of offs)
+		const colorOff = (env: Record<string, string>, flags: string[]) => ({
+			env,
+			flags,
+		});
+		for (const off of [
+			colorOff({ NO_COLOR: "1" }, []),
+			colorOff({ TERM: "dumb" }, []),
+			colorOff({}, ["--no-color"]),
+		])
 			for (const verb of [
 				["wait", id],
 				["perform", file],
@@ -1752,7 +1757,7 @@ describe("perform", () => {
 		const rows = stripVTControlCharacters(wrapped.err).split("\n").slice(2);
 		expect(rows[0]).toStartWith("reason     a reason");
 		expect(rows.length).toBeGreaterThan(1);
-		for (const row of rows.slice(1)) expect(row).toMatch(/^ {11}\S/);
+		expect(rows.slice(1).filter((r) => !/^ {11}\S/.test(r))).toEqual([]);
 		expect(rows.map((row) => row.slice(11)).join(" ")).toBe(reason);
 		for (const piped of [{}, { terminal }])
 			expect((await w.call(["wait", broke], piped)).err).toEndWith(
@@ -2512,6 +2517,25 @@ describe("usage errors", () => {
 		},
 	);
 
+	const wrongFlagVerbs = async (
+		w: { call: (args: string[]) => Promise<{ out: string }> },
+		verbs: string[],
+		reads: string[],
+	) => {
+		const wrong: string[] = [];
+		for (const verb of verbs) {
+			const flags = flagsOf((await w.call([verb, "--help"])).out);
+			const takesPreset = !["resume", "encore", ...reads].includes(verb);
+			const takesConfig = !reads.includes(verb);
+			const ok =
+				flags.includes("--preset") === takesPreset &&
+				flags.includes("--config") === takesConfig;
+			if (!ok) wrong.push(verb);
+		}
+		return wrong;
+	};
+	const flagsOf = (out: string): string[] => out.match(/--[a-z][a-z-]*/g) ?? [];
+
 	test("--help advertises preset and config flags only on commands that accept them", async () => {
 		const w = await world();
 		for (const args of [["--help"], ["p", "-h"], ["w", "-h"]])
@@ -2521,34 +2545,27 @@ describe("usage errors", () => {
 				err: "",
 			});
 		for (const [alias, verb] of [
-			["r", "resume"],
-			["e", "encore"],
-			["ag", "agent"],
-		] as const) {
+			tuple("r", "resume"),
+			tuple("e", "encore"),
+			tuple("ag", "agent"),
+		]) {
 			expect((await w.call([alias, "--help"])).out).toBe(
 				(await w.call([verb, "--help"])).out,
 			);
 		}
 		const verbs = verbsOf((await w.call(["--help"])).out);
 		const reads = ["ls", "wait", "watch", "kill", "tour", "prune", "artifact"];
-		for (const verb of verbs) {
-			const { out } = await w.call([verb, "--help"]);
-			const flags: string[] = out.match(/--[a-z][a-z-]*/g) ?? [];
-			expect(flags.includes("--preset")).toBe(
-				!["resume", "encore", ...reads].includes(verb),
-			);
-			expect(flags.includes("--config")).toBe(!reads.includes(verb));
-		}
-		const forms: [string[], boolean][] = [
-			[["compose", "--concert", "x"], false],
-			[["compose", "demo.greet"], true],
-			[["cs", "show"], false],
-			[["cs", "apply"], false],
-			[["cs", "drop"], true],
-		];
-		for (const [form, takes] of forms) {
-			const flags: string[] =
-				(await w.call([...form, "--help"])).out.match(/--[a-z][a-z-]*/g) ?? [];
+		const offenders = await wrongFlagVerbs(w, verbs, reads);
+		expect(verbs.length).toBeGreaterThan(0);
+		expect(offenders).toEqual([]);
+		for (const [form, takes] of [
+			tuple(["compose", "--concert", "x"], false),
+			tuple(["compose", "demo.greet"], true),
+			tuple(["cs", "show"], false),
+			tuple(["cs", "apply"], false),
+			tuple(["cs", "drop"], true),
+		]) {
+			const flags = flagsOf((await w.call([...form, "--help"])).out);
 			expect([
 				form,
 				flags.includes("--preset"),
@@ -2698,8 +2715,8 @@ describe("help and color", () => {
 			if (!line.startsWith(" ".repeat(33))) break;
 			rows.push(line.slice(33));
 		}
-		for (const line of on)
-			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(80);
+		expect(on.some((l) => l.trim() !== "")).toBe(true);
+		expect(on.filter((l) => Bun.stringWidth(l) > 80)).toEqual([]);
 		expect(rows.length).toBeGreaterThan(1);
 		expect(rows.join(" ").replace(/\s+/g, " ").trim()).toBe(DESC);
 
@@ -2719,8 +2736,8 @@ describe("help and color", () => {
 			lines.indexOf("Commands:"),
 			lines.findIndex((line) => line.startsWith("See '")),
 		);
-		for (const line of tables)
-			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(80);
+		expect(tables.some((l) => l.trim() !== "")).toBe(true);
+		expect(tables.filter((l) => Bun.stringWidth(l) > 80)).toEqual([]);
 		const config = lines.findIndex(
 			(line) =>
 				line.includes("config") && line.includes("Show a composition's"),
@@ -2748,8 +2765,8 @@ describe("help and color", () => {
 				help.split("\n").indexOf("Flags:"),
 				help.split("\n").indexOf("Examples:"),
 			);
-		for (const line of flags)
-			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(40);
+		expect(flags.some((l) => l.trim() !== "")).toBe(true);
+		expect(flags.filter((l) => Bun.stringWidth(l) > 40)).toEqual([]);
 	});
 
 	// The description read back from the wrapped lines of a row at `lines[at]`, each under `column`.
@@ -2774,8 +2791,9 @@ describe("help and color", () => {
 			"Print the directory that holds maestro's record and packs",
 		);
 		const end = lines.findIndex((line) => line.startsWith("Common flags"));
-		for (const line of lines.slice(lines.indexOf("Flags:"), end))
-			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(40);
+		const table = lines.slice(lines.indexOf("Flags:"), end);
+		expect(table.some((l) => l.trim() !== "")).toBe(true);
+		expect(table.filter((l) => Bun.stringWidth(l) > 40)).toEqual([]);
 	});
 
 	// Seam: `prune --help` on a 40-column terminal, where the argument's description wraps under its column.
@@ -3055,9 +3073,9 @@ describe("the record", () => {
 		expect(done.code).toBe(0);
 		const every = [idOf(done), ...failed];
 		for (const [flags, expected] of [
-			[[], every],
-			[["--status", "failed"], failed],
-		] as const) {
+			tuple([], every),
+			tuple(["--status", "failed"], failed),
+		]) {
 			const table = await w.call(["ls", "--all", ...flags], {
 				terminal: () => ({ columns: 200, rows: 24 }),
 				env: { NO_COLOR: "1" },
@@ -3101,10 +3119,14 @@ describe("the record", () => {
 		expect(rows.map((row: { id: string }) => row.id).sort()).toEqual(
 			[before, unreadable, after].sort(),
 		);
-		for (const row of rows) {
-			expect(row).toMatchObject({ status: "ok" });
-			for (const key of Object.keys(row)) expect(LIST_ROW).toContain(key);
-		}
+		expect(
+			rows.filter((row: { status: string }) => row.status !== "ok"),
+		).toEqual([]);
+		expect(
+			rows
+				.flatMap((row: object) => Object.keys(row))
+				.filter((key: string) => !LIST_ROW.includes(key)),
+		).toEqual([]);
 		expect(
 			configValues(await w.call(["config", before, "--json"], outside)),
 		).toMatchObject({ workspace: "ws" });
@@ -3447,12 +3469,11 @@ describe("the record", () => {
 		expect(stripVTControlCharacters(instances.out)).toBe(
 			(await w.call(["ls", broke])).out,
 		);
-		const off: { args: string[]; env: Record<string, string> }[] = [
+		for (const { args, env } of [
 			{ args: ["--no-color"], env: {} },
 			{ args: [], env: { NO_COLOR: "1" } },
 			{ args: [], env: { TERM: "dumb" } },
-		];
-		for (const { args, env } of off)
+		])
 			for (const target of [[], [done]])
 				expect(
 					(await w.call(["ls", ...target, ...args], { terminal, env })).out,
@@ -3759,11 +3780,11 @@ describe("the record", () => {
 		expect(listing.code).toBe(0);
 		const instances = json(listing).instances;
 		for (const [name, kind] of [
-			["rounds", "loop"],
-			["rounds[0]/fan", "parMap"],
-			["rounds[0]/fan[lens]/worker", "fake.task"],
-			["rounds[0]/firstOk", "code"],
-		] as const) {
+			tuple("rounds", "loop"),
+			tuple("rounds[0]/fan", "parMap"),
+			tuple("rounds[0]/fan[lens]/worker", "fake.task"),
+			tuple("rounds[0]/firstOk", "code"),
+		]) {
 			const row = instances.find((i: { name: string }) => i.name === name);
 			const result = await w.call(["ls", id, name, "--json"], {
 				hosts: [host],
@@ -4725,28 +4746,28 @@ describe("prune --dry-run edges", () => {
 
 describe("diagnostics by who set the value", () => {
 	// Seam: config refusals in CLI JSON; only diagnostic kinds and identifiers are pinned.
-	test("dataRoot is an unknown key in files presets and flags with XDG_DATA_HOME as the fix", async () => {
-		const cases = [
-			{
-				flags: ["-c", "dataRoot=x"],
-				file: ".maestro/config.yaml",
-				yaml: "",
-				code: 2,
-			},
-			{
-				flags: [],
-				file: ".maestro/config.yaml",
-				yaml: "dataRoot: x\n",
-				code: 1,
-			},
-			{
-				flags: ["--preset", "moved"],
-				file: ".maestro/presets/moved.yaml",
-				yaml: "dataRoot: x\n",
-				code: 1,
-			},
-		];
-		for (const scenario of cases) {
+	test.each([
+		{
+			flags: ["-c", "dataRoot=x"],
+			file: ".maestro/config.yaml",
+			yaml: "",
+			code: 2,
+		},
+		{
+			flags: [],
+			file: ".maestro/config.yaml",
+			yaml: "dataRoot: x\n",
+			code: 1,
+		},
+		{
+			flags: ["--preset", "moved"],
+			file: ".maestro/presets/moved.yaml",
+			yaml: "dataRoot: x\n",
+			code: 1,
+		},
+	])(
+		"dataRoot is an unknown key in $file with flags $flags, with XDG_DATA_HOME as the fix",
+		async (scenario) => {
 			const w = await world();
 			await Bun.write(
 				join(w.cwd, scenario.file),
@@ -4780,8 +4801,8 @@ describe("diagnostics by who set the value", () => {
 				words: expect.arrayContaining(["dataRoot"]),
 				variables: expect.arrayContaining(["$XDG_DATA_HOME"]),
 			});
-		}
-	});
+		},
+	);
 
 	test("a param a config file or a deleted core key leaves bad exits 1, and the same fault on the command line exits 2", async () => {
 		const w = await world();
@@ -4952,10 +4973,11 @@ describe("exit codes and error states", () => {
 		const lines = stripVTControlCharacters(shown.out).split("\n");
 		expect(lines[0]).toBe(`artifacts  ~/data/maestro/concerts/${id}/artifacts`);
 		expect(lines[1]).toMatch(/^instance +port +stale +path$/);
-		for (const l of lines.slice(2, 4)) {
-			expect(l).toEndWith("…");
-			expect(Bun.stringWidth(l)).toBe(81);
-		}
+		const cut = lines.slice(2, 4);
+		expect(cut.length).toBeGreaterThan(0);
+		expect(cut.map((l) => [l.endsWith("…"), Bun.stringWidth(l)])).toEqual(
+			cut.map(() => [true, 81]),
+		);
 		expect(lines.at(-1)).toBe(
 			`Full paths: maestro artifact ls ${shortOf(id)} --json`,
 		);

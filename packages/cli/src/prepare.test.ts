@@ -38,5 +38,5 @@ test("persist writes the text its IR's codeHash names, though the file changed a
 		return ref;
 	});
 	expect(hashes.length).toBeGreaterThan(0);
-	for (const hash of hashes) expect(hash).toBe(codeHashOf(written));
+	expect(hashes.filter((hash) => hash !== codeHashOf(written))).toEqual([]);
 });

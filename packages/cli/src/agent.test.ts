@@ -279,8 +279,9 @@ Environment   declared only
   files       none
   compaction  claude's own
 Run maestro agent probe demo/builder --preset risky -c profiles.demo/builder.limits.tokens=3000000 to check it against claude`);
-		for (const line of shown.out.split("\n").slice(0, -1))
-			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(COLUMNS);
+		const shownLines = shown.out.split("\n").slice(0, -1);
+		expect(shownLines.some((l) => l.trim() !== "")).toBe(true);
+		expect(shownLines.filter((l) => Bun.stringWidth(l) > COLUMNS)).toEqual([]);
 		const colored = await w.call(["agent", "show", "demo/builder", ...TUNED], {
 			terminal: () => ({ columns: COLUMNS, rows: 24 }),
 		});
@@ -512,8 +513,9 @@ describe("agent probe", () => {
 ? compaction  stub's own
 
 2 faults`);
-		for (const line of probed.out.split("\n"))
-			expect(Bun.stringWidth(line)).toBeLessThanOrEqual(COLUMNS);
+		const probedLines = probed.out.split("\n");
+		expect(probedLines.some((l) => l.trim() !== "")).toBe(true);
+		expect(probedLines.filter((l) => Bun.stringWidth(l) > COLUMNS)).toEqual([]);
 		const colored = await w.call(["agent", "probe", "demo/reviewer"], {
 			env,
 			terminal: () => ({ columns: COLUMNS, rows: 24 }),

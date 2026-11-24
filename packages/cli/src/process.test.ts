@@ -425,8 +425,9 @@ describe("the real maestro.ts", () => {
 
 	test("delivers a whole JSON document through a slow non-blocking stdout", async () => {
 		const w = await world();
-		const titles = ["aé🦜".repeat(200_000), "z🦜é".repeat(200_000)];
-		for (const title of titles) {
+		const titles: string[] = [];
+		for (const title of ["aé🦜".repeat(200_000), "z🦜é".repeat(200_000)]) {
+			titles.push(title);
 			const performed = await w.call(["perform", ...GREET, "--title", title], {
 				hosts: [hostOf()],
 			});

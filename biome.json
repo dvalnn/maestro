@@ -448,7 +448,7 @@
 			}
 		},
 		{
-			"includes": ["packages/**", "!packages/cli/**", "packs/**", "scripts/**"],
+			"includes": ["packages/**", "packs/**", "scripts/**"],
 			"plugins": ["./lint/loop-expects.grit"]
 		}
 	],

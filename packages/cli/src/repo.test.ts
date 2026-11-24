@@ -255,11 +255,10 @@ test("compose names every node, inner and scope port schema once, merging equal 
 	];
 	const keys = maps.flatMap((ports) => Object.values(ports));
 	expect(keys.length).toBeGreaterThan(0);
-	for (const key of keys) {
-		expect(key).toBeString();
-		if (typeof key !== "string") continue;
-		expect(Object.hasOwn(ir.schemas, key)).toBe(true);
-	}
+	expect(keys.filter((key) => typeof key !== "string")).toEqual([]);
+	expect(keys.filter((key) => !Object.hasOwn(ir.schemas, String(key)))).toEqual(
+		[],
+	);
 	const entries = Object.values(ir.schemas).map((schema) =>
 		canonicalJson(schema),
 	);
@@ -278,7 +277,12 @@ test("compose names every node, inner and scope port schema once, merging equal 
 		(n: { kind: string }) => n.kind === "repo.agent",
 	);
 	expect(agents.length).toBeGreaterThan(0);
-	for (const agent of agents) expect(agent.out.first).toBe(agent.out.second);
+	expect(
+		agents.filter(
+			(agent: { out: { first: unknown; second: unknown } }) =>
+				agent.out.first !== agent.out.second,
+		),
+	).toEqual([]);
 	expect(
 		ir.nodes.some(
 			(n: { inner?: object }) => Object.keys(n.inner ?? {}).length > 0,
@@ -729,21 +733,24 @@ test("artifact lists a concert's artifacts, prints an instance's files by a uniq
 	const FIX =
 		"Run 'maestro artifact ls <concert>', or 'maestro artifact show <concert> <instance>'";
 	for (const [args, last] of [
-		[["ls"], LS],
-		[["ls", id, "a"], LS],
-		[["show", id], SHOW],
-		[["show", id, "a", "b", "c"], MANY],
-		[["show", id, "nope"], `List them with 'maestro ls ${id}'`],
+		[["ls"], LS] as const,
+		[["ls", id, "a"], LS] as const,
+		[["show", id], SHOW] as const,
+		[["show", id, "a", "b", "c"], MANY] as const,
+		[["show", id, "nope"], `List them with 'maestro ls ${id}'`] as const,
 		[
 			["show", id, "a", "nope.md"],
 			`List them with maestro art show ${id} inner/a --path`,
-		],
-		[["show", id, "a", "--json"], "Drop --json to print the instance's files"],
-		[["ls", id, "--json", "--path"], "Drop one of them"],
-		[[id], FIX],
-		[[id, "a"], FIX],
-		[[], FIX],
-	] as const) {
+		] as const,
+		[
+			["show", id, "a", "--json"],
+			"Drop --json to print the instance's files",
+		] as const,
+		[["ls", id, "--json", "--path"], "Drop one of them"] as const,
+		[[id], FIX] as const,
+		[[id, "a"], FIX] as const,
+		[[], FIX] as const,
+	]) {
 		const refused = await w.call(["art", ...args]);
 		expect(refused.code).toBe(2);
 		const text: string = refused.err || json(refused).error;
@@ -1968,9 +1975,9 @@ export const nestedfans = composition("nestedfans", { examples: [{}] }, () => {
 		expect(piped.out).toBe("tour   -\ntitle  -\nM\ta.txt");
 		const [tour = "", title = ""] = shown.out.split("\n");
 		for (const [line, label] of [
-			[tour, "tour"],
-			[title, "title"],
-		] as const) {
+			[tour, "tour"] as const,
+			[title, "title"] as const,
+		]) {
 			expect(line.startsWith(`\u001b[2m${label}`)).toBe(true);
 			const [dimmed, value] = line.split("\u001b[22m");
 			expect(dimmed?.trimEnd()).toBe(`\u001b[2m${label}`);

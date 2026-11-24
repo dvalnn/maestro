@@ -469,8 +469,12 @@ describe("an IR file", () => {
 			await mkdir(out);
 			const rewritten = rewriteModules(ir, from, out);
 			const loader = moduleLoader(out);
-			for (const ref of refsOf(rewritten))
-				expect(typeof (await loader.loadCode(ref))).toBe("function");
+			const refs = refsOf(rewritten);
+			expect(refs.length).toBeGreaterThan(0);
+			const loaded = await Promise.all(refs.map((ref) => loader.loadCode(ref)));
+			expect(loaded.map((code) => typeof code)).toEqual(
+				refs.map(() => "function"),
+			);
 			expect(
 				refsOf(rewritten).map((r) => r.module === "maestro:stdlib"),
 			).toEqual(refsOf(ir).map((r) => r.module === "maestro:stdlib"));

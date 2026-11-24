@@ -105,8 +105,9 @@ test("watch JSON stays compact for every event on and off a terminal", async () 
 			expect(watched.code).toBe(0);
 			const lines = watched.out.split("\n");
 			expect(lines.length).toBeGreaterThan(1);
-			for (const line of lines)
-				expect(line).toBe(JSON.stringify(JSON.parse(line)));
+			expect(
+				lines.filter((line) => line !== JSON.stringify(JSON.parse(line))),
+			).toEqual([]);
 			expect(linesOf(watched.out).at(-1)).toMatchObject({
 				type: "concert",
 				id,
@@ -131,7 +132,9 @@ describe("watch without a terminal", () => {
 			const lines = linesOf(watched.out);
 			const events = lines.slice(0, -1);
 			expect(events.map((e) => e.type)).toContain("settled");
-			for (const e of events) expect(STATE_CHANGES).toContain(e.type);
+			expect(
+				events.map((e) => e.type).filter((t) => !STATE_CHANGES.includes(t)),
+			).toEqual([]);
 			const seqs = events.map((e) => e.seq);
 			expect(seqs).toEqual(seqs.toSorted((a, b) => a - b));
 			expect(lines.at(-1)).toMatchObject({
@@ -167,7 +170,7 @@ describe("watch --events --instance", () => {
 			]);
 			const text = (await w.call(args)).out.split("\n");
 			expect(text).toHaveLength(2);
-			for (const line of text) expect(line).toMatch(/ echo\/echo /);
+			expect(text.filter((line) => !/ echo\/echo /.test(line))).toEqual([]);
 		},
 	);
 
@@ -693,7 +696,8 @@ describe("watch on a running concert", async () => {
 		expect(first).toMatch(/tool {6}ran bash over/);
 		expect(more.length).toBeGreaterThan(0);
 		const column = first?.indexOf("ran bash") ?? 0;
-		for (const row of more) expect(row).toMatch(new RegExp(`^ {${column}}\\S`));
+		const indent = new RegExp(`^ {${column}}\\S`);
+		expect(more.filter((row) => !indent.test(row))).toEqual([]);
 	});
 
 	test("--events off a terminal prints the same text lines without color, then the closing block's concert row on stderr", () => {
