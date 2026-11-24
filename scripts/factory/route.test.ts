@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { FIGURES as PLANNED } from "../../.maestro/triage/schemas";
+import type { Guards } from "../guards";
 import {
 	askOf,
 	commentOf,
@@ -764,6 +765,53 @@ test("a PR body folds that round's review agents above the spend, and a body wit
 	expect(pullBody({ ...landed, reviewers: [] })).not.toContain(
 		"<details><summary>Review:",
 	);
+});
+
+test("a written PR body says which new or edited tests fail on the base, past the writer's cap, and folds them by group above the findings", () => {
+	const t = (name: string) => ({ file: "a.test.ts", name });
+	const landed = {
+		issue: 5,
+		spend: [SPENT],
+		risk: "low",
+		result: ready,
+		upheld: LEFT,
+	} as const;
+	const body = (guards: Guards | undefined, pr = "## Verdict\n\nx") =>
+		pullBody({ ...landed, pr, guards });
+	const all = body({
+		red: [t("r1"), t("r2")],
+		unloaded: [t("u1"), t("u2")],
+		green: ["g1", "g2", "g3", "g4", "g5"].map(t),
+	});
+	const line = (text: string) => /^\*\*Tests:\*\*.*$/m.exec(text)?.[0] ?? "";
+	// The counts and the first three green names, in the line between the writer's body and the risk line.
+	expect(line(all)).toMatch(/\b2 new or edited/);
+	expect(line(all)).toMatch(/\b2 do not load/);
+	expect(line(all)).toMatch(/\b5 pass on both/);
+	expect(line(all)).toMatch(/2 more/);
+	for (const named of ["g1", "g2", "g3"])
+		expect(line(all)).toContain(`\`${named}\``);
+	for (const hidden of ["g4", "g5", "r1", "u1"])
+		expect(line(all)).not.toContain(hidden);
+	expect(all.indexOf("x\n")).toBeLessThan(all.indexOf("**Tests:**"));
+	expect(all.indexOf("**Tests:**")).toBeLessThan(all.indexOf("**Risk:**"));
+	// The fold names every test, and comes before the findings.
+	expect(all).toContain(
+		"<details><summary>Tests: 2 fail on the base</summary>",
+	);
+	for (const listed of ["r1", "r2", "u1", "u2", "g1", "g5"])
+		expect(all).toContain(`a.test.ts: ${listed}\``);
+	expect(all.indexOf("Tests: 2 fail")).toBeLessThan(all.indexOf("Findings:"));
+	// The tick's line is outside the writer's 40 lines: a body at the cap folds nothing of its own.
+	const full = `## A\n\n${"line\n\n".repeat(38)}`;
+	expect(body({ red: [t("r1")], unloaded: [], green: [] }, full)).not.toContain(
+		"More from the writer",
+	);
+	const greenOnly = line(body({ red: [], unloaded: [], green: [t("g1")] }));
+	expect(greenOnly).toContain("`g1`");
+	expect(greenOnly).not.toMatch(/\d+ new or edited/);
+	for (const none of [undefined, { red: [], unloaded: [], green: [] }])
+		expect(body(none)).not.toContain("Tests:");
 });
 
 test("a PR body folds the change held against the plan above the review's record: planned paths left alone, and touched ones not planned, tests apart", () => {

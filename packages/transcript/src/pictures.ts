@@ -1,17 +1,9 @@
 // Draws the transcripts as pictures: bun packages/transcript/src/pictures.ts <out> [<base rev>]
-import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { run, withBaseTree } from "../../../scripts/base-tree";
 import { differing, picture, sectionsOf } from "./picture";
-
-/** Runs `command` in `cwd`; a failure throws with the command's output, unless it `mayFail`. */
-function run(cwd: string, command: string[], env = {}, mayFail = false) {
-	const ran = Bun.spawnSync(command, { cwd, env: { ...process.env, ...env } });
-	if (ran.exitCode !== 0 && !mayFail)
-		throw new Error(ran.stderr.toString() || ran.stdout.toString());
-	return ran.stdout.toString();
-}
 
 /** The test files of the tree at `cwd` that hold a transcript. */
 async function transcriptTests(cwd: string) {
@@ -52,13 +44,7 @@ const TRANSCRIPT_PACKAGE = "packages/transcript";
  */
 async function coloredAt(base: string, dir: string) {
 	const cwd = process.cwd();
-	const tree = await mkdtemp(join(tmpdir(), "maestro-transcripts-"));
-	try {
-		// An archive and no worktree: a sandboxed lane's git directory is read-only.
-		const archive = join(tree, "base.tar");
-		run(cwd, ["git", "archive", "-o", archive, base]);
-		run(tree, ["tar", "-xf", archive]);
-		run(tree, ["bun", "install", "--frozen-lockfile"]);
+	await withBaseTree(base, async (tree) => {
 		// The base's transcript can differ from its own tests' output, so its run may fail and still leave its sections.
 		await colored(tree, dir, true);
 		// A test written for this tree may not load on the base's source: the base's own sections then stand.
@@ -68,9 +54,7 @@ async function coloredAt(base: string, dir: string) {
 				verbatimSymlinks: true,
 			});
 		await colored(tree, dir, true);
-	} finally {
-		await rm(tree, { recursive: true, force: true });
-	}
+	});
 }
 
 /** Leaves `<out>/<name>.diff`: the sections of `name` as text, the base's against this tree's. */

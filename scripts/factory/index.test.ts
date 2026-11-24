@@ -1705,6 +1705,45 @@ describe("a build", () => {
 		},
 	);
 
+	test.each([
+		["a regular guards.json", "file", true],
+		// The sandbox wrote the directory: a link in it is never followed to a file of the host.
+		["a link", "link", false],
+		["a file that does not parse", "junk", false],
+		["one entry of the wrong shape beside valid ones", "shape", false],
+	])(
+		"with %s in the slice's guards directory, the PR body shows the tests line only when the file is read",
+		async (_, kind, shown) => {
+			const guards = mkdtempSync(join(tmpdir(), "factory-guards-"));
+			const doc = JSON.stringify({
+				red: [{ file: "a.test.ts", name: "t" }],
+				unloaded: [],
+				green: [],
+			});
+			const file = join(guards, "guards.json");
+			if (kind === "link") {
+				const host = join(mkdtempSync(join(tmpdir(), "factory-host-")), "g");
+				writeFileSync(host, doc);
+				symlinkSync(host, file);
+			} else if (kind === "shape") {
+				const bad = { red: [{ file: "a.test.ts", name: "t" }, { file: 1 }] };
+				writeFileSync(file, JSON.stringify({ ...JSON.parse(doc), ...bad }));
+			} else writeFileSync(file, kind === "junk" ? "{" : doc);
+			const t = setup(
+				[specced(7, "in-progress", { slice: "s1" })],
+				[sliceConcert("s1", 7)],
+				{ s1: { status: "ok", outputs: {} } },
+				undefined,
+				{ reports: { s1: { ...NO_REPORT, pr: "## Summary\n\nx", guards } } },
+			);
+			await t.run();
+			const body = t.opened[0]?.body ?? "";
+			expect(body.includes("**Tests:** 1 new or edited test fails")).toBe(
+				shown,
+			);
+		},
+	);
+
 	test("a picture the forge refuses is left out with its reason, and the slice still lands with the others, uploaded one at a time", async () => {
 		const seen = mkdtempSync(join(tmpdir(), "factory-seen-"));
 		for (const f of ["a.png", "b.png", "b.diff", "c.png"])

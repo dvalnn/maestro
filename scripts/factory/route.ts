@@ -10,6 +10,7 @@ import {
 	Triage,
 	type Verdict,
 } from "../../.maestro/triage/schemas";
+import type { Guards, Test } from "../guards";
 import type { Comment } from "./forge";
 import { isJson, type Json } from "./json";
 import type { Reviewer, Spend } from "./maestro";
@@ -739,6 +740,8 @@ export type Landed = {
 	notice?: string;
 	/** Whether another attempt takes the upheld findings, which the body says under the notice. */
 	interim?: boolean;
+	/** Which of the change's tests fail on the base, when the concert ran the check. */
+	guards?: Guards;
 	/** The "What the user sees" section, which follows the notice. */
 	userSees?: string;
 	/** The paths the change touches, to hold against the spec's `touches`. */
@@ -877,6 +880,59 @@ function findingsRecord({ upheld }: Landed) {
 		: [];
 }
 
+/** `text` as one code span: a backtick would end it, so it is swapped for a quote. */
+const code = (text: string) => `\`${oneLine(text).replaceAll("`", "'")}\``;
+
+const GUARDS_NAMED = 3;
+
+/**
+ * The visible line on the change's new or edited tests: how many fail on the base and pass here, how many do not load
+ * there, and the ones that pass on both and are new, which guard nothing, by name up to GUARDS_NAMED. None when the
+ * check found no test to sort.
+ */
+function testsLine({ guards }: Landed) {
+	if (!guards) return [];
+	const { red, unloaded, green } = guards;
+	if (!red.length && !unloaded.length && !green.length) return [];
+	const one = (n: number, singular: string, plural: string) =>
+		n === 1 ? singular : plural;
+	const named = green.slice(0, GUARDS_NAMED).map((t) => code(t.name));
+	const more = green.length - named.length;
+	const parts = [
+		red.length
+			? `${red.length} new or edited ${one(red.length, "test fails", "tests fail")} on the base and pass here.`
+			: "No new or edited test fails on the base.",
+		unloaded.length &&
+			`${unloaded.length} ${one(unloaded.length, "does", "do")} not load on the base.`,
+		green.length &&
+			`${green.length} ${one(green.length, "passes", "pass")} on both: ${named.join(", ")}${more > 0 ? ` and ${more} more` : ""}.`,
+	];
+	return [`**Tests:** ${parts.filter(Boolean).join(" ")}`, ""];
+}
+
+/** The tests of `testsLine`, folded by group under the count that fail on the base; none when it shows no line. */
+function testsRecord(landed: Landed) {
+	if (!testsLine(landed).length || !landed.guards) return [];
+	const group = (title: string, tests: Test[]) =>
+		tests.length
+			? [
+					`${title}:`,
+					"",
+					...list(tests.map((t) => code(`${t.file}: ${t.name}`))),
+					"",
+				]
+			: [];
+	const { red, unloaded, green } = landed.guards;
+	return [
+		`<details><summary>Tests: ${red.length} fail on the base</summary>`,
+		"",
+		...group("Fail on the base and pass here", red),
+		...group("Do not load on the base", unloaded),
+		...group("Pass on both, and are new", green),
+		...FOLD_END,
+	];
+}
+
 /** The most non-blank lines the writer's body shows outside its `<details>` blocks. */
 const VISIBLE_MAX = 40;
 
@@ -984,8 +1040,8 @@ const closing = ({ issue, result }: Landed) =>
 	`Closes #${issue}${result.related?.length ? ` · relates to ${refs(result.related)}` : ""}`;
 
 /**
- * The writer's `pr` capped to VISIBLE_MAX lines, then the risk and area with the planner's contract as the one-way
- * door, then the folds: findings upheld, the plan, the review's agents and the spend under its total; the closing line
+ * The writer's `pr` capped to VISIBLE_MAX lines, then the tests line, the risk and area with the planner's contract as
+ * the one-way door, then the folds: the tests, findings upheld, the plan, the review's agents and the spend under its total; the closing line
  * last.
  */
 function writtenBody(landed: Landed, pr: string) {
@@ -994,8 +1050,10 @@ function writtenBody(landed: Landed, pr: string) {
 	return [
 		capped(pr),
 		"",
+		...testsLine(landed),
 		...dangerLine(landed),
 		"",
+		...testsRecord(landed),
 		...findingsRecord(landed),
 		...planRecord(landed),
 		...reviewRecord(landed),

@@ -101,9 +101,10 @@ const noticeLines = (upheld: number, held: string[], unreviewed: boolean) => [
 
 /**
  * The changeset, the last round's upheld findings as `upheld.md`, whether the PR is a draft with its notice, the
- * writer's PR body, unchanged, the `delivered` count, the last `review` and the `seen` directory of transcript
- * pictures, when the changeset holds a patch; the body is empty when the writer delivered none, and `seen` empty when
- * the check that draws it did not settle ok, as `review` is when no consolidator ruled. `touched` holds each path the
+ * writer's PR body, unchanged, the `delivered` count, the last `review`, the `seen` directory of transcript pictures
+ * and the `guards` directory holding `guards.json`, when the changeset holds a patch; the body is empty when the
+ * writer delivered none, and `seen` and `guards` empty when the check that makes them did not settle ok, as `review`
+ * is when no consolidator ruled. `touched` holds each path the
  * patches touch, those of the PR `revised` included, sorted.
  * A rejection when the changeset holds no patch, so the slice settles `rejected`.
  * - `draft` is true when the last review's `delivered` is 0, findings remain upheld, or the patches, or those
@@ -119,6 +120,7 @@ export function requirePatch(
 		review,
 		written,
 		seen,
+		guarded,
 	}: {
 		changeset: ArtifactRef;
 		revised?: ArtifactRef;
@@ -127,6 +129,7 @@ export function requirePatch(
 		review?: ArtifactRef;
 		written: Settled<ArtifactRef>[];
 		seen: Settled<ArtifactRef>[];
+		guarded: Settled<ArtifactRef>[];
 	},
 	ctx: CodeContext,
 ) {
@@ -147,14 +150,20 @@ export function requirePatch(
 	const notice = join(ctx.scratch, "notice.md");
 	writeFileSync(notice, lines.length ? `${lines.join("\n")}\n` : "");
 	const draft = lines.length > 0;
-	const drawn = seen[0];
-	const nothing = join(ctx.scratch, "seen");
-	if (drawn?.outcome !== "ok") mkdirSync(nothing, { recursive: true });
+	// An empty directory stands for a check that did not settle ok.
+	const checked = (name: string, settled: Settled<ArtifactRef>[]) => {
+		const result = settled[0];
+		if (result?.outcome === "ok") return result.value;
+		const nothing = join(ctx.scratch, name);
+		mkdirSync(nothing, { recursive: true });
+		return nothing;
+	};
 	const unruled = join(ctx.scratch, "review.md");
 	if (!review) writeFileSync(unruled, "");
 	const outputs = {
 		changeset,
-		seen: drawn?.outcome === "ok" ? drawn.value : nothing,
+		seen: checked("seen", seen),
+		guards: checked("guards", guarded),
 		upheld: file,
 		draft,
 		notice,
@@ -186,8 +195,8 @@ export const slice = composition(
 			"Each round repairs until the target's checks pass, then reviews; up to maxFixes fix rounds follow.",
 			"Leaves the changeset, the findings the last review upheld, whether the PR is a draft with its notice, and a",
 			"writer's PR body: over the PR it revises when given, empty when the writer failed, how many lenses the last",
-			"review delivered, that review, the paths the change touches, and the transcript pictures `just pictures` draws of the change in the review's sandbox, an empty",
-			"directory when that failed. Fails when the changeset holds no patch.",
+			"review delivered, that review, the paths the change touches, the transcript pictures `just pictures` draws of the change in the review's sandbox, and the",
+			"`guards.json` `just guards` writes of which of the change's tests fail on the base, each an empty directory when its check failed. Fails when the changeset holds no patch.",
 		].join("\n"),
 		params: {
 			request: Text({ description: "The brief: what to build" }),
@@ -251,18 +260,22 @@ export const slice = composition(
 			out: { pr: MarkdownOut("pr.md") },
 			tolerate: "rejected",
 		});
-		const seen = check(
-			read(reviewed.out.lane),
-			{
-				// A revision's lane is cut from the PR it revises, so the base is that PR's: its first commit's parent.
-				run: revises
-					? 'just pictures "$MAESTRO_CHECK_OUTPUT" "$(git rev-list --reverse "$REVISES" | head -n 1)^"'
-					: 'just pictures "$MAESTRO_CHECK_OUTPUT" "$MAESTRO_LANE_BASE"',
-				timeout: "10m",
-				...(revises && { env: { REVISES: revises } }),
-			},
-			{ label: "seen", tolerate: "rejected" },
-		);
+		// A revision's lane is cut from the PR it revises, so the base is that PR's: its first commit's parent.
+		const base = revises
+			? '"$(git rev-list --reverse "$REVISES" | head -n 1)^"'
+			: '"$MAESTRO_LANE_BASE"';
+		const onBase = (recipe: string, label: string) =>
+			check(
+				read(reviewed.out.lane),
+				{
+					run: `just ${recipe} "$MAESTRO_CHECK_OUTPUT" ${base}`,
+					timeout: "10m",
+					...(revises && { env: { REVISES: revises } }),
+				},
+				{ label, tolerate: "rejected" },
+			);
+		const seen = onBase("pictures", "seen");
+		const guarded = onBase("guards", "guarded");
 		return code(requirePatch, {
 			in: {
 				changeset: changes,
@@ -272,6 +285,9 @@ export const slice = composition(
 				review: reviewed.out.review,
 				written: allSettled([written.out.pr], { label: "written" }),
 				seen: allSettled([seen.out.output], { label: "seen_settled" }),
+				guarded: allSettled([guarded.out.output], {
+					label: "guarded_settled",
+				}),
 			},
 			out: {
 				changeset: Dir(),
@@ -283,6 +299,7 @@ export const slice = composition(
 				review: Markdown(),
 				touched: List(Text()),
 				seen: Dir(),
+				guards: Dir(),
 			},
 			label: "result",
 			tolerate: "rejected",

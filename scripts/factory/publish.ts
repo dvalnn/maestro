@@ -1,6 +1,7 @@
 // Landing a slice's change as its PR to `main` (factory.md, Rules, Landing and PRs).
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Guards, Test } from "../guards";
 import { isSlice, tourOf } from "./concerts";
 import {
 	type Forge,
@@ -9,6 +10,7 @@ import {
 	type NewPull,
 	REQUEST_CHANGES,
 } from "./forge";
+import { isJson } from "./json";
 import type { Report, Spend } from "./maestro";
 import { riskOf } from "./pick";
 import {
@@ -107,6 +109,37 @@ async function spendOf(tick: Tick, issue: Issue) {
 	return Promise.all(slices.reverse().map((c) => tick.maestro.spend(c.id)));
 }
 
+const GUARDS_FILE = "guards.json";
+
+/**
+ * The tests sorted in the `guards` directory `dir`, none when it holds no such file or one that does not parse. A sandbox
+ * wrote `dir`, so only a regular file in it is read: a link there could name any file of the host. A malformed
+ * file costs the landing nothing.
+ */
+function guardsOf(dir: string): Guards | undefined {
+	const held = readdirSync(dir, { withFileTypes: true }).some(
+		(f) => f.isFile() && f.name === GUARDS_FILE,
+	);
+	if (!held) return undefined;
+	let doc: unknown;
+	try {
+		doc = JSON.parse(readFileSync(join(dir, GUARDS_FILE), "utf8"));
+	} catch {
+		return undefined;
+	}
+	if (!isJson(doc)) return undefined;
+	const isTest = (t: unknown): t is Test =>
+		isJson(t) && typeof t.file === "string" && typeof t.name === "string";
+	const tests = (found: unknown) =>
+		Array.isArray(found) && found.every(isTest) ? found : undefined;
+	const { red, unloaded, green } = {
+		red: tests(doc.red),
+		unloaded: tests(doc.unloaded),
+		green: tests(doc.green),
+	};
+	return red && unloaded && green ? { red, unloaded, green } : undefined;
+}
+
 /**
  * The PR text of `issue`'s slice, with its `report` and the `spend` of its concerts (factory.md, Rules, Landing and
  * PRs: PRs).
@@ -130,6 +163,7 @@ function pullText(
 		interim: isInterim(report.upheld, data.attempts),
 		reviewers: report.reviewers,
 		touched: report.touched,
+		guards: report.guards ? guardsOf(report.guards) : undefined,
 	};
 	return {
 		title: result.spec.subject,

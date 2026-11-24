@@ -60,6 +60,11 @@ transcripts *paths:
 pictures out base="":
     bun packages/transcript/src/pictures.ts "$@"
 
+# sort the tests this tree adds or edits by what they guard, as <out>/guards.json: red, unloaded or green on <base>'s source
+[positional-arguments]
+guards out base:
+    bun scripts/guards.ts "$@"
+
 # auto-format
 fmt:
     bunx biome format --write .

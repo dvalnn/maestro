@@ -237,26 +237,34 @@ test.each([
 			"delivered",
 		);
 		expect(nodes.find((n) => n.id === "result")?.out).toHaveProperty("seen");
+		expect(nodes.find((n) => n.id === "result")?.out).toHaveProperty("guards");
 		// The last round's review reaches the result, which leaves it as an output.
 		expect(from(edges, "result", "review")).toEqual([
 			{ node: "fix_until_clean/fixes", port: "review" },
 		]);
 		expect(nodes.find((n) => n.id === "result")?.out).toHaveProperty("review");
 		// Against the lane's base, and under --revises against the base of the PR revised.
-		expect(JSON.stringify(nodes.find((n) => n.id === "seen"))).toContain(
-			flags.length
-				? '"env":{"REVISES":"HEAD^!"},"run":"just pictures \\"$MAESTRO_CHECK_OUTPUT\\" \\"$(git rev-list --reverse \\"$REVISES\\" | head -n 1)^\\""'
-				: 'just pictures \\"$MAESTRO_CHECK_OUTPUT\\" \\"$MAESTRO_LANE_BASE\\"',
-		);
+		for (const [id, recipe] of [
+			["seen", "pictures"],
+			["guarded", "guards"],
+		]) {
+			expect(JSON.stringify(nodes.find((n) => n.id === id))).toContain(
+				flags.length
+					? `"env":{"REVISES":"HEAD^!"},"run":"just ${recipe} \\"$MAESTRO_CHECK_OUTPUT\\" \\"$(git rev-list --reverse \\"$REVISES\\" | head -n 1)^\\""`
+					: `just ${recipe} \\"$MAESTRO_CHECK_OUTPUT\\" \\"$MAESTRO_LANE_BASE\\"`,
+			);
+		}
 		// The writer reads the same review, for the requirements it counts as met.
 		expect(from(edges, "writer", "review")).toEqual(
 			from(edges, "result", "review"),
 		);
-		// `seen` reads the lane the writer reads, and runs though the review rejected.
-		expect(from(edges, "seen", "lane")).toEqual(from(edges, "writer", "lane"));
-		expect(
-			edges.some((e) => e.to.node === "seen" && e.tolerate === "rejected"),
-		).toBe(true);
+		// `seen` and `guarded` read the lane the writer reads, and run though the review rejected.
+		for (const id of ["seen", "guarded"]) {
+			expect(from(edges, id, "lane")).toEqual(from(edges, "writer", "lane"));
+			expect(
+				edges.some((e) => e.to.node === id && e.tolerate === "rejected"),
+			).toBe(true);
+		}
 		const writer = nodes.find((n) => n.id === "writer");
 		expect(Object.keys(writer?.config.attachments ?? {}).sort()).toEqual(
 			attached,
@@ -345,11 +353,12 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		upheld: Parameters<typeof requirePatch>[0]["upheld"] = [],
 		delivered = 1,
 		seen: Settled<ArtifactRef>[] = [{ outcome: "failed", reason: "x" }],
+		guarded: Settled<ArtifactRef>[] = [{ outcome: "failed", reason: "x" }],
 	) =>
-		requirePatch({ changeset: ref, upheld, delivered, review, written, seen }, {
-			path: () => dir,
-			scratch: ctx,
-		} as unknown as CodeContext);
+		requirePatch(
+			{ changeset: ref, upheld, delivered, review, written, seen, guarded },
+			{ path: () => dir, scratch: ctx } as unknown as CodeContext,
+		);
 	const patched = made("base", "0001.patch");
 	expect(run(patched, [{ outcome: "ok", value: pr }])).toEqual({
 		changeset: ref,
@@ -361,11 +370,16 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		review,
 		touched: [],
 		seen: join(ctx, "seen"),
+		guards: join(ctx, "guards"),
 	});
 	expect(readdirSync(join(ctx, "seen"))).toEqual([]);
+	expect(readdirSync(join(ctx, "guards"))).toEqual([]);
 	expect(run(patched, [], [], 1, [{ outcome: "ok", value: pr }])).toMatchObject(
 		{ seen: pr },
 	);
+	expect(
+		run(patched, [], [], 1, [], [{ outcome: "ok", value: pr }]),
+	).toMatchObject({ guards: pr });
 	expect(readFileSync(join(ctx, "notice.md"), "utf8")).toBe("");
 	expect(readFileSync(upheldFile, "utf8")).toBe("# Upheld findings\n\nNone.\n");
 	const failed = run(patched, [{ outcome: "failed", reason: "x" }]);
@@ -379,6 +393,7 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		review,
 		touched: [],
 		seen: join(ctx, "seen"),
+		guards: join(ctx, "guards"),
 	});
 	expect(readFileSync(join(ctx, "pr.md"), "utf8")).toBe("");
 	expect(run(patched, [], [], 0)).toMatchObject({
@@ -386,7 +401,14 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 	});
 	// A review no consolidator ruled leaves an empty file.
 	const unruled = requirePatch(
-		{ changeset: ref, upheld: [], delivered: 1, written: [], seen: [] },
+		{
+			changeset: ref,
+			upheld: [],
+			delivered: 1,
+			written: [],
+			seen: [],
+			guarded: [],
+		},
 		{ path: () => patched, scratch: ctx } as unknown as CodeContext,
 	);
 	expect(unruled).toMatchObject({ review: join(ctx, "review.md") });
@@ -441,6 +463,7 @@ test("requirePatch drafts a change that leaves findings upheld, edits a held pat
 				delivered,
 				written: [],
 				seen: [],
+				guarded: [],
 			},
 			{
 				path: (ref: ArtifactRef) => (ref.path === "r" ? earlier : dir),
