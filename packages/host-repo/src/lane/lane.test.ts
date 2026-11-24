@@ -599,11 +599,12 @@ describe("apply", () => {
 			await merge.seal();
 
 			const sealed = await lanes.fork("c1.merge", "c1.resolve");
-			for (const [f, text] of Object.entries(holds)) {
+			const wrong = Object.entries(holds).filter(([f, text]) => {
 				const present = existsSync(join(sealed.dir, f));
 				const held = present && (text === null || text.test(read(sealed, f)));
-				expect(held).toBe(text !== null);
-			}
+				return held !== (text !== null);
+			});
+			expect(wrong.map(([f]) => f)).toEqual([]);
 			expect(read(sealed, "b.txt")).toBe("b\n");
 		},
 	);
@@ -633,8 +634,11 @@ describe("apply", () => {
 				"c.txt",
 			]);
 			expect(read(merge, "c.txt")).toBe(left);
-			for (const [f, text] of Object.entries(agent))
-				expect(read(merge, f)).toBe(text ?? "");
+			expect(
+				Object.entries(agent)
+					.filter(([f, text]) => read(merge, f) !== (text ?? ""))
+					.map(([f]) => f),
+			).toEqual([]);
 		},
 	);
 

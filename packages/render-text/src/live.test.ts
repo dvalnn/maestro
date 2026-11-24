@@ -216,11 +216,13 @@ describe("cutting styled text", () => {
 describe("frame", () => {
 	test("fits every line to its terminal at any width, a wide footer of tokens too", () => {
 		const concert = { ...VIEW.concert, title: "a very long concert title" };
+		const overwide: { columns: number; line: string }[] = [];
 		for (let columns = 2; columns <= 120; columns++)
 			for (const line of drawn({ columns, concert, tokens: 39_300 }).split(
 				"\n",
 			))
-				expect(Bun.stringWidth(line)).toBeLessThan(columns);
+				if (Bun.stringWidth(line) >= columns) overwide.push({ columns, line });
+		expect(overwide).toEqual([]);
 	});
 
 	// Transcript: the frame as a terminal shows it, at the widths where its header and footer change shape.
@@ -456,10 +458,10 @@ describe("frame", () => {
 		const full = lineAt(VIEW.columns);
 		const before = Bun.stringWidth(full.slice(0, full.indexOf("漢")));
 		for (const [cells, shown] of [
-			[4, "漢字"],
-			[5, "漢字"],
-			[6, "漢字😀"],
-		] as const) {
+			[4, "漢字"] as const,
+			[5, "漢字"] as const,
+			[6, "漢字😀"] as const,
+		]) {
 			const cut = lineAt(before + cells + 1);
 			expect(cut).toEndWith(` ${shown}`);
 			expect(cut.isWellFormed()).toBe(true);
@@ -809,8 +811,7 @@ describe("closingBlock", () => {
 			.head.split("\n")
 			.slice(1);
 		expect(rows.length).toBeGreaterThan(1);
-		for (const row of rows)
-			expect(Bun.stringWidth(row)).toBeLessThanOrEqual(31);
+		expect(rows.filter((row) => Bun.stringWidth(row) > 31)).toEqual([]);
 		expect(rows.map((row) => row.slice(11)).join(" ")).toBe(long);
 	});
 
@@ -929,7 +930,7 @@ describe("closingBlock", () => {
 		const [, first, ...more] = narrow.head.split("\n");
 		expect(first).toBe("reason     check 'test' line 1 exited 1,");
 		expect(more.length).toBeGreaterThan(0);
-		for (const row of more) expect(row).toMatch(/^ {11}\S/);
+		expect(more.filter((row) => !/^ {11}\S/.test(row))).toEqual([]);
 		expect(narrow.outputs).toBe(`logs       ${outputs[0][1]}`);
 		expect(
 			closingBlock(settled("failed"), { reason: REASON, outputs }).head,

@@ -23,10 +23,9 @@ function rejects(base: object, mutate: Mutation) {
 	mutate(ir);
 	const result = parseIr(ir);
 	if (result.ok) throw new Error("expected the IR to be rejected");
-	for (const d of result.diagnostics) {
-		expect(d.severity).toBe("error");
-		expect(d.hint).not.toBe("");
-	}
+	expect(
+		result.diagnostics.filter((d) => d.severity !== "error" || d.hint === ""),
+	).toEqual([]);
 	return result.diagnostics;
 }
 
@@ -625,7 +624,7 @@ test.each<[string, object, Mutation, string, string | undefined]>([
 	(_, base, mutate, path, node) => {
 		const found = rejects(base, mutate).filter((d) => d.path === path);
 		expect(found).not.toEqual([]);
-		for (const d of found) expect(d.node).toBe(node);
+		expect(found.filter((d) => d.node !== node)).toEqual([]);
 	},
 );
 

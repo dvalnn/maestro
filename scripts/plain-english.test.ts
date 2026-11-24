@@ -8,7 +8,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { check, counts, formatBaseline, lowered, scan } from "./plain-english";
+import {
+	check,
+	counts,
+	formatBaseline,
+	lowered,
+	readBaseline,
+	scan,
+} from "./plain-english";
 
 /** A git repository holding `files`, all tracked. */
 function repo(files: Record<string, string>) {
@@ -125,12 +132,15 @@ test("the baseline is one sorted line per file, and empty as braces", () => {
 
 test("the committed baseline lists the counts of main's Markdown files", async () => {
 	const root = resolve(import.meta.dir, "..");
-	const baseline = await Bun.file(
+	const baseline = await readBaseline(
 		join(root, "scripts/plain-english-baseline.json"),
-	).json();
+	);
 	const current = await counts(root);
-	for (const [file, count] of Object.entries(current))
-		expect(baseline[file] ?? 0).toBeGreaterThanOrEqual(count);
+	expect(
+		Object.entries(current).filter(
+			([file, count]) => (baseline[file] ?? 0) < count,
+		),
+	).toEqual([]);
 });
 
 test("link titles, reference labels, reference definitions and autolinks do not count", async () => {

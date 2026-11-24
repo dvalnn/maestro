@@ -71,7 +71,10 @@ describe("the stdlib module", () => {
 			joinPath(import.meta.dir, "..", pkg.exports["./stdlib"])
 		);
 		expect(Object.keys(subpath).toSorted()).toEqual(emitted.toSorted());
-		for (const name of emitted) expect(subpath[name]).toBeFunction();
+		expect(emitted.length).toBeGreaterThan(0);
+		expect(
+			emitted.filter((name) => typeof subpath[name] !== "function"),
+		).toEqual([]);
 	});
 });
 

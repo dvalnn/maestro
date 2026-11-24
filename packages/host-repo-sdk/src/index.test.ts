@@ -805,7 +805,7 @@ describe("examples", () => {
 				.map((f) => readFileSync(joinPath(series, f), "utf8"))
 				.join("");
 			await concert.close();
-			for (const line of added) expect(patches).toContain(line);
+			expect(added.filter((line) => !patches.includes(line))).toEqual([]);
 		},
 	);
 });

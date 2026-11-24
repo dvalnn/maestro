@@ -414,7 +414,7 @@ describe("config", () => {
 			],
 		]);
 		expect(await via("refine-until-done", flag)).toEqual([]);
-		for (const layer of ["workspace", "preset"] as const)
+		for (const layer of ["workspace" as const, "preset" as const])
 			expect(await via("other", { layer, file: "/w/c.yaml" })).toEqual([]);
 	});
 

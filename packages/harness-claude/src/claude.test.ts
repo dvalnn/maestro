@@ -521,8 +521,9 @@ describe("stand-in claude", () => {
 		claudeHarness({ bin, token: TOKEN }, backend).run(request("x"));
 		const binds = [...(spec?.readOnly ?? []), ...(spec?.writable ?? [])];
 		expect(binds.length).toBeGreaterThan(0);
-		for (const b of binds)
-			expect(b.src.startsWith(join(homedir(), ".claude"))).toBe(false);
+		expect(
+			binds.filter((b) => b.src.startsWith(join(homedir(), ".claude"))),
+		).toEqual([]);
 		expect(spec?.secrets).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: TOKEN });
 		expect(JSON.stringify([spec?.argv, spec?.env])).not.toContain(TOKEN);
 	});

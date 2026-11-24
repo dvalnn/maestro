@@ -683,12 +683,12 @@ describe("recognising a concert", () => {
 			["slice", isSlice],
 			["review", isStackReview],
 		] as const;
-		for (const [pack, is] of kinds) {
-			expect(kinds.map(([p]) => is(concert(p)))).toEqual(
-				kinds.map(([p]) => p === pack),
-			);
-			expect(is({ ...concert(pack), composition: "other" })).toBe(false);
-		}
+		expect(kinds.map(([, is]) => kinds.map(([p]) => is(concert(p))))).toEqual(
+			kinds.map(([pack]) => kinds.map(([p]) => p === pack)),
+		);
+		expect(
+			kinds.map(([pack, is]) => is({ ...concert(pack), composition: "other" })),
+		).toEqual(kinds.map(() => false));
 	});
 
 	test("takes a masterclass only on its milestone's tour", () => {

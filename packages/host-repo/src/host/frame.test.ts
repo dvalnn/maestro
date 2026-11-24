@@ -143,8 +143,8 @@ test.each([
 			kind: VERDICT,
 			...given,
 		});
-		for (const part of present) expect(text).toContain(part);
-		for (const part of absent) expect(text).not.toContain(part);
+		expect(present.filter((part) => !text.includes(part))).toEqual([]);
+		expect(absent.filter((part) => text.includes(part))).toEqual([]);
 		expect(text).toEndWith(VERDICT_REPLY);
 	},
 );

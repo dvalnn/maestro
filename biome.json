@@ -446,6 +446,10 @@
 					}
 				}
 			}
+		},
+		{
+			"includes": ["packages/**", "!packages/cli/**", "packs/**", "scripts/**"],
+			"plugins": ["./lint/loop-expects.grit"]
 		}
 	],
 	"markdown": {

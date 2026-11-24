@@ -911,8 +911,9 @@ describe("build_then_review's build and review config", () => {
 				/tiered_review\/[^/]+\/lens$/.test(e.to.node) && e.to.port === "spec",
 		);
 		expect(specs.length).toBeGreaterThan(0);
-		for (const e of specs)
-			expect(e.from).toEqual({ node: "build/spec", port: "file" });
+		expect(specs.map((e: { from: unknown }) => e.from)).toEqual(
+			specs.map(() => ({ node: "build/spec", port: "file" })),
+		);
 	});
 
 	test.each([
@@ -1667,10 +1668,11 @@ describe("tiered_review", () => {
 						e.to.port === "prompt",
 				)
 				.map((e) => ("port" in e.from ? e.from.port : undefined));
-		for (const name of SEATS)
-			expect(taskPort(name)).toEqual([
+		expect(SEATS.map(taskPort)).toEqual(
+			SEATS.map((name) => [
 				STANDARDS_SEATS.includes(name) ? "standards" : "behaviour",
-			]);
+			]),
+		);
 		const { behaviour, standards } = leads(ir);
 		expect(standards).toContain(TIERED_STANDARDS.trim());
 		expect(behaviour).not.toContain(TIERED_STANDARDS.trim());
@@ -1693,19 +1695,27 @@ describe("tiered_review", () => {
 		expect(from("tiered_review/tieredOf", "changeset")).toEqual([
 			"tiered_review/patches",
 		]);
-		for (const name of SEATS) {
+		const seats = SEATS.map((name) => {
 			const member = `tiered_review/${name}/lens`;
-			expect(node(ir, `tiered_review/${name}`)).toMatchObject({
-				kind: "parMap",
-				cardinality: { upTo: 1 },
-				onError: "continue",
-			});
-			expect(from(member, "patches")).toEqual(["tiered_review/patches"]);
-			expect(from(member, "prompt")).toEqual(["tiered_review/tieredOf"]);
-			expect(profileOf(ir, member)).toBe(
-				`classics/${name.replace(/-standards$/, "")}`,
-			);
-		}
+			return {
+				seat: node(ir, `tiered_review/${name}`),
+				patches: from(member, "patches"),
+				prompt: from(member, "prompt"),
+				profile: profileOf(ir, member),
+			};
+		});
+		expect(seats).toMatchObject(
+			SEATS.map((name) => ({
+				seat: {
+					kind: "parMap",
+					cardinality: { upTo: 1 },
+					onError: "continue",
+				},
+				patches: ["tiered_review/patches"],
+				prompt: ["tiered_review/tieredOf"],
+				profile: `classics/${name.replace(/-standards$/, "")}`,
+			})),
+		);
 		expect(
 			ir.nodes.map((n) => n.id).filter((id) => /skeptic/.test(id)),
 		).toEqual([]);
@@ -1731,8 +1741,10 @@ describe("tiered_review", () => {
 		expect(leads(bare).behaviour).not.toContain(AGAIN.slice(0, 40));
 		expect(relays(bare)).toEqual(SEATS.map(() => undefined));
 		const again = tieredIr({}, () => ({ earlier: literal([], List(Upheld)) }));
-		for (const lead of Object.values(leads(again)))
-			expect(lead.startsWith(AGAIN)).toBe(true);
+		const { behaviour, standards } = leads(again);
+		expect(
+			[behaviour, standards].filter((lead) => !lead?.startsWith(AGAIN)),
+		).toEqual([]);
 		expect(relays(again)).toEqual(SEATS.map(() => ["upheld"]));
 	});
 

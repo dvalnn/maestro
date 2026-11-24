@@ -17,7 +17,7 @@ import {
 	isExecutable,
 	runProcesses,
 } from "./bubblewrap";
-import { type Bind, mountPlan, type SandboxSpec } from "./index";
+import { mountPlan, type SandboxSpec } from "./index";
 import { bwrapArgs } from "./plan";
 
 const dirs: string[] = [];
@@ -132,12 +132,12 @@ describe("confinement", () => {
 	test("an overlay whose source is missing, inside the lane, or whose destination is in the lane is rejected", () => {
 		const lane = tmp("lane");
 		mkdirSync(join(lane, "sub"));
-		const cases: [Bind, RegExp][] = [
-			[{ src: "/no/such/dir", dst: "/cache" }, /does not exist/],
-			[{ src: join(lane, "sub"), dst: "/cache" }, /inside the lane/],
-			[{ src: tmp("cache"), dst: "/lane/c" }, /lane's area/],
-		];
-		for (const [overlay, error] of cases)
+		const cache = tmp("cache");
+		for (const [overlay, error] of [
+			[{ src: "/no/such/dir", dst: "/cache" }, /does not exist/] as const,
+			[{ src: join(lane, "sub"), dst: "/cache" }, /inside the lane/] as const,
+			[{ src: cache, dst: "/lane/c" }, /lane's area/] as const,
+		])
 			expect(() => mountPlan({ lane, argv: [], overlays: [overlay] })).toThrow(
 				error,
 			);
@@ -252,10 +252,13 @@ describe("secrets", () => {
 			],
 			secrets: { API_KEY: secret },
 		});
-		for (const pid of runProcesses(p.id))
-			expect(readFileSync(`/proc/${pid}/cmdline`, "latin1")).not.toContain(
-				"sk-live",
-			);
+		const pids = runProcesses(p.id);
+		expect(pids.length).toBeGreaterThan(0);
+		expect(
+			pids.filter((pid) =>
+				readFileSync(`/proc/${pid}/cmdline`, "latin1").includes("sk-live"),
+			),
+		).toEqual([]);
 		const out: string[] = [];
 		for await (const l of p.stdout) out.push(l);
 		const exit = await p.exited;
@@ -333,7 +336,7 @@ describe("process tree", () => {
 				);
 				await Bun.sleep(round);
 				await Promise.all(runs.map((p) => p.kill()));
-				for (const p of runs) expect(runProcesses(p.id)).toEqual([]);
+				expect(runs.flatMap((p) => runProcesses(p.id))).toEqual([]);
 			}
 		},
 		MANY_SANDBOXES_MS,

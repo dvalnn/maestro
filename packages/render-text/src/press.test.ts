@@ -407,7 +407,7 @@ describe("browse", () => {
 				`rows ${top + 1}–${top + f.body} of ${f.rows.length}`,
 			);
 		};
-		for (const key of ["down", "up"] as const) {
+		for (const key of ["down" as const, "up" as const]) {
 			for (let step = 0; step < f.rows.length; step++) {
 				check();
 				f = browsed(press(key, f), given);

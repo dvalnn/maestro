@@ -101,13 +101,13 @@ test("an older maestro stops the tick before the forge and lock", async () => {
 
 test("a failed or unreadable maestro version stops the tick and quotes its output", async () => {
 	for (const [output, exit] of [
-		["maestro 0.4.0-rc.2", 3],
-		["maestro not-a-version", 0],
-		["something else 0.4.0-rc.2", 0],
-		["maestro 0.4.0-rc..2", 0],
-		["maestro 1.2.3-.", 0],
-		["", 0],
-	] as const) {
+		["maestro 0.4.0-rc.2", 3] as const,
+		["maestro not-a-version", 0] as const,
+		["something else 0.4.0-rc.2", 0] as const,
+		["maestro 0.4.0-rc..2", 0] as const,
+		["maestro 1.2.3-.", 0] as const,
+		["", 0] as const,
+	]) {
 		for (const fd of [1, 2]) {
 			const result = await tickWithVersion(output, exit, fd);
 			expect(result.code).toBe(1);
@@ -3192,18 +3192,28 @@ describe("masterclass", () => {
 		expect(started(t.starts[0])).toBe("perform masterclass.ts");
 		["--lessons", "--reports"].forEach((flag) => {
 			const text = readFileSync(argAfter(t.starts[0] ?? [], flag), "utf8");
-			late.forEach((c) => {
-				expect(text).toContain(`## ${c.id} · ${c.tour}\n`);
-				expect(text).toContain(
-					flag === "--lessons" ? `- lesson ${c.id}` : `- obstacle ${c.id}`,
-				);
-			});
-			read.slice(0, 20).forEach((c) => {
-				expect(text).toContain(`## ${c.id} · ${c.tour} · read\n`);
-			});
-			read.slice(20).forEach((c) => {
-				expect(text).not.toContain(`## ${c.id} ·`);
-			});
+			const item = flag === "--lessons" ? "lesson" : "obstacle";
+			expect(
+				late
+					.filter(
+						(c) =>
+							!text.includes(`## ${c.id} · ${c.tour}\n`) ||
+							!text.includes(`- ${item} ${c.id}`),
+					)
+					.map((c) => c.id),
+			).toEqual([]);
+			expect(
+				read
+					.slice(0, 20)
+					.filter((c) => !text.includes(`## ${c.id} · ${c.tour} · read\n`))
+					.map((c) => c.id),
+			).toEqual([]);
+			expect(
+				read
+					.slice(20)
+					.filter((c) => text.includes(`## ${c.id} ·`))
+					.map((c) => c.id),
+			).toEqual([]);
 			const headings = [...text.matchAll(/^## (\S+) ·/gm)].map((m) => m[1]);
 			expect(headings).toEqual(
 				[...late, ...read.slice(0, 20)]
@@ -3413,8 +3423,13 @@ describe("masterclass", () => {
 		await t.run();
 		expect(t.starts).toHaveLength(1);
 		const text = readFileSync(argAfter(t.starts[0] ?? [], "--lessons"), "utf8");
-		for (const c of all)
-			expect(text).toContain(`## ${c.id} · ${c.tour}\n\n- lesson ${c.id}`);
+		expect(
+			all
+				.filter(
+					(c) => !text.includes(`## ${c.id} · ${c.tour}\n\n- lesson ${c.id}`),
+				)
+				.map((c) => c.id),
+		).toEqual([]);
 	});
 
 	test("reads late settlers behind 450 milestone concerts", async () => {
@@ -3441,7 +3456,9 @@ describe("masterclass", () => {
 		await t.run();
 		expect(t.starts).toHaveLength(1);
 		const text = readFileSync(argAfter(t.starts[0] ?? [], "--lessons"), "utf8");
-		for (const c of late) expect(text).toContain(`## ${c.id} ·`);
+		expect(
+			late.filter((c) => !text.includes(`## ${c.id} ·`)).map((c) => c.id),
+		).toEqual([]);
 	});
 
 	test("an older running masterclass beyond the tick window prevents another behind a newer ok one", async () => {
@@ -4245,7 +4262,8 @@ process.exit(2);
 			["release_build", false],
 			["a".repeat(65), false],
 		];
-		for (const [slug, accepted] of slugs) {
+		const seen: { slug: string; accepted: boolean; code: number | null }[] = [];
+		for (const [slug] of slugs) {
 			const t = boundaryTick(slug, [
 				{ id: "c1", status: "running", pack: "slice", composition: "slice" },
 			]);
@@ -4273,12 +4291,15 @@ process.exit(2);
 					},
 				},
 			);
-			expect({ slug, accepted: tickAccepted }).toEqual({ slug, accepted });
-			expect({ slug, code: cli.exitCode }).toEqual({
-				slug,
-				code: accepted ? 0 : 2,
-			});
+			seen.push({ slug, accepted: tickAccepted, code: cli.exitCode });
 		}
+		expect(seen).toEqual(
+			slugs.map(([slug, accepted]) => ({
+				slug,
+				accepted,
+				code: accepted ? 0 : 2,
+			})),
+		);
 	});
 
 	test("refuses a milestone that is not a tour slug before looking it up or calling maestro", async () => {

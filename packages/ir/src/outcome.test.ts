@@ -83,7 +83,7 @@ test.each(readdirSync(fixturesDir).filter((f) => f.endsWith(".json")))(
 			type: "array",
 			items: settledSchema({ type: "object" }),
 		};
-		for (const schema of lists) expect(schema).toEqual(settledList);
+		expect(lists).toEqual(lists.map(() => settledList));
 		expect(lists.length > 0).toBe(ir.nodes.some(collects));
 	},
 );

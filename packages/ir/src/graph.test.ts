@@ -42,7 +42,7 @@ test.each(fixtureFiles)(
 	"%s: every edge is indexed from its source and into its target",
 	async (file) => {
 		const [ir, index] = await fixture(file);
-		for (const n of ir.nodes) expect(index.nodes.get(n.id)).toBe(n);
+		expect(ir.nodes.filter((n) => index.nodes.get(n.id) !== n)).toEqual([]);
 		const from = ir.nodes.flatMap((n) => index.edgesFrom(n.id));
 		const into = ir.nodes.flatMap((n) => index.edgesInto(n.id));
 		expect(sorted(from)).toEqual(sorted(ir.edges));

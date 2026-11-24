@@ -131,7 +131,7 @@ async function performedTask(
 }
 
 describe("the stub runs match their expected traces", () => {
-	for (const name of ["t1", "t2"] as const)
+	for (const name of ["t1" as const, "t2" as const])
 		test(name, async () => {
 			const expected = await Bun.file(
 				join(import.meta.dir, "expected", `${name}.json`),

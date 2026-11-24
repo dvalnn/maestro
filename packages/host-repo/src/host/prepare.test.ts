@@ -499,11 +499,14 @@ describe("target.prepare", () => {
 		});
 		const found = composed.ok ? [] : composed.diagnostics;
 		expect(found.length).toBeGreaterThan(0);
-		for (const d of found)
-			expect(d).toMatchObject({
-				...expected,
-				message: expect.stringContaining(expected.message),
-			});
+		expect(found).toEqual(
+			found.map(() =>
+				expect.objectContaining({
+					...expected,
+					message: expect.stringContaining(expected.message),
+				}),
+			),
+		);
 	});
 
 	test("a sparse step git refuses fails the node with git's message, leaving no lane", async () => {
