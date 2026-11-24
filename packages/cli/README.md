@@ -39,8 +39,9 @@ optional ones. A boolean takes `--name` and `--no-name`.
   a `seats` entry rebinds), its profile and the harness, model and thinking it resolves to, as `compose --json` does in
   `agents`. With `--json`, `--plan` prints the lean
   `{ ok, plan: { bounds, expansion, diagnostics, nodes: [{ id, kind }] }, agents }`, with no ports, literals, edges,
-  scopes or config; `--json` alone prints the full plan. [render-text](../render-text/README.md) holds the drawing rules
-  of `--flow`, which sets `--graph`.
+  scopes or config; `--json` alone prints the full plan. Its `plan.ir` and an `--out` file hold each port schema once,
+  in the IR's [shared form](../ir/README.md#shared-schemas): a port names its key in `plan.ir.schemas`. Either loads
+  back as an IR file. [render-text](../render-text/README.md) holds the drawing rules of `--flow`, which sets `--graph`.
 - `compose --concert <id>` shows the plan the concert recorded, under its
   [config snapshot](../../docs/architecture.md#config-snapshot), with no pre-flight and no composition code loaded. It
   takes no composition, param flags, `--preset` or `-c`. `--out` saves that graph as an IR file. A concert recorded

@@ -10,7 +10,12 @@ import {
 } from "@maestro/core/config";
 import type { Roots } from "@maestro/core/host";
 import type { ConcertRecord } from "@maestro/core/perform";
-import { canonicalJson, type Diagnostic, type Plan } from "@maestro/ir";
+import {
+	canonicalJson,
+	type Diagnostic,
+	type Plan,
+	shareSchemas,
+} from "@maestro/ir";
 import { flow, listing, render, summary } from "@maestro/render-text";
 import { shortIds } from "@maestro/render-text/live";
 import {
@@ -148,7 +153,7 @@ async function showConcert(
 async function save(saving: Saving, out: string) {
 	const file = resolve(out);
 	const ir = await persist(saving, dirname(file), bundleName(file));
-	await Bun.write(file, `${canonicalJson(ir)}\n`);
+	await Bun.write(file, `${canonicalJson(shareSchemas(ir))}\n`);
 }
 
 const agentsIn = ({ deps, roots, config }: Shown, plan: Plan) =>
@@ -213,7 +218,7 @@ async function planShown(
 			jsonOf(
 				isSet(values, "plan")
 					? leanPlan(plan, agents)
-					: { ok: true, plan, agents },
+					: { ok: true, plan: { ...plan, ir: shareSchemas(plan.ir) }, agents },
 				deps,
 			),
 		);

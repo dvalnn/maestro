@@ -1,7 +1,8 @@
 import type { ErrorObject } from "ajv";
 import irSchema from "../ir.schema.json";
 import { checkGraph, IR_VERSION, irError } from "./graph";
-import type { Diagnostic, Ir } from "./types";
+import { type IrDocument, resolveSchemas } from "./shared-schemas";
+import type { Diagnostic, ParseResult } from "./types";
 import { validator } from "./validator";
 
 export { type ArtifactRef, artifactRefSchema } from "./artifact-ref";
@@ -76,6 +77,12 @@ export {
 	worstOutcome,
 } from "./outcome";
 export type { Expansion, Plan, PlanBounds } from "./plan";
+export {
+	type IrDocument,
+	type PortMap,
+	type SharedIr,
+	shareSchemas,
+} from "./shared-schemas";
 export type * from "./types";
 export {
 	messageOf,
@@ -85,10 +92,6 @@ export {
 } from "./validator";
 /** The published IR JSON Schema (draft 2020-12). Also at packages/ir/ir.schema.json. */
 export { irSchema };
-
-export type ParseResult =
-	| { ok: true; ir: Ir }
-	| { ok: false; diagnostics: Diagnostic[] };
 
 const validateShape = validator().compile(irSchema);
 
@@ -151,16 +154,21 @@ function checkVersion(value: unknown): Diagnostic | undefined {
 	}
 }
 
-/** Validates an already JSON-parsed value as IR. Never throws on bad input. */
+/**
+ * Validates an already JSON-parsed value as IR. Never throws on bad input. The IR it gives holds every port schema
+ * inline and no `schemas` table, whichever form the value has.
+ */
 export function parseIr(value: unknown): ParseResult {
 	const versionError = checkVersion(value);
 	if (versionError) return { ok: false, diagnostics: [versionError] };
 	if (!validateShape(value))
 		return { ok: false, diagnostics: shapeDiagnostics(value) };
-	const diagnostics = checkGraph(value as Ir);
+	const resolved = resolveSchemas(value as IrDocument);
+	if (!resolved.ok) return resolved;
+	const diagnostics = checkGraph(resolved.ir);
 	return diagnostics.length
 		? { ok: false, diagnostics }
-		: { ok: true, ir: value as Ir };
+		: { ok: true, ir: resolved.ir };
 }
 
 const quote = (v: unknown) => JSON.stringify(v);

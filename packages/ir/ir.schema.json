@@ -17,7 +17,7 @@
 	"properties": {
 		"irVersion": {
 			"description": "The IR versions this schema accepts. Bumped together with IR_VERSION.",
-			"enum": ["1.0", "1.1", "1.2"]
+			"enum": ["1.0", "1.1", "1.2", "1.3"]
 		},
 		"composition": {
 			"type": "object",
@@ -53,6 +53,11 @@
 			"required": ["node"],
 			"additionalProperties": false,
 			"properties": { "node": { "$ref": "#/$defs/id" } }
+		},
+		"schemas": {
+			"description": "Port schemas by key, which a port may name in place of an inline schema. A reader resolves each key and drops the table (1.3).",
+			"type": "object",
+			"additionalProperties": { "$ref": "#/$defs/schema" }
 		}
 	},
 	"$defs": {
@@ -74,7 +79,10 @@
 		"ports": {
 			"type": "object",
 			"propertyNames": { "$ref": "#/$defs/portName" },
-			"additionalProperties": { "$ref": "#/$defs/schema" }
+			"additionalProperties": {
+				"description": "An inline schema, or the key of its entry in the schemas table.",
+				"type": ["object", "boolean", "string"]
+			}
 		},
 		"portRef": {
 			"type": "object",

@@ -460,7 +460,6 @@ function stepRow(i: Step, ir: Ir, hostText: TextLookup) {
 	return {
 		name: i.name,
 		node: i.node,
-		kind: ir.nodes.find((n) => n.id === i.node)?.kind,
 		expansion: i.expansion,
 		status: i.status,
 		stale: i.stale,
@@ -470,6 +469,8 @@ function stepRow(i: Step, ir: Ir, hostText: TextLookup) {
 		tokens: tokensOf(i.metrics),
 		reason: i.reason,
 		...actorFieldsOf(i.enrichment, i.node, hostText),
+		// After the actor fields, which name any field a host likes: the kind is the recorded node's.
+		kind: ir.nodes.find((n) => n.id === i.node)?.kind,
 		notes: Object.keys(notes).length > 0 ? notes : undefined,
 	};
 }

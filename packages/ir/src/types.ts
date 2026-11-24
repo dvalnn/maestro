@@ -187,3 +187,8 @@ export type Ir = {
 	edges: IrEdge[];
 	result: { node: string };
 };
+
+/** What `parseIr` gives: the loaded IR, or the diagnostics that refuse it. */
+export type ParseResult =
+	| { ok: true; ir: Ir }
+	| { ok: false; diagnostics: Diagnostic[] };

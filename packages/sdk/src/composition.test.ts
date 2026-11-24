@@ -54,6 +54,7 @@ describe("composition", () => {
 			({ name, times, nick }) => task({ name, times, nick: nick ?? "absent" }),
 		);
 		const ir = buildValid(root, { name: "ada" });
+		expect(ir.irVersion).toBe("1.3");
 		expect(ir.composition).toEqual({
 			id: "greet",
 			version: "0.1.0",

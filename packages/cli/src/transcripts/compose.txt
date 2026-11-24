@@ -1,0 +1,33 @@
+## maestro compose mark.ts --plan
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+mark: 2 node instances
+nodes:
+  parMap          parMap      1
+    parMap expands to risk
+  parMap/skeptic  repo.check  1
+bounds:
+  instances  2
+
+## maestro compose mark.ts --graph
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+flowchart TD
+  start((start))
+  stop(((end)))
+  subgraph gn0["parMap"]
+    n0[["parMap<br/>risk"]]
+    n1(["skeptic<br/>repo.check"])
+  end
+  start --> n0
+  n1 -.-> n0
+  n0 --> stop
+
+## maestro compose mark.ts --flow
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+flowchart TD
+  start((start))
+  subgraph n0["parMap ×1"]
+    n1["skeptic<br/><small>check</small>"]
+  end
+  stop(((end)))
+  start --> n0
+  n0 --> stop

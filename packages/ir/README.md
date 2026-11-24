@@ -25,7 +25,9 @@ const result = parseIr(JSON.parse(text));
 if (!result.ok) console.error(result.diagnostics); // [{ code, severity, message, hint, path }]
 ```
 
-`parseIr` never throws on bad input. It runs three checks in order and returns the first failure's diagnostics:
+`parseIr` never throws on bad input. It runs its checks in order and returns the first failure's diagnostics. Between
+the schema and the structural rules it resolves [shared schemas](#shared-schemas), so the IR it returns holds every port
+schema inline and no `schemas` table:
 
 ```mermaid
 flowchart LR
@@ -33,12 +35,14 @@ flowchart LR
   v -- "malformed, newer or other major" --> ev(["IR.version"])
   v --> s{"schema"}
   s -- "bad shape" --> es(["IR.schema"])
-  s --> g{"structural rules"}
+  s --> k{"schema keys"}
+  k -- "unknown key" --> ek(["IR.ref"])
+  k --> g{"structural rules"}
   g -- "rule broken" --> eg(["IR.graph"])
   g --> ok(["ok"])
   classDef fault stroke:#e5534b,stroke-width:3px
   classDef done stroke:#57ab5a,stroke-width:3px
-  class ev,es,eg fault
+  class ev,es,ek,eg fault
   class ok done
 ```
 
@@ -56,7 +60,7 @@ Refs: CORE-17.
 
 ## Versioning
 
-`irVersion` is `"<major>.<minor>"`. This package reads `1.0` to `1.2`, and emits `1.2`.
+`irVersion` is `"<major>.<minor>"`. This package reads `1.0` to `1.3`, and emits `1.3`.
 
 - **Minor** changes are additive and optional: a new optional field, or a new value where readers already reject the
   unknown. IR written for `1.n` keeps its meaning under every later `1.m`. A breaking change to the node config of a
@@ -87,6 +91,7 @@ Refs: CORE-16, ADR 0004, D-30.
 | `nodes`       | Flat list. Nesting is by id.                                                                                |
 | `edges`       | Flat list, port to port.                                                                                    |
 | `result`      | `{ "node": id }`, the node the build returned, where the result rule starts.[^result]                       |
+| `schemas`     | Optional. Port schemas by key, which ports name: see [Shared schemas](#shared-schemas).                     |
 
 Nodes and scopes share one id space. An id is a path of `[A-Za-z0-9_-]` segments joined by `/`. Anything inside a scope
 or a group has the id `<enclosing id>/<segment>`, so every proper prefix of an id is a declared scope or group node, its
@@ -98,6 +103,27 @@ annotation that names artifacts and host types ([Type markers and ArtifactRef](#
 type checks are pre-flight's job, not this package's.
 
 Refs: D-09, IR-01, CORE-02.
+
+### Shared schemas
+
+Any port map, a node's `in`, `out` and `inner` and a scope's `ports`, may hold a string key in place of a schema. The
+key names an entry of the top-level `schemas` table, which maps each key to a JSON Schema document. A string is never an
+inline schema, so a key cannot be mistaken for one. A port may also hold its schema inline, and one IR may mix both.
+
+```json
+{
+  "schemas": { "s0": { "type": "string" } },
+  "nodes": [{ "id": "greet", "kind": "code", "in": { "name": "s0" }, "out": { "text": "s0" } }]
+}
+```
+
+- `parseIr` replaces each key with its entry and drops the table, so a shared-form IR and its inline twin load as one
+  IR. A key the table does not hold is an `IR.ref` error at its port, naming the key.
+- `shareSchemas(ir)` writes the shared form: every port names a key, and schemas with equal canonical JSON share one
+  entry. The keys are the writer's choice and not part of the format, and the same IR gets the same keys.
+- Schemas inside a host node's opaque `config` stay where they are.
+
+The rationale is in [ADR 0020](../../docs/adr/0020-port-schemas-are-named-once-in-the-ir.md).
 
 ### Nodes
 
@@ -303,7 +329,7 @@ the IR, not a plan, so the plan carries no format version.
 
 | Field         | Holds                                                                     |
 | ------------- | ------------------------------------------------------------------------- |
-| `ir`          | The IR, unchanged.                                                        |
+| `ir`          | The IR. The CLI writes it in the [shared form](#shared-schemas).          |
 | `expansion`   | Group id, then the group instance's expansion path, then its `Expansion`. |
 | `bounds`      | `PlanBounds`, below.                                                      |
 | `diagnostics` | Warnings only, each an ir `Diagnostic` (`src/types.ts`).                  |
@@ -331,7 +357,7 @@ A plan for a `parMap` over two topics, then a loop, with a host that counts one 
 
 ```json
 {
-  "ir": { "irVersion": "1.2", "nodes": [], "edges": [] },
+  "ir": { "irVersion": "1.3", "nodes": [], "edges": [], "schemas": {} },
   "expansion": {
     "topics": { "": { "keys": ["alpha", "beta"] } },
     "loop": { "": { "upTo": 2 } }
@@ -434,6 +460,8 @@ Refs: ADR 0007, ADR 0008, CORE-14.
 
 ## Changelog
 
+- **1.3**: the IR gained an optional `schemas` table, and a port may name an entry of it by key in place of an inline
+  schema. IR without keys reads as before.
 - **1.2**: a scope gained an optional `pack`, the pack that declares its composition, which config keys of that pack
   read. A scope without it stands for its composition in any pack, as IR before 1.2 does.
 - **1.1, unchanged**: the `repo.agent` node config gained optional `reply` and `relay`, and the `repo.changeset` node an

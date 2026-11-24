@@ -14,6 +14,7 @@ import {
 	openRecord,
 	openWriter,
 	PROCESS_EXITED,
+	Unencorable,
 } from "./record";
 
 const OPENERS = 6;
@@ -618,6 +619,40 @@ async function factsFixture(behaviour: {
 	};
 	return { path, host, options };
 }
+
+// Seam: perform's record and its refusal of an encore with the same loaded IR, config and host facts.
+test("shared and inline IR give the same recorded IR and encore fingerprint", async () => {
+	const { path, options } = await factsFixture({
+		environment: () => ({ place: "/checkout" }),
+	});
+	const inline = { ...options.ir, irVersion: "1.3" };
+	const shared = {
+		...inline,
+		schemas: { text: { type: "string" } },
+		nodes: inline.nodes.map((n) => ({
+			...n,
+			in: { name: "text" },
+			out: { text: "text" },
+		})),
+	};
+	const loaded = parseIr(shared);
+	expect(loaded.ok).toBe(true);
+	if (!loaded.ok) return;
+	const first = await perform({ ...options, ir: inline });
+	expect((await first.done).outcome).toBe("ok");
+	await expect(
+		perform({ ...options, ir: loaded.ir, encore: first.id }),
+	).rejects.toBeInstanceOf(Unencorable);
+	const second = await perform({ ...options, ir: loaded.ir });
+	expect((await second.done).outcome).toBe("ok");
+	const reader = openRecord(path);
+	try {
+		expect(reader.find(first.id)?.ir).toEqual(inline);
+		expect(reader.find(second.id)?.ir).toEqual(inline);
+	} finally {
+		reader.close();
+	}
+});
 
 // Seam: perform's attempts and the facts a reopened record reader returns.
 test("a concert records each host's facts at perform start and replaces them on resume", async () => {

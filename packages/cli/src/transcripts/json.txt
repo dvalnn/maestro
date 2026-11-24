@@ -1,3 +1,61 @@
+## the shape of maestro compose demo.greet --name x --json
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+agents: []
+ok: boolean
+plan.bounds.counts: {}
+plan.bounds.instances.exact: number
+plan.bounds.nodes.echo/echo.exact: number
+plan.bounds.nodes.first.exact: number
+plan.bounds.nodes.helpers_exclaim.exact: number
+plan.bounds.nodes.shape.exact: number
+plan.diagnostics: []
+plan.expansion: {}
+plan.ir.composition.doc: string
+plan.ir.composition.id: string
+plan.ir.composition.pack: string
+plan.ir.composition.version: string
+plan.ir.edges[].from.node: string
+plan.ir.edges[].from.port: string
+plan.ir.edges[].kind: string
+plan.ir.edges[].to.node: string
+plan.ir.edges[].to.port: string
+plan.ir.emitter.name: string
+plan.ir.emitter.version: string
+plan.ir.irVersion: string
+plan.ir.nodes[].id: string
+plan.ir.nodes[].in.text: string
+plan.ir.nodes[].in.times: string
+plan.ir.nodes[].kind: string
+plan.ir.nodes[].literals.text: string
+plan.ir.nodes[].literals.times: number
+plan.ir.nodes[].out.text: string
+plan.ir.nodes[].worker.codeHash: string
+plan.ir.nodes[].worker.export: string
+plan.ir.nodes[].worker.module: string
+plan.ir.nodes[].worker.runtime: string
+plan.ir.result.node: string
+plan.ir.schemas.s0.type: string
+plan.ir.schemas.s1.type: string
+plan.ir.scopes[].composition: string
+plan.ir.scopes[].id: string
+plan.ir.scopes[].pack: string
+plan.ir.scopes[].ports.text: string
+
+## the shape of maestro compose demo.greet --name x --plan --json
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+agents: []
+ok: boolean
+plan.bounds.counts: {}
+plan.bounds.instances.exact: number
+plan.bounds.nodes.echo/echo.exact: number
+plan.bounds.nodes.first.exact: number
+plan.bounds.nodes.helpers_exclaim.exact: number
+plan.bounds.nodes.shape.exact: number
+plan.diagnostics: []
+plan.expansion: {}
+plan.nodes[].id: string
+plan.nodes[].kind: string
+
 ## the shape of maestro perform demo.greet --name x --json
 ───────────────────────────────────────────────────────────────────────────────────────────────────┐
 artifacts: string

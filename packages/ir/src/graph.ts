@@ -20,7 +20,7 @@ import type {
 } from "./types";
 
 /** The IR version this package emits and reads. See README.md for the compatibility policy. */
-export const IR_VERSION = "1.2";
+export const IR_VERSION = "1.3";
 
 /** The outputs every node has beside its declared ones. */
 export const IMPLICIT_OUT = {

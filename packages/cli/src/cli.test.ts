@@ -1940,6 +1940,30 @@ describe("perform", () => {
 	});
 });
 
+describe("compose --json", () => {
+	// Seam: compose's stdout under --json, piped and on a terminal.
+	test.each([
+		["the full plan", ["compose", ...GREET, "--json"]],
+		["the lean plan", ["compose", ...GREET, "--plan", "--json"]],
+	] satisfies [string, string[]][])(
+		"compose prints %s compact when piped and indented on a terminal",
+		async (_, args) => {
+			const w = await world();
+			const hosts = [hostOf()];
+			const terminal = () => ({ columns: 80, rows: 24 });
+			const piped = await w.call(args, { hosts });
+			const shown = await w.call(args, { hosts, terminal });
+			expect(piped.code).toBe(0);
+			expect(shown.code).toBe(0);
+			const document = json(piped);
+			expect(document.ok).toBe(true);
+			expect(json(shown)).toEqual(document);
+			expect(piped.out).toBe(JSON.stringify(document));
+			expect(shown.out).toBe(JSON.stringify(document, null, 2));
+		},
+	);
+});
+
 describe("usage errors", () => {
 	// Seam: error documents and exit codes returned by the CLI under --json.
 	test.each([
@@ -2506,6 +2530,13 @@ describe("usage errors", () => {
 		});
 		const config = await w.call(["config", "demo.greet", "--json"], { hosts });
 		await transcript(new URL("./transcripts/json.txt", import.meta.url), [
+			await shape("compose demo.greet --name x", "compose", ...GREET),
+			await shape(
+				"compose demo.greet --name x --plan",
+				"compose",
+				...GREET,
+				"--plan",
+			),
 			await shape("perform demo.greet --name x", "perform", ...GREET),
 			await shape("wait <concert>", "wait", id),
 			await shape("ls", "ls"),
@@ -3639,6 +3670,25 @@ describe("the record", () => {
 		const shown = await w.call(["ls", idOf(completed), "--json"]);
 		expect(shown.code).toBe(0);
 		expect(json(shown).pending).toEqual([]);
+	});
+
+	test("ls <concert> --json keeps the recorded node kind when a host's actor fields name a kind", async () => {
+		const { w, host, id } = await loopFanConcert();
+		const actor: Host = {
+			...host,
+			text: { ...host.text, actorFields: () => ({ kind: "assistant" }) },
+		};
+		const listing = await w.call(["ls", id, "--json"], { hosts: [actor] });
+		expect(listing.code).toBe(0);
+		const init = json(listing).instances.find(
+			(i: { node: string }) => i.node === "init",
+		);
+		expect(init.kind).toBe("fake.task");
+		const detail = await w.call(["ls", id, "init", "--json"], {
+			hosts: [actor],
+		});
+		expect(detail.code).toBe(0);
+		expect(json(detail).kind).toBe("fake.task");
 	});
 
 	test("ls <concert> <instance> --json gives the same node kind as its listing row", async () => {

@@ -7,6 +7,71 @@ import { IR_VERSION, irSchema, MAX_TIMEOUT, parseIr } from "./index";
 
 const fixturesDir = `${import.meta.dir}/../fixtures`;
 
+// Seam: parseIr's loaded IR and structured refusals for authored port keys.
+test("shared and inline port schemas load as the same inline IR without a table", () => {
+	const inline = structuredClone({ ...fanoutFaninLoop, irVersion: "1.3" });
+	const shared = {
+		...inline,
+		schemas: {
+			text: { type: "string" },
+			flag: { type: "boolean" },
+			anything: true,
+			nothing: false,
+			opaque: { $ref: "https://example.org/authored-schema.json" },
+		},
+		nodes: inline.nodes.map((n) => ({ ...n })),
+		scopes: [{ ...inline.scopes[0], ports: { text: "text" } }],
+	};
+	Object.assign(inline.nodes[2]?.out ?? {}, {
+		anything: true,
+		nothing: false,
+		opaque: { $ref: "https://example.org/authored-schema.json" },
+	});
+	Object.assign(shared.nodes[0] ?? {}, { inner: { item: "text" } });
+	Object.assign(shared.nodes[1] ?? {}, {
+		in: { prompt: "text" },
+		out: { text: "text" },
+	});
+	Object.assign(shared.nodes[2] ?? {}, {
+		out: {
+			value: { type: "object", properties: { text: { type: "string" } } },
+			anything: "anything",
+			nothing: "nothing",
+			opaque: "opaque",
+		},
+	});
+	Object.assign(shared.nodes[5] ?? {}, { out: { value: "flag" } });
+	const loaded: unknown = parseIr(shared);
+	const plain: unknown = parseIr(inline);
+	expect(loaded).toEqual({ ok: true, ir: inline });
+	expect(plain).toEqual({ ok: true, ir: inline });
+});
+
+test.each<[string, Mutation]>([
+	["/nodes/1/in/prompt", (ir) => (ir.nodes[1].in.prompt = "absent-schema")],
+	["/nodes/1/out/text", (ir) => (ir.nodes[1].out.text = "absent-schema")],
+	["/nodes/0/inner/item", (ir) => (ir.nodes[0].inner.item = "absent-schema")],
+	["/scopes/0/ports/text", (ir) => (ir.scopes[0].ports.text = "absent-schema")],
+])(
+	"an unknown schema key is refused at port %s with IR.ref and its key",
+	(path, mutate) => {
+		const diagnostics = rejects(fanoutFaninLoop, (ir) => {
+			ir.irVersion = "1.3";
+			ir.schemas = { text: { type: "string" } };
+			mutate(ir);
+		});
+		const diagnostic = diagnostics.find((d) => d.path === path);
+		expect(diagnostic).toBeDefined();
+		expect(diagnostic).toMatchObject({
+			code: "IR.ref",
+			severity: "error",
+			path,
+		});
+		const words = diagnostic?.message.split(/[\s'"`,:;()]+/) ?? [];
+		expect(words).toContain("absent-schema");
+	},
+);
+
 test.each(readdirSync(fixturesDir).filter((f) => f.endsWith(".json")))(
 	"golden fixture %s is accepted",
 	async (file) => {
@@ -651,10 +716,10 @@ test("a newer minor version than the reader knows is rejected", () => {
 	if (result.ok) throw new Error("expected a refusal");
 	expect(result.diagnostics[0]?.code).toBe("IR.version");
 	expect(result.diagnostics[0]?.message).toBe(
-		"IR version 1.7 is newer than this maestro reads (1.2). It was emitted by a newer SDK, for example one bundled in a pack",
+		"IR version 1.7 is newer than this maestro reads (1.3). It was emitted by a newer SDK, for example one bundled in a pack",
 	);
 	expect(result.diagnostics[0]?.hint).toBe(
-		"Upgrade maestro to a version that reads IR 1.7, or re-emit the IR with an SDK that targets IR 1.2",
+		"Upgrade maestro to a version that reads IR 1.7, or re-emit the IR with an SDK that targets IR 1.3",
 	);
 });
 

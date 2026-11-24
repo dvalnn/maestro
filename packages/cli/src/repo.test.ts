@@ -12,8 +12,11 @@ import { cp } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { Host } from "@maestro/core/host";
+import { openRecord } from "@maestro/core/perform";
 import { repoHost } from "@maestro/host-repo";
 import { stubHarness } from "@maestro/host-repo/harness";
+import { canonicalJson, parseIr } from "@maestro/ir";
+import { transcript } from "@maestro/transcript";
 import { cleanup, FIXTURES, scratch } from "./fixtures/packs";
 import { configValues, idOf, json, shortOf, world } from "./fixtures/world";
 import { builtinHosts } from "./hosts";
@@ -211,6 +214,158 @@ export const smoke = composition("smoke", { examples: [{}] }, () => {
 	);
 	return file;
 }
+
+// Seams: compose's full JSON and saved IR, perform's exit and diagnostics, and the public record reader.
+async function schemaFile() {
+	const file = join(await scratch(), "schemas.ts");
+	await Bun.write(
+		file,
+		`import { fresh, seat } from "@maestro/host-repo-sdk";
+import { composition, iter, Json, Text, use } from "@maestro/sdk";
+
+const First = Json({ type: "object", properties: { name: { type: "string", minLength: 1 } } });
+const Second = Json({ properties: { name: { minLength: 1, type: "string" } }, type: "object" });
+const inner = composition("inner", { ports: { task: Text() } }, (_, { task }) =>
+	seat("smoke")({ task, lane: fresh(), reply: { first: First, second: Second } }),
+);
+export const schemas = composition("schemas", { examples: [{}] }, () => {
+	use(inner, { task: "nothing" });
+	return iter.parMap(["x", "y"], () => use(inner, { task: "nothing" }), { onError: "stop" });
+});
+`,
+	);
+	return file;
+}
+
+test("compose names every node, inner and scope port schema once, merging equal canonical JSON", async () => {
+	const w = await repoWorld(SMOKE_RUNTIME("stub"));
+	const file = await schemaFile();
+	const shown = await w.call(["compose", file, "--json"]);
+	expect(shown.code).toBe(0);
+	const { ir } = json(shown).plan;
+	expect(ir.irVersion).toBe("1.3");
+	expect(ir.schemas).toBeObject();
+	const maps: Record<string, unknown>[] = [
+		...ir.nodes.flatMap((n: { in?: object; out?: object; inner?: object }) => [
+			n.in ?? {},
+			n.out ?? {},
+			n.inner ?? {},
+		]),
+		...ir.scopes.map((s: { ports: object }) => s.ports),
+	];
+	const keys = maps.flatMap((ports) => Object.values(ports));
+	expect(keys.length).toBeGreaterThan(0);
+	for (const key of keys) {
+		expect(key).toBeString();
+		if (typeof key !== "string") continue;
+		expect(Object.hasOwn(ir.schemas, key)).toBe(true);
+	}
+	const entries = Object.values(ir.schemas).map((schema) =>
+		canonicalJson(schema),
+	);
+	expect(new Set(entries).size).toBe(entries.length);
+	expect(new Set(keys)).toEqual(new Set(Object.keys(ir.schemas)));
+	const equalSchema = {
+		type: "object",
+		properties: { name: { type: "string", minLength: 1 } },
+	};
+	expect(
+		Object.values(ir.schemas).filter(
+			(s) => canonicalJson(s) === canonicalJson(equalSchema),
+		),
+	).toEqual([equalSchema]);
+	const agents = ir.nodes.filter(
+		(n: { kind: string }) => n.kind === "repo.agent",
+	);
+	expect(agents.length).toBeGreaterThan(0);
+	for (const agent of agents) expect(agent.out.first).toBe(agent.out.second);
+	expect(
+		ir.nodes.some(
+			(n: { inner?: object }) => Object.keys(n.inner ?? {}).length > 0,
+		),
+	).toBe(true);
+	expect(
+		ir.scopes.some((s: { ports: object }) => Object.keys(s.ports).length > 0),
+	).toBe(true);
+	const again = await w.call(["compose", file, "--json"]);
+	expect(again.code).toBe(0);
+	expect(json(again).plan.ir).toEqual(ir);
+});
+
+test("compose --out saves the same shared IR as the full JSON document", async () => {
+	const w = await repoWorld(SMOKE_RUNTIME("stub"));
+	const file = await schemaFile();
+	const out = join(w.cwd, "shared.json");
+	const shown = await w.call(["compose", file, "--json", "--out", out]);
+	expect(shown.code).toBe(0);
+	const saved = await Bun.file(out).json();
+	expect(saved).toHaveProperty("schemas");
+	expect(saved).toEqual(json(shown).plan.ir);
+	expect(parseIr(saved).ok).toBe(true);
+});
+
+test("perform loads saved shared plan IR and its inline twin with the same record and refusal", async () => {
+	const w = await repoWorld(SMOKE_RUNTIME("stub"));
+	const shown = await w.call(["compose", await artsFile(), "--json"]);
+	expect(shown.code).toBe(0);
+	const loaded = parseIr(json(shown).plan.ir);
+	expect(loaded.ok).toBe(true);
+	if (!loaded.ok) return;
+	const inline = loaded.ir;
+	const agent = inline.nodes.find((n) => n.kind === "repo.agent");
+	expect(agent?.out?.lane).toBeDefined();
+	const shared = {
+		...inline,
+		schemas: { lane: agent?.out?.lane },
+		nodes: inline.nodes.map((n) =>
+			n.id === agent?.id ? { ...n, out: { ...n.out, lane: "lane" } } : n,
+		),
+	};
+	const file = join(w.cwd, "plan.json");
+	await Bun.write(file, JSON.stringify(inline));
+	const first = await w.call(["perform", file]);
+	expect(first.code).toBe(0);
+	const id = idOf(first);
+	await Bun.write(file, JSON.stringify(shared));
+	const performed = await w.call(["perform", file]);
+	expect(performed.code).toBe(0);
+	const reader = openRecord(join(w.env.XDG_DATA_HOME, "maestro/record.db"));
+	try {
+		expect(reader.find(id)?.ir).toEqual(inline);
+		expect(reader.find(idOf(performed))?.ir).toEqual(inline);
+	} finally {
+		reader.close();
+	}
+	writeFileSync(
+		join(w.cwd, ".maestro/config.yaml"),
+		`target: { repo: ${w.target}, base: main }\n`,
+	);
+	const sharedRefusal = await w.call(["perform", file, "--json"]);
+	expect(sharedRefusal.code).not.toBe(0);
+	await Bun.write(file, JSON.stringify(inline));
+	const inlineRefusal = await w.call(["perform", file, "--json"]);
+	expect(sharedRefusal).toEqual(inlineRefusal);
+});
+
+// Transcript: the plan views of a composition with a group, which read the IR in memory.
+test("compose prints the plan, its graph and its flow", async () => {
+	const w = await repoWorld();
+	const view = async (flag: string) => {
+		const shown = await w.call(["compose", join(REPO, "mark.ts"), flag]);
+		expect(shown.code).toBe(0);
+		expect(shown.err).toBe("");
+		return {
+			name: `maestro compose mark.ts ${flag}`,
+			columns: 100,
+			shown: shown.out,
+		};
+	};
+	await transcript(new URL("./transcripts/compose.txt", import.meta.url), [
+		await view("--plan"),
+		await view("--graph"),
+		await view("--flow"),
+	]);
+});
 
 const STUB_DELAY_MS = 700;
 
