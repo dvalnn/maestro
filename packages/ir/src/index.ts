@@ -77,12 +77,7 @@ export {
 	worstOutcome,
 } from "./outcome";
 export type { Expansion, Plan, PlanBounds } from "./plan";
-export {
-	type IrDocument,
-	type PortMap,
-	type SharedIr,
-	shareSchemas,
-} from "./shared-schemas";
+export { type SharedIr, shareSchemas } from "./shared-schemas";
 export type * from "./types";
 export {
 	messageOf,

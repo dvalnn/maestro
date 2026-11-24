@@ -197,9 +197,7 @@ type Give = readonly { column: number; floor: number }[];
  * A table's fit to a terminal `columns` cells wide: either the columns that give way, or a last column that wraps under
  * itself.
  */
-export type Fit =
-	| { columns: number; give: Give }
-	| { columns: number; wrap: true };
+type Fit = { columns: number; give: Give } | { columns: number; wrap: true };
 
 /** A fit that cuts columns, the only one that can leave a cell short of its value. */
 type Cut = Extract<Fit, { give: Give }>;
@@ -623,7 +621,7 @@ export function withArtifactPaths(
 }
 
 /** Each artifact in `values` on `ports`: its port, its JSON Pointer in that port's value, and its ref. */
-export function portArtifacts(
+function portArtifacts(
 	ports: Ports,
 	values: Readonly<Record<string, unknown>>,
 ): { port: string; pointer: string; ref: ArtifactRef }[] {
