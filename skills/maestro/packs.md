@@ -16,7 +16,9 @@ A directory, or a tarball of one, holding:
   - `id`: lower case, starting with a letter, then letters, digits, `_` or `-`. Compositions are `<id>.<name>`, and the
     config namespace is `<id>`.
   - `entry`: the bundle file, inside the pack directory.
-  - `sdk`: a semver range; a maestro whose SDK is outside it refuses the pack with a message to rebuild.
+  - `sdk`: a semver range; a maestro whose SDK is outside it refuses the pack with a message to rebuild. A prerelease
+    SDK is admitted when the range admits its release, so `^0.4.0` admits `0.4.0-rc.2`. A range that names a prerelease
+    of that same release, such as `>=0.4.0-rc.2`, compares the exact version.
 
 - The entry: one pre-bundled JavaScript file holding every composition, code node and prompt, and its own copy of the
   SDK. maestro resolves nothing through `node_modules` for a pack, and refuses an entry importing anything but builtins

@@ -503,7 +503,11 @@ SHA) are inputs or round-folder data, never constants in a pack.
 | `id`      | Lower case, a letter first, then letters, digits, `_` or `-`. Also the pack's config namespace. |
 | `version` | The pack's version.                                                                             |
 | `entry`   | The bundle file inside the pack directory.                                                      |
-| `sdk`     | A semver range. A maestro whose SDK is outside it refuses the pack and says to rebuild.         |
+| `sdk`     | A semver range. A maestro whose SDK is outside it refuses the pack and says to rebuild.[^sdk]   |
+
+[^sdk]:
+    A prerelease SDK is admitted when the range admits its release, so `^0.4.0` admits `0.4.0-rc.2`. A range that names
+    a prerelease of that same release, such as `>=0.4.0-rc.2`, compares the exact version.
 
 The entry imports nothing but builtins and `@maestro/sdk`, and maestro refuses one that does. Nothing is resolved
 through `node_modules`. Compose consumes only IR JSON, so a second SDK copy is harmless as long as nothing relies on

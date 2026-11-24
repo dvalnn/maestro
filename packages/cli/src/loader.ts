@@ -446,13 +446,28 @@ async function manifestOf(dir: string, remove: string): Promise<Manifest> {
 	return value as Manifest;
 }
 
+const PRERELEASE = /^(\d+\.\d+\.\d+)-/;
+const NAMED_PRERELEASE = /(\d+\.\d+\.\d+)-[0-9A-Za-z.-]+/g;
+
+/**
+ * Whether `range` admits SDK `version`. A prerelease stands for its release, unless `range` names a prerelease of
+ * that release, where the exact version decides.
+ */
+function admits(range: string, version: string): boolean {
+	if (Bun.semver.satisfies(version, range)) return true;
+	const release = PRERELEASE.exec(version)?.[1];
+	if (release === undefined) return false;
+	const named = [...range.matchAll(NAMED_PRERELEASE)].map((match) => match[1]);
+	return !named.includes(release) && Bun.semver.satisfies(release, range);
+}
+
 function checkSdk(
 	manifest: Manifest,
 	sdk: string,
 	dir: string,
 	remove: string,
 ) {
-	if (!Bun.semver.satisfies(sdk, manifest.sdk))
+	if (!admits(manifest.sdk, sdk))
 		throw new Error(
 			`pack '${manifest.id}' at ${dir} needs SDK ${manifest.sdk}, and this maestro has ${sdk}\nRebuild the pack against SDK ${sdk}, or ${remove}`,
 		);

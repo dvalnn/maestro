@@ -85,6 +85,100 @@ describe("a pack", () => {
 		expect((await composed(ir, pack)).ok).toBe(true);
 	});
 
+	test("opens a prerelease SDK when the range admits its release without naming its prerelease", async () => {
+		const opened = [];
+		for (const [sdk, range] of [
+			["0.4.0-rc.2", "*"],
+			["0.4.0-rc.2", "^0.4.0"],
+			["0.5.0-rc.1", ">=0.4.0-rc.2"],
+		]) {
+			const dir = await packOf(join(DEMO, "index.ts"), await scratch(), {
+				sdk: range,
+			});
+			opened.push(
+				await openPack({ dir }, sdk).then(
+					(pack) => pack.pack,
+					(e: Error) => e.message,
+				),
+			);
+		}
+		expect(opened).toEqual([
+			{ id: "demo", version: "1.0.0" },
+			{ id: "demo", version: "1.0.0" },
+			{ id: "demo", version: "1.0.0" },
+		]);
+	});
+
+	test("ranks prereleases by their exact version when the range names their release", async () => {
+		const dir = await packOf(join(DEMO, "index.ts"), await scratch(), {
+			sdk: ">=0.4.0-rc.2",
+		});
+		const error = await openPack({ dir }, "0.4.0-rc.1").catch(
+			(e: Error) => e.message,
+		);
+		expect(error).toBe(
+			`pack 'demo' at ${dir} needs SDK >=0.4.0-rc.2, and this maestro has 0.4.0-rc.1\nRebuild the pack against SDK 0.4.0-rc.1, or remove ${dir}`,
+		);
+		const pack = await openPack({ dir }, "0.4.0-rc.3");
+		expect(pack.pack).toEqual({ id: "demo", version: "1.0.0" });
+	});
+
+	test("refuses an SDK and its release outside the range with the existing message and fix", async () => {
+		const dir = await packOf(join(DEMO, "index.ts"), await scratch(), {
+			sdk: "^99.0.0",
+		});
+		const error = await openPack({ dir }, "0.4.0-rc.2").catch(
+			(e: Error) => e.message,
+		);
+		expect(error).toBe(
+			`pack 'demo' at ${dir} needs SDK ^99.0.0, and this maestro has 0.4.0-rc.2\nRebuild the pack against SDK 0.4.0-rc.2, or remove ${dir}`,
+		);
+	});
+
+	test("refuses a stable SDK outside the range", async () => {
+		const dir = await packOf(join(DEMO, "index.ts"), await scratch(), {
+			sdk: "^0.4.1",
+		});
+		const error = await openPack({ dir }, "0.4.0").catch(
+			(e: Error) => e.message,
+		);
+		expect(error).toBe(
+			`pack 'demo' at ${dir} needs SDK ^0.4.1, and this maestro has 0.4.0\nRebuild the pack against SDK 0.4.0, or remove ${dir}`,
+		);
+	});
+
+	test("refuses a prerelease SDK whose release falls past the range's upper bound", async () => {
+		const dir = await packOf(join(DEMO, "index.ts"), await scratch(), {
+			sdk: "<0.5.0",
+		});
+		const error = await openPack({ dir }, "0.5.0-rc.1").catch(
+			(e: Error) => e.message,
+		);
+		expect(error).toBe(
+			`pack 'demo' at ${dir} needs SDK <0.5.0, and this maestro has 0.5.0-rc.1\nRebuild the pack against SDK 0.5.0-rc.1, or remove ${dir}`,
+		);
+	});
+
+	test("opens a prerelease SDK with build metadata when the range admits its release", async () => {
+		const dir = await packOf(join(DEMO, "index.ts"), await scratch(), {
+			sdk: "^0.4.0",
+		});
+		const pack = await openPack({ dir }, "0.4.0-rc.2+abc123");
+		expect(pack.pack).toEqual({ id: "demo", version: "1.0.0" });
+	});
+
+	test("refuses a prerelease SDK when the range only admits a later release", async () => {
+		const dir = await packOf(join(DEMO, "index.ts"), await scratch(), {
+			sdk: "^0.4.1",
+		});
+		const error = await openPack({ dir }, "0.4.0-rc.2").catch(
+			(e: Error) => e.message,
+		);
+		expect(error).toBe(
+			`pack 'demo' at ${dir} needs SDK ^0.4.1, and this maestro has 0.4.0-rc.2\nRebuild the pack against SDK 0.4.0-rc.2, or remove ${dir}`,
+		);
+	});
+
 	test.each<
 		[string, Record<string, unknown>, string, { at?: string; sdk?: string }?]
 	>([
