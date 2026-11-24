@@ -4349,7 +4349,9 @@ describe("the record", () => {
 		const db = new Database(join(w.root, "data/maestro/record.db"));
 		db.run("UPDATE instances SET stale = 1");
 		db.close();
-		expect(await detail([host])).not.toHaveProperty("report");
+		const stale = await detail([host]);
+		expect(stale).not.toHaveProperty("report");
+		expect(stale).not.toHaveProperty("outputs");
 	});
 
 	test("an ambiguous prefix of the id or of the short id lists at most five short ids, then how many more", async () => {

@@ -512,7 +512,8 @@ function stepRow(i: Step, ir: Ir, hostText: TextLookup) {
 
 /**
  * Instance `i` of concert `row` in full, each piece once: its row, metrics, report, typed values, inputs and artifacts,
- * each artifact as its path in the concert's artifact area, then what its host adds, each left out when it has none.
+ * each artifact as its path in the concert's artifact area, then what its host adds, each left out when it has none. A
+ * stale instance leaves out its report, outputs and host details, which are an earlier attempt's.
  */
 function stepDetail(row: ConcertRecord, i: Step, hostText: TextLookup) {
 	const ports = row.ir.nodes.find((n) => n.id === i.node)?.in ?? {};
@@ -521,15 +522,16 @@ function stepDetail(row: ConcertRecord, i: Step, hostText: TextLookup) {
 		path: ref.path,
 	}));
 	const stepRowOf = stepRow(i, row.ir, hostText);
-	const details = unreserved(
-		detailsOf(i.enrichment, i.node, hostText),
-		stepRowOf,
-	);
+	const details = i.stale
+		? {}
+		: unreserved(detailsOf(i.enrichment, i.node, hostText), stepRowOf);
 	return {
 		...stepRowOf,
 		metrics: i.metrics,
 		report: i.stale ? undefined : reportOf(i.enrichment, i.node, hostText),
-		outputs: valuesOf(row.ir, i.node, i.outputs, hostText),
+		outputs: i.stale
+			? undefined
+			: valuesOf(row.ir, i.node, i.outputs, hostText),
 		inputs: i.inputs && withArtifactPaths(ports, i.inputs),
 		artifacts: artifacts.length > 0 ? artifacts : undefined,
 		...details,

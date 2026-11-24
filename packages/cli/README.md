@@ -243,7 +243,9 @@ documents a field with no value is left out:
   `settledAt`, `elapsedMs`, `tokens` and `reason`. The `name` is what `ls <concert> <instance>` accepts. An agent's row
   adds `harness`, `model`, `thinking` and `profile`, the profile's name. A row with notes adds `notes`, its entries by
   heading.
-- `ls <concert> <instance> --json` is that instance's step row plus its contents, each once:
+- `ls <concert> <instance> --json` is that instance's step row plus its contents, each once. A stale instance leaves out
+  `report`, `outputs` and the host's additions (an agent's `session` and `environment`). They are an earlier attempt's.
+  Its `inputs` and `artifacts` stay: the paths of what it left.
   - `metrics`, its own.
   - `report`, its full report, for a current instance. An agent's holds `summary`, `gaps`, `obstacles`, `lessons` and
     `sightings`; `maestro ls --help` says what each means.
