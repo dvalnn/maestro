@@ -19,7 +19,7 @@ ci: check
 # that no echo of a variable is left in a #!/bin/sh script (print it with printf '%s\n'),
 # and that no git conflict marker of a merge onto main is left in (factory.md, Rules, Build: Encore)
 lint:
-    bunx biome check --write --formatter-enabled=false .
+    bunx biome check --write --formatter-enabled=false --error-on-warnings .
     bun scripts/domain-words.ts
     bun scripts/prompt-imports.ts
     bun scripts/plain-english.ts --update

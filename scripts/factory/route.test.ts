@@ -142,28 +142,34 @@ test("a needs-info triage without a question is malformed", () => {
 });
 
 const figure = { kind: "seams", caption: "", source: "", notes: [] };
+const parsing = (extra: object) => () =>
+	parseTriage({
+		verdict: "ready-for-agent",
+		risk: "low",
+		reasons: [],
+		questions: [],
+		spec: {
+			touches: [],
+			what: "w",
+			decisions: [],
+			excluded: [],
+			subject: "s",
+			...extra,
+		},
+	});
+
 test.each([
-	["three figures", { figures: Array(3).fill(figure) }, true],
-	["two figures", { figures: Array(2).fill(figure) }, false],
-	["four proof claims", { proof: ["a", "b", "c", "d"] }, true],
-	["three proof claims", { proof: ["a", "b", "c"] }, false],
-])("a triage spec with %s: malformed is %s", (_, extra, malformed) => {
-	const parsed = () =>
-		parseTriage({
-			verdict: "ready-for-agent",
-			risk: "low",
-			reasons: [],
-			questions: [],
-			spec: {
-				touches: [],
-				what: "w",
-				decisions: [],
-				excluded: [],
-				subject: "s",
-				...extra,
-			},
-		});
-	expect(() => parsed()).toThrow;
+	["three figures", { figures: Array(3).fill(figure) }],
+	["four proof claims", { proof: ["a", "b", "c", "d"] }],
+])("a triage spec with %s is malformed", (_, extra) => {
+	expect(parsing(extra)).toThrow();
+});
+
+test.each([
+	["two figures", { figures: Array(2).fill(figure) }],
+	["three proof claims", { proof: ["a", "b", "c"] }],
+])("a triage spec with %s is well formed", (_, extra) => {
+	expect(parsing(extra)).not.toThrow();
 });
 
 test("a question recommending none of its options is malformed", () => {
