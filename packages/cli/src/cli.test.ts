@@ -4261,7 +4261,7 @@ describe("the record", () => {
 		expect(lines[heading + 1]?.startsWith("echo/echo")).toBe(true);
 		expect(lines[heading + 1]).not.toContain(notes.Lessons[0]);
 		expect(result.out).toContain(
-			`Full notes: maestro ls ${shortOf(id)} <instance> --json | jq .notes`,
+			`Full notes: maestro ls ${shortOf(id)} --json | jq '.instances[].notes'`,
 		);
 	});
 
@@ -4296,7 +4296,7 @@ describe("the record", () => {
 		expect(missing.code).toBe(2);
 		expect(missing.err).toContain(`no instance 'zzz' in concert ${id}`);
 		const narrow = () => ({ columns: 40, rows: 24 });
-		const full = `Full notes: maestro ls ${shortOf(id)} <instance> --json | jq .notes`;
+		const full = `Full notes: maestro ls ${shortOf(id)} --json | jq '.instances[].notes'`;
 		const cut = (
 			await w.call(["ls", id], {
 				hosts: [host],
@@ -4307,6 +4307,17 @@ describe("the record", () => {
 		expect(
 			(await w.call(["ls", id], { hosts: [host], terminal: narrow })).out,
 		).toEndWith(`${ESC}[2m${full}${ESC}[22m`);
+		expect(
+			(
+				await w.call(["ls", id, "echo"], {
+					hosts: [host],
+					terminal: narrow,
+					env: { NO_COLOR: "1" },
+				})
+			).out,
+		).toEndWith(
+			`Full notes: maestro ls ${shortOf(id)} echo/echo --json | jq .notes`,
+		);
 		expect(cut.slice(-6)).toEqual([
 			"Obstacles",
 			"echo/echo  no rg on PATH",

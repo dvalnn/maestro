@@ -183,11 +183,11 @@ function noteSections(noted: readonly Noted[]): Map<string, string[][]> {
 
 /**
  * The lines of `noted`'s sections, each a blank line, its heading, then one `<instance>  <entry>` line each. A line
- * wider than `columns` cells is cut with `…`, followed by a dim hint line saying how to read the full notes.
+ * wider than `columns` cells is cut with `…`, followed by a dim hint line giving `command`, which reads the full notes.
  */
 function notesLines(
 	noted: readonly Noted[],
-	id: string,
+	command: string,
 	color: boolean,
 	columns: number,
 ): string[] {
@@ -202,10 +202,7 @@ function notesLines(
 	if (!cut) return lines;
 	return [
 		...lines,
-		hintLine(
-			`Full notes: maestro ls ${id} <instance> --json | jq .notes`,
-			color,
-		),
+		hintLine(`Full notes: ${command}`, color),
 	];
 }
 
@@ -619,7 +616,11 @@ async function instancesOf(stored: Stored, prefix: string, which?: string) {
 		name: i.name,
 		notes: stepRow(i, row.ir, hostText).notes ?? {},
 	}));
-	const notes = notesLines(noted, short, color, columns);
+	const command =
+		chosen === undefined
+			? `${jsonAgain("ls", [short])} | jq ${shellArg(".instances[].notes")}`
+			: `${jsonAgain("ls", [short, chosen])} | jq .notes`;
+	const notes = notesLines(noted, command, color, columns);
 	session.deps.stdout([text, ...notes].join("\n"));
 	return EXIT.ok;
 }

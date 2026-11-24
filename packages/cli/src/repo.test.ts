@@ -2485,7 +2485,7 @@ describe("ls Environment notes", () => {
 		expect(note.endsWith("…")).toBe(true);
 		expect(Bun.stringWidth(note)).toBeLessThanOrEqual(40);
 		expect(lines.at(-1)?.trim()).toBe(
-			`Full notes: maestro ls ${shortOf(id)} <instance> --json | jq .notes`,
+			`Full notes: maestro ls ${shortOf(id)} --json | jq '.instances[].notes'`,
 		);
 		const full = await w.call(["ls", shortOf(id), "review", "--json"]);
 		expect(full.code).toBe(0);
