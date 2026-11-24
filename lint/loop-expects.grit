@@ -2,8 +2,25 @@ language js
 
 `expect($args)` as $call where {
 	$call <: within or {
-		JsForOfStatement(expression=$it) where { not $it <: JsArrayExpression() },
-		`$it.forEach($f)` where { not $it <: JsArrayExpression() }
+		JsForOfStatement(expression=$it) where {
+			not $it <: or {
+				JsArrayExpression(),
+				TsAsExpression(expression=JsArrayExpression()),
+				TsSatisfiesExpression(expression=JsArrayExpression())
+			}
+		},
+		`$it.forEach($f)` where {
+			not $it <: or {
+				JsArrayExpression(),
+				TsAsExpression(expression=JsArrayExpression()),
+				TsSatisfiesExpression(expression=JsArrayExpression()),
+				JsParenthesizedExpression(expression=or {
+					JsArrayExpression(),
+					TsAsExpression(expression=JsArrayExpression()),
+					TsSatisfiesExpression(expression=JsArrayExpression())
+				})
+			}
+		}
 	},
 	register_diagnostic(span=$call, message="An expect in a loop over a computed collection passes when the collection is empty. Assert the whole collection with one expect, such as the list of offenders toEqual([])")
 }
