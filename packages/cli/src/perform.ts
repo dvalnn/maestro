@@ -87,7 +87,7 @@ const ENCORE_OPTIONS = { ...RECORDED_OPTIONS, ...PERFORM_FLAGS } as const;
 
 const DETACH = "--detach";
 /** The line a perform announces its concert with on stderr. */
-const ANNOUNCED = /^concert (\S+)$/m;
+const ANNOUNCED = /^concert (\S+)\n/m;
 /** How often a detaching perform looks for the concert its run announces. */
 const DETACH_POLL_MS = 50;
 /** How long a detaching perform waits for its run to announce a concert. */

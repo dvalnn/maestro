@@ -110,6 +110,13 @@ if (args.includes("--detach")) {
 	writeSync(1, Buffer.from(${JSON.stringify([...REFUSAL_OUT])}));
 	writeSync(2, Buffer.from(${JSON.stringify([...REFUSAL_ERR])}));
 	process.exit(7);
+} else if (args.includes("unterminated")) {
+	writeSync(2, "concert ${DETACHED_ID}");
+	process.exit(7);
+} else if (args.includes("split")) {
+	writeSync(2, "concert ${DETACHED_ID.slice(0, 4)}");
+	await Bun.sleep(500);
+	writeSync(2, "${DETACHED_ID.slice(4)}\\n");
 } else {
 	if (args.includes("warn-text")) writeSync(2, "warning: pack demo is out of date\\n");
 	if (args.includes("warn")) writeSync(2, Buffer.from(${JSON.stringify([...WARNING_BYTES])}));
@@ -161,6 +168,29 @@ describe("a concert in another process", () => {
 		expect(result.code).toBe(0);
 		expect(result.err).toEqual(Buffer.alloc(0));
 		expect(result.out).toEqual(Buffer.from(`${DETACHED_ID}\n`));
+	});
+
+	test("a detached start waits for a split announcement and prints the whole id", async () => {
+		const w = await world();
+		const result = await detachedOutput(w, await detachedWriter(), [
+			"perform",
+			"split",
+			"--detach",
+		]);
+		expect(result.code).toBe(0);
+		expect(result.out).toEqual(Buffer.from(`${DETACHED_ID}\n`));
+	});
+
+	test("a detached run ending with an unterminated announcement starts no concert", async () => {
+		const w = await world();
+		const result = await detachedOutput(w, await detachedWriter(), [
+			"perform",
+			"unterminated",
+			"--detach",
+		]);
+		expect(result.code).toBe(7);
+		expect(result.out).toEqual(Buffer.alloc(0));
+		expect(result.err).toEqual(Buffer.from(`concert ${DETACHED_ID}`));
 	});
 
 	test("a detached refusal passes stdout and stderr byte for byte and exits with the run's code", async () => {
