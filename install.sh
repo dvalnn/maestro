@@ -92,7 +92,7 @@ refuse_while_running() {
   listing=$(cd "$start_dir" && "$bin_dir/maestro" ls --status running --json) || status=$?
   [ "$status" -eq 0 ] ||
     fail "cannot list concerts with $bin_dir/maestro" "Fix the error above, then run this again"
-  running=$(printf '%s\n' "$listing" | sed -n 's/^ *"id": "\([^"]*\)".*/\1/p')
+  running=$(printf '%s\n' "$listing" | tr '{' '\n' | sed -n 's/^ *"id": *"\([^"]*\)".*/\1/p')
   [ -z "$running" ] && return 0
   if [ "$(printf '%s\n' "$running" | wc -l)" -eq 1 ]; then
     fail "concert $running is running" "Wait for it to settle, or maestro kill $running"

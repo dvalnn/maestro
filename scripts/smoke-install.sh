@@ -109,7 +109,7 @@ pack_version=$(bun -e 'console.log(require(process.argv[1]).version)' "$pack/mae
 pack_id=$(bun -e 'console.log(require(process.argv[1]).id)' "$pack/maestro-pack.json")
 
 step "extracting the pack installs it, with no packs in config"
-grep -q "\"path\": \"$pack\"" <<<"$(maestro rep --json)" || fail "rep --json does not list $pack"
+grep -q "\"path\":\"$pack\"" <<<"$(maestro rep --json)" || fail "rep --json does not list $pack"
 maestro rep "$pack_id" >/dev/null || fail "rep $pack_id exited $?"
 
 step "the .env beside the user config is loaded, and one in the cwd is not"
@@ -117,10 +117,10 @@ alt=$scratch/alt
 mkdir -p "$alt/maestro/packs" "$home/.config/maestro"
 cp -r "$pack" "$alt/maestro/packs/$pack_id"
 printf 'XDG_DATA_HOME=%s\n' "$alt" > "$ws/.env"
-grep -q "\"path\": \"$pack\"" <<<"$(cd "$ws" && maestro rep --json)" || fail "the binary loaded the cwd's .env"
+grep -q "\"path\":\"$pack\"" <<<"$(cd "$ws" && maestro rep --json)" || fail "the binary loaded the cwd's .env"
 rm "$ws/.env"
 printf 'XDG_DATA_HOME=%s\n' "$alt" > "$home/.config/maestro/.env"
-grep -q "\"path\": \"$alt/maestro/packs/$pack_id\"" <<<"$(maestro rep --json)" \
+grep -q "\"path\":\"$alt/maestro/packs/$pack_id\"" <<<"$(maestro rep --json)" \
   || fail "the binary did not load ~/.config/maestro/.env"
 rm "$home/.config/maestro/.env"
 
@@ -174,7 +174,8 @@ id=$(sed -n 's/^concert \([^ ]*\)$/\1/p' "$scratch/perform.err")
 [ -n "$id" ] || fail "perform printed no concert id"
 listing=$(maestro ls "$id" --json)
 for node in a check; do
-  grep -A2 "\"node\": \"$node\"" <<<"$listing" | grep -q '"status": "ok"' || fail "ls $id does not show node '$node' ok"
+  bun -e 'process.exit(JSON.parse(process.argv[1]).instances.some((i) => i.node === process.argv[2] && i.status === "ok") ? 0 : 1)' \
+    "$listing" "$node" || fail "ls $id does not show node '$node' ok"
 done
 [ -z "$(git -C "$target" status --porcelain)" ] || fail "the target checkout changed"
 [ "$(git -C "$target" rev-parse HEAD)" = "$head" ] || fail "the target HEAD moved"
@@ -225,7 +226,7 @@ slow_pid=$!
 slow_id=
 for _ in $(seq 100); do
   slow_id=$(sed -n 's/^concert \([^ ]*\)$/\1/p' "$scratch/slow.err")
-  [ -n "$slow_id" ] && grep -q '"status": "running"' <<<"$(maestro ls --status running --json)" && break
+  [ -n "$slow_id" ] && grep -q '"status": *"running"' <<<"$(maestro ls --status running --json)" && break
   sleep 0.1
 done
 [ -n "$slow_id" ] || fail "the slow concert did not start: $(cat "$scratch/slow.err")"
