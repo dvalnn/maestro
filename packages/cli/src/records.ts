@@ -485,7 +485,7 @@ function stepRow(i: Step, ir: Ir, hostText: TextLookup) {
 	const elapsedMs =
 		i.startedAt === undefined
 			? undefined
-			: (i.settledAt ?? Date.now()) - i.startedAt;
+			: elapsedOf({ startedAt: i.startedAt, settledAt: i.settledAt });
 	const actorFields = unreserved(actorFieldsOf(i.enrichment, i.node, hostText));
 	return {
 		name: i.name,

@@ -528,9 +528,14 @@ const atOf = (graph: GraphIndex, result: ConcertResult) =>
 				expansion: result.expansion,
 			});
 
-/** A concert's run time in milliseconds: up to now while it runs. */
-export const elapsedOf = ({ settledAt, startedAt }: ConcertRecord) =>
-	(settledAt ?? Date.now()) - startedAt;
+/** A concert's or step's run time in milliseconds: up to now while it runs. */
+export const elapsedOf = ({
+	settledAt,
+	startedAt,
+}: {
+	startedAt: number;
+	settledAt?: number;
+}) => (settledAt ?? Date.now()) - startedAt;
 
 /** Concert `id`'s metrics and their `tokensOf` total, as its `--json` documents carry them. */
 export const spendOf = (store: Records, id: string) => {
