@@ -14,7 +14,7 @@ import {
 	type Settled,
 } from "@maestro/sdk";
 import { JUDGED, proving } from "./shared";
-import { requirePatch } from "./slice";
+import { checksOf, requirePatch } from "./slice";
 import { call, classics, maestro, scratch, targetRepo } from "./testing/stub";
 
 const finding = (id: string) => ({
@@ -230,13 +230,13 @@ test.each(["--risk", "--tier", "--max-fixes", "--max-repairs"])(
 );
 
 test.each([
-	[[], ["patches", "review", "spec"]],
+	[[], ["guards", "patches", "proof", "review", "seen", "spec"]],
 	[
 		["--revises", "HEAD^!"],
-		["patches", "review", "revised", "spec"],
+		["guards", "patches", "proof", "review", "revised", "seen", "spec"],
 	],
 ])(
-	"under --revises, the writer and the result node take the prior patches: flags %j attach %j, and the result is told how many lenses delivered and leaves the count as an output",
+	"under --revises, the writer and the result node take the prior patches: flags %j attach %j, and the result is told how many lenses delivered and leaves the count as an output; both read the checks' outputs",
 	async (flags, attached) => {
 		const { nodes, edges } = await composed(["low"], ...flags);
 		expect(from(edges, "result", "revised")).toEqual(
@@ -284,6 +284,17 @@ test.each([
 		expect(Object.keys(writer?.config.attachments ?? {}).sort()).toEqual(
 			attached,
 		);
+		// The writer waits on the checks, so it reads what they measured.
+		expect(from(edges, "checks", "seen")).toEqual([
+			{ node: "seen_settled", port: "value" },
+		]);
+		expect(from(edges, "checks", "guarded")).toEqual([
+			{ node: "guarded_settled", port: "value" },
+		]);
+		for (const port of ["seen", "guards", "proof"]) {
+			expect(from(edges, "writer", port)).toEqual([{ node: "checks", port }]);
+			expect(from(edges, "result", port)).toEqual([{ node: "checks", port }]);
+		}
 	},
 );
 
@@ -305,7 +316,7 @@ test.each([
 		expect(ids.includes("proved")).toBe(proved);
 		expect(agents.some((a) => a.profile === "prover")).toBe(proved);
 		expect(nodes.find((n) => n.id === "result")?.out).toHaveProperty("proof");
-		expect(from(edges, "result", "proved").length).toBe(proved ? 1 : 0);
+		expect(from(edges, "checks", "proved").length).toBe(proved ? 1 : 0);
 		if (!proved) return;
 		expect(from(edges, "proved", "lane")).toEqual([
 			{ node: "prover", port: "lane" },
@@ -426,26 +437,19 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 	const review = { path: "v", contentHash: "sha256:3" };
 	const ctx = mkdtempSync(join(scratch, "result-"));
 	const upheldFile = join(ctx, "upheld.md");
+	const checks = {
+		seen: { path: "s", contentHash: "sha256:4" },
+		guards: { path: "g", contentHash: "sha256:5" },
+		proof: { path: "f", contentHash: "sha256:6" },
+	};
 	const run = (
 		dir: string,
 		written: Settled<ArtifactRef>[],
 		upheld: Parameters<typeof requirePatch>[0]["upheld"] = [],
 		delivered = 1,
-		seen: Settled<ArtifactRef>[] = [{ outcome: "failed", reason: "x" }],
-		guarded: Settled<ArtifactRef>[] = [{ outcome: "failed", reason: "x" }],
-		proved?: Settled<ArtifactRef>[],
 	) =>
 		requirePatch(
-			{
-				changeset: ref,
-				upheld,
-				delivered,
-				review,
-				written,
-				seen,
-				guarded,
-				proved,
-			},
+			{ changeset: ref, upheld, delivered, review, written, ...checks },
 			{ path: () => dir, scratch: ctx } as unknown as CodeContext,
 		);
 	const patched = made("base", "0001.patch");
@@ -458,25 +462,8 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		delivered: 1,
 		review,
 		touched: [],
-		seen: join(ctx, "seen"),
-		guards: join(ctx, "guards"),
-		proof: join(ctx, "proof"),
+		...checks,
 	});
-	expect(readdirSync(join(ctx, "seen"))).toEqual([]);
-	expect(readdirSync(join(ctx, "guards"))).toEqual([]);
-	expect(readdirSync(join(ctx, "proof"))).toEqual([]);
-	expect(run(patched, [], [], 1, [{ outcome: "ok", value: pr }])).toMatchObject(
-		{ seen: pr },
-	);
-	expect(
-		run(patched, [], [], 1, [], [{ outcome: "ok", value: pr }]),
-	).toMatchObject({ guards: pr });
-	expect(
-		run(patched, [], [], 1, [], [], [{ outcome: "ok", value: pr }]),
-	).toMatchObject({ proof: pr });
-	expect(
-		run(patched, [], [], 1, [], [], [{ outcome: "failed", reason: "x" }]),
-	).toMatchObject({ proof: join(ctx, "proof") });
 	expect(readFileSync(join(ctx, "notice.md"), "utf8")).toBe("");
 	expect(readFileSync(upheldFile, "utf8")).toBe("# Upheld findings\n\nNone.\n");
 	const failed = run(patched, [{ outcome: "failed", reason: "x" }]);
@@ -489,9 +476,7 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		delivered: 1,
 		review,
 		touched: [],
-		seen: join(ctx, "seen"),
-		guards: join(ctx, "guards"),
-		proof: join(ctx, "proof"),
+		...checks,
 	});
 	expect(readFileSync(join(ctx, "pr.md"), "utf8")).toBe("");
 	expect(run(patched, [], [], 0)).toMatchObject({
@@ -504,8 +489,7 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 			upheld: [],
 			delivered: 1,
 			written: [],
-			seen: [],
-			guarded: [],
+			...checks,
 		},
 		{ path: () => patched, scratch: ctx } as unknown as CodeContext,
 	);
@@ -540,6 +524,46 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 	);
 });
 
+test("checksOf passes each check's output on, and an empty directory for one that did not settle ok or, for proof, was not composed", () => {
+	const ctx = mkdtempSync(join(scratch, "checks-"));
+	const ref = (path: string) => ({ path, contentHash: "sha256:7" });
+	const run = (
+		seen: Settled<ArtifactRef>[],
+		guarded: Settled<ArtifactRef>[],
+		proved?: Settled<ArtifactRef>[],
+	) =>
+		checksOf({ seen, guarded, proved }, {
+			scratch: ctx,
+		} as unknown as CodeContext);
+	const ok = (path: string): Settled<ArtifactRef>[] => [
+		{ outcome: "ok", value: ref(path) },
+	];
+	expect(run(ok("s"), ok("g"), ok("p"))).toEqual({
+		seen: ref("s"),
+		guards: ref("g"),
+		proof: ref("p"),
+	});
+	// A rejected check's output is no result, though it carries one.
+	const rejected: Settled<ArtifactRef>[] = [
+		{ outcome: "rejected", value: ref("r"), reason: "x" },
+	];
+	const failed: Settled<ArtifactRef>[] = [{ outcome: "failed", reason: "x" }];
+	expect(run(rejected, ok("g"), failed)).toEqual({
+		seen: join(ctx, "seen"),
+		guards: ref("g"),
+		proof: join(ctx, "proof"),
+	});
+	expect(run(ok("s"), rejected)).toEqual({
+		seen: ref("s"),
+		guards: join(ctx, "guards"),
+		proof: join(ctx, "proof"),
+	});
+	expect(readdirSync(ctx).sort()).toEqual(["guards", "proof", "seen"]);
+	expect(
+		["guards", "proof", "seen"].flatMap((d) => readdirSync(join(ctx, d))),
+	).toEqual([]);
+});
+
 test("requirePatch drafts a change that leaves findings upheld, edits a held path or got no review, naming each reason in its notice, and lists the paths touched", () => {
 	const ctx = mkdtempSync(join(scratch, "draft-"));
 	const dir = mkdtempSync(join(scratch, "patches-"));
@@ -553,6 +577,7 @@ test("requirePatch drafts a change that leaves findings upheld, edits a held pat
 		writeFileSync(join(dir, "0001.patch"), patch);
 		const earlier = mkdtempSync(join(scratch, "revised-"));
 		if (revised) writeFileSync(join(earlier, "0001.patch"), revised);
+		const none = { path: "n", contentHash: "sha256:9" };
 		const out = requirePatch(
 			{
 				changeset: { path: "c", contentHash: "sha256:0" },
@@ -560,8 +585,9 @@ test("requirePatch drafts a change that leaves findings upheld, edits a held pat
 				upheld,
 				delivered,
 				written: [],
-				seen: [],
-				guarded: [],
+				seen: none,
+				guards: none,
+				proof: none,
 			},
 			{
 				path: (ref: ArtifactRef) => (ref.path === "r" ? earlier : dir),

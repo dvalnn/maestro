@@ -109,13 +109,41 @@ const noticeLines = (upheld: number, held: string[], unreviewed: boolean) => [
 ];
 
 /**
+ * The checks' outputs: the `seen` directory of transcript pictures, the `guards` directory holding `guards.json` and
+ * the `proof` directory of the prover's results and script, each empty when its check did not settle ok or, for
+ * `proof`, was not composed.
+ */
+export function checksOf(
+	{
+		seen,
+		guarded,
+		proved,
+	}: {
+		seen: Settled<ArtifactRef>[];
+		guarded: Settled<ArtifactRef>[];
+		proved?: Settled<ArtifactRef>[];
+	},
+	ctx: CodeContext,
+) {
+	const checked = (name: string, settled: Settled<ArtifactRef>[]) => {
+		const result = settled[0];
+		if (result?.outcome === "ok") return result.value;
+		const nothing = join(ctx.scratch, name);
+		mkdirSync(nothing, { recursive: true });
+		return nothing;
+	};
+	return {
+		seen: checked("seen", seen),
+		guards: checked("guards", guarded),
+		proof: checked("proof", proved ?? []),
+	};
+}
+
+/**
  * The changeset, the last round's upheld findings as `upheld.md`, whether the PR is a draft with its notice, the
- * writer's PR body, unchanged, the `delivered` count, the last `review`, the `seen` directory of transcript pictures
- * the `guards` directory holding `guards.json` and the `proof` directory of the prover's results and script, when the
- * changeset holds a patch; the body is empty when the writer delivered none, and `seen`, `guards` and `proof` empty
- * when the check that makes them did not settle ok or, for `proof`, was not composed, as `review` is when no
- * consolidator ruled. `touched` holds each path the
- * patches touch, those of the PR `revised` included, sorted.
+ * writer's PR body, unchanged, the `delivered` count, the last `review` and the checks' `seen`, `guards` and `proof`,
+ * when the changeset holds a patch; the body is empty when the writer delivered none, as `review` is when no
+ * consolidator ruled. `touched` holds each path the patches touch, those of the PR `revised` included, sorted.
  * A rejection when the changeset holds no patch, so the slice settles `rejected`.
  * - `draft` is true when the last review's `delivered` is 0, findings remain upheld, or the patches, or those
  *   of the PR `revised`, touch `docs/rulings.md` or `docs/adr/`.
@@ -130,8 +158,8 @@ export function requirePatch(
 		review,
 		written,
 		seen,
-		guarded,
-		proved,
+		guards,
+		proof,
 	}: {
 		changeset: ArtifactRef;
 		revised?: ArtifactRef;
@@ -139,9 +167,9 @@ export function requirePatch(
 		delivered: number;
 		review?: ArtifactRef;
 		written: Settled<ArtifactRef>[];
-		seen: Settled<ArtifactRef>[];
-		guarded: Settled<ArtifactRef>[];
-		proved?: Settled<ArtifactRef>[];
+		seen: ArtifactRef;
+		guards: ArtifactRef;
+		proof: ArtifactRef;
 	},
 	ctx: CodeContext,
 ) {
@@ -162,21 +190,13 @@ export function requirePatch(
 	const notice = join(ctx.scratch, "notice.md");
 	writeFileSync(notice, lines.length ? `${lines.join("\n")}\n` : "");
 	const draft = lines.length > 0;
-	// An empty directory stands for a check that did not settle ok.
-	const checked = (name: string, settled: Settled<ArtifactRef>[]) => {
-		const result = settled[0];
-		if (result?.outcome === "ok") return result.value;
-		const nothing = join(ctx.scratch, name);
-		mkdirSync(nothing, { recursive: true });
-		return nothing;
-	};
 	const unruled = join(ctx.scratch, "review.md");
 	if (!review) writeFileSync(unruled, "");
 	const outputs = {
 		changeset,
-		seen: checked("seen", seen),
-		guards: checked("guards", guarded),
-		proof: checked("proof", proved ?? []),
+		seen,
+		guards,
+		proof,
 		upheld: file,
 		draft,
 		notice,
@@ -247,6 +267,41 @@ export const slice = composition(
 			tolerate: "rejected",
 		}).out.changeset;
 		const prior = revises ? prPatches(revises) : undefined;
+		const base: Base = revises
+			? {
+					word: '"$(git rev-list --reverse "$REVISES" | head -n 1)^"',
+					env: { REVISES: revises },
+				}
+			: LANE_BASE;
+		const seen = onBase(reviewed.out.lane, base, recipe("pictures"), "seen");
+		const guarded = onBase(
+			reviewed.out.lane,
+			base,
+			recipe("guards"),
+			"guarded",
+		);
+		// A revision's PR is proved from its own base: the revised PR's changeset names it.
+		const proved = claims
+			? onBase(
+					proverOn(reviewed.out.lane, claims, prior ?? changes).out.lane,
+					base,
+					proving,
+					"proved",
+				)
+			: undefined;
+		const checks = code(checksOf, {
+			in: {
+				seen: allSettled([seen.out.output], { label: "seen_settled" }),
+				guarded: allSettled([guarded.out.output], {
+					label: "guarded_settled",
+				}),
+				proved:
+					proved &&
+					allSettled([proved.out.output], { label: "proved_settled" }),
+			},
+			out: { seen: Dir(), guards: Dir(), proof: Dir() },
+			label: "checks",
+		}).out;
 		const written = writer({
 			label: "writer",
 			task: WRITER_TASK,
@@ -272,6 +327,18 @@ export const slice = composition(
 						hint: "for the PR the patches revise, which the body covers with them as one change",
 					},
 				}),
+				proof: {
+					artifact: checks.proof,
+					hint: "before you say a claim, a count or a requirement holds, for what the proof runs measured",
+				},
+				guards: {
+					artifact: checks.guards,
+					hint: "before you say what a test pins, for which of the change's tests fail on the base",
+				},
+				seen: {
+					artifact: checks.seen,
+					hint: "before you describe printed output, for how the change moved it",
+				},
 			},
 			relay: {
 				upheld: reviewed.out.upheld,
@@ -280,28 +347,6 @@ export const slice = composition(
 			out: { pr: MarkdownOut("pr.md") },
 			tolerate: "rejected",
 		});
-		const base: Base = revises
-			? {
-					word: '"$(git rev-list --reverse "$REVISES" | head -n 1)^"',
-					env: { REVISES: revises },
-				}
-			: LANE_BASE;
-		const seen = onBase(reviewed.out.lane, base, recipe("pictures"), "seen");
-		const guarded = onBase(
-			reviewed.out.lane,
-			base,
-			recipe("guards"),
-			"guarded",
-		);
-		// A revision's PR is proved from its own base: the revised PR's changeset names it.
-		const proved = claims
-			? onBase(
-					proverOn(reviewed.out.lane, claims, prior ?? changes).out.lane,
-					base,
-					proving,
-					"proved",
-				)
-			: undefined;
 		return code(requirePatch, {
 			in: {
 				changeset: changes,
@@ -310,13 +355,7 @@ export const slice = composition(
 				delivered: reviewed.out.delivered,
 				review: reviewed.out.review,
 				written: allSettled([written.out.pr], { label: "written" }),
-				seen: allSettled([seen.out.output], { label: "seen_settled" }),
-				guarded: allSettled([guarded.out.output], {
-					label: "guarded_settled",
-				}),
-				proved:
-					proved &&
-					allSettled([proved.out.output], { label: "proved_settled" }),
+				...checks,
 			},
 			out: {
 				changeset: Dir(),

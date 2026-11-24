@@ -468,6 +468,8 @@ flowchart TD
   - A `<n>.json` of the wrong shape, or a claim with none, reads `not measured`.
   - The section is the tick's: the writer's 40 lines neither count nor fold it, and the writer never restates its
     numbers.
+  - The writer starts once `seen`, `guarded` and `proved` have settled, and reads their outputs, an empty directory for
+    a check that did not settle ok. How it uses them is `.maestro/slice/prompts/writer.md`'s.
   - The tick reads regular files directly in the `proof` directory only.
   - A fold "How it was measured" holds each script file under its name, in a block of its own, with the other folds.
 

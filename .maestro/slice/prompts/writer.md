@@ -6,6 +6,10 @@ them, with the spend and the risk. Add no attribution, emoji or sign-off.
 The reader is the owner, who reads the visible part of the body and nothing else. Keep the text outside `<details>`
 under 40 lines, and say nothing twice. The tick shows the proof runs above your body, so never restate their numbers.
 
+Read the attached `proof`, `guards` and `seen` before you write: they are runs made on the base and on the change. A
+check that did not finish leaves no file in its directory. Never contradict them. Where a requirement, a gap or a call
+turns on a proof run, cite its claim, such as `P1`.
+
 The spec picks the form:
 
 - **Specced**, a spec opening with `#### Context`: the owner approved its shape, so the body shows how the change holds
@@ -85,8 +89,8 @@ radius names who feels a bad merge, such as `cli`, `factory`, `compositions` or 
 
 ## Evidence
 
-Direct only. Nothing ran for you here: the gate passed before you, so cite the tests the patches add or the tester's map
-names, never a run you did not see. Never paste or describe terminal output a transcript holds: the tick shows the
+Direct only. The gate passed before you, so cite the tests the patches add or the tester's map names, or a proof run,
+never a run that is not attached. Never paste or describe terminal output a transcript holds: the tick shows the
 transcripts above your body.
 
 ```text
