@@ -141,9 +141,14 @@ test("a needs-info triage without a question is malformed", () => {
 	expect(() => parseTriage({ ...stored, questions: [] })).toThrow();
 });
 
-test("a triage spec with more than two figures is malformed", () => {
-	const figure = { kind: "seams", caption: "", source: "", notes: [] };
-	expect(() =>
+const figure = { kind: "seams", caption: "", source: "", notes: [] };
+test.each([
+	["three figures", { figures: Array(3).fill(figure) }, true],
+	["two figures", { figures: Array(2).fill(figure) }, false],
+	["four proof claims", { proof: ["a", "b", "c", "d"] }, true],
+	["three proof claims", { proof: ["a", "b", "c"] }, false],
+])("a triage spec with %s: malformed is %s", (_, extra, malformed) => {
+	const parsed = () =>
 		parseTriage({
 			verdict: "ready-for-agent",
 			risk: "low",
@@ -155,10 +160,10 @@ test("a triage spec with more than two figures is malformed", () => {
 				decisions: [],
 				excluded: [],
 				subject: "s",
-				figures: [figure, figure, figure],
+				...extra,
 			},
-		}),
-	).toThrow();
+		});
+	expect(() => parsed()).toThrow;
 });
 
 test("a question recommending none of its options is malformed", () => {
@@ -340,6 +345,7 @@ const reviewed = {
 	touches: ["a.ts", "b.ts"],
 	what: "Greet by name.",
 	requirements: ["When given a name, greet.sh shall greet it.", "Bare\nstays."],
+	proof: ["greet.sh prints a name.", "A bare run\nstill works."],
 	figures: [
 		{
 			kind: "seams" as const,
@@ -396,6 +402,12 @@ test("a spec comment reads in order without an Acceptance section", () => {
 			"- **R1** When given a name, greet.sh shall greet it.",
 			"- **R2** Bare",
 			"  stays.",
+			"",
+			"#### Proof",
+			"",
+			"- **P1** greet.sh prints a name.",
+			"- **P2** A bare run",
+			"  still works.",
 			"",
 			"#### Shape",
 			"",
@@ -1107,4 +1119,79 @@ test("a PR body places the what-the-user-sees section after the draft notice and
 	expect(pullBody(landed)).toStartWith(
 		"Draft: x.\n\n## What the user sees\n\nCloses #5",
 	);
+});
+
+test("a PR body opens with the proof, one block per claim of the spec with its first line in bold, over what the user sees, and folds the script, written or built", () => {
+	const proofed = result("ready-for-agent", {
+		spec: { ...spec, proof: ["a", "b", "c"] },
+	});
+	const landed = {
+		issue: 5,
+		spend: [SPENT],
+		risk: "low",
+		result: proofed,
+		notice: "Draft: x.",
+		userSees: "## What the user sees",
+		proof: {
+			results: {
+				1: {
+					result: "Output is 51% smaller.",
+					rows: Array.from({ length: 8 }, (_, i) => ({
+						what: `case ${i + 1}`,
+						before: "2 | 3\nlines",
+						after: "x".repeat(100),
+					})),
+					ignored: Array.of("2 headers differ", "1 id differs"),
+					notCovered: Array.of("packs of other repositories"),
+				},
+				3: { notMeasured: "no pack to build" },
+				9: { notMeasured: "no such claim" },
+			},
+			scripts: [
+				{ name: "prove.sh", text: "echo ```" },
+				{ name: "notes.md", text: "x" },
+			],
+		},
+	} as const;
+	const cut = `${"x".repeat(59)}…`;
+	const proof = [
+		"## Proof",
+		"",
+		"**P1: Output is 51% smaller.**",
+		"",
+		"| | Before | After |",
+		"| --- | --- | --- |",
+		...Array.from(
+			{ length: 6 },
+			(_, i) => `| case ${i + 1} | 2 \\| 3 lines | ${cut} |`,
+		),
+		"",
+		"Ignored, as the change intends: 2 headers differ; 1 id differs.",
+		"",
+		"Not covered: packs of other repositories.",
+		"",
+		"**P2:** not measured",
+		"",
+		"**P3:** not measured",
+		"",
+		"no pack to build",
+	].join("\n");
+	for (const body of [
+		pullBody({ ...landed, pr: "## Summary\n\nx" }),
+		pullBody(landed),
+	]) {
+		expect(body).toStartWith(`Draft: x.\n\n${proof}\n\n## What the user sees`);
+		expect(body).not.toContain("no such claim");
+		expect(body).toContain(
+			"<details><summary>How it was measured</summary>\n\n`prove.sh`\n\n````sh\necho ```\n````\n\n`notes.md`\n\n```text\nx\n```",
+		);
+	}
+	// The section is the tick's: a writer's body at the cap folds nothing of it.
+	expect(
+		pullBody({ ...landed, pr: `## A\n\n${"line\n\n".repeat(38)}` }),
+	).not.toContain("More from the writer");
+	// No claim in the spec, no section and no fold, whatever the proof holds.
+	const none = pullBody({ ...landed, result: ready, pr: "## Summary\n\nx" });
+	expect(none).not.toContain("Proof");
+	expect(none).not.toContain("How it was measured");
 });

@@ -327,6 +327,17 @@ Routes and the spec format are in `.maestro/triage/prompts/` (`triager.md`, `pla
   review judges the tests like any other. The writer reads the map in a direct body's Evidence and a specced body's
   Requirements fold. An encore runs with no tester, `-c classics.build.testFirst=false`, as the change it continues
   already holds the tests: its builder continues the last one's session.
+- **Proof.** The planner states up to three claims in the spec's Proof section, refused as any other shape error is.
+  `.maestro/triage/prompts/planner.md` owns what makes a claim.
+  - With claims, the slice composes a `prover` after the last review and a `proved` check, tolerated as `seen` and
+    `guarded` are. The prover works on a fork of the reviewed lane, so `.proof/` never enters the changeset.
+  - It writes `.proof/prove.sh`. The `base` file of the changeset attached to it names the base commit, from which it
+    builds a base tree to test the script on.
+  - `proved` runs `sh .proof/prove.sh <base tree> <lane> <out>` by shell lines of its own, none from the lane's
+    justfile. On a revision the base is the revised PR's own.
+  - The result's `proof` directory holds a `<n>.json` per claim and a `scripts` directory of the script files. It is
+    empty when the check did not settle ok or none was composed.
+  - `.maestro/prove.ts` runs the same prover and check on a range of commits.
 - **Dependencies.** A dependency is a forge "blocked by" link, a split's children or not, that sets triage and build
   order: a spec is written, and built, against real `main`. Triage skips an intake ticket while any of its dependencies
   is open, and a build skips a ready ticket while any is open. A dependency is freed when it closes, merged or not, or
@@ -437,19 +448,28 @@ flowchart TD
   ticket's tour, a build or an encore as its record says, then a total. `Closes #N` with the `Relates to` links comes
   last. The plan fold names the paths the spec's `touches` planned that the change left alone, and those it touches
   unplanned. Tests and the transcripts they write are left out of the unplanned: the tester chooses them. A change that
-  moved a transcript opens its body, after any draft notice, with "What the user sees". The slice's `seen` step, not the
-  writer, runs `just pictures` in the review's sandbox, against the PR's base on a revision too. The tick attaches each
-  picture, one at a time, and shows the diffs. A picture the forge refuses is left out with its reason and never costs
-  the landing. A writer that fails costs the build nothing: the tick builds the body from its data alone, with the
-  upheld findings folded under `Findings` and no gaps. A PR is a draft, opened with the `WIP: ` title prefix, which
-  Forgejo treats as a draft and refuses to merge, when the review left findings upheld, no lens delivered a review, or
-  the change, or an earlier round of the same PR, edits `docs/rulings.md` or `docs/adr/`. The slice's result node
-  decides it and writes the notice that opens the body, a line per reason, which the writer does not write. A draft is
-  never armed, a last child's after its stack review clears included: the owner merges it. Every landing, an encore's
+  moved a transcript has "What the user sees" in its body, after the proof when the spec has claims. The slice's `seen`
+  step, not the writer, runs `just pictures` in the review's sandbox, against the PR's base on a revision too. The tick
+  attaches each picture, one at a time, and shows the diffs. A picture the forge refuses is left out with its reason and
+  never costs the landing. A writer that fails costs the build nothing: the tick builds the body from its data alone,
+  with the upheld findings folded under `Findings` and no gaps. A PR is a draft, opened with the `WIP: ` title prefix,
+  which Forgejo treats as a draft and refuses to merge, when the review left findings upheld, no lens delivered a
+  review, or the change, or an earlier round of the same PR, edits `docs/rulings.md` or `docs/adr/`. The slice's result
+  node decides it and writes the notice that opens the body, a line per reason, which the writer does not write. A draft
+  is never armed, a last child's after its stack review clears included: the owner merges it. Every landing, an encore's
   included, rewrites the title and body of the PR already open on the branch, so an encore that clears the draft drops
   the prefix. A revision's landing then comments on the PR that it was revised, by which concert, with the conflicts it
   resolved, and asks each official reviewer who requested changes on the PR to review it again, before the ticket moves
   to `in-review`, so a tick cut in between lands and answers again.
+- **Proof in the PR.** When the spec has claims, the body opens with `## Proof`, after any draft and interim notice.
+  "What the user sees" and the writer's body follow.
+  - Per claim, in order, it shows the result sentence in bold. A `Before` and `After` table of up to six rows follows,
+    then one line of what the script ignored as the change intends. A cell is cut at 60 characters.
+  - A `<n>.json` of the wrong shape, or a claim with none, reads `not measured`.
+  - The section is the tick's: the writer's 40 lines neither count nor fold it, and the writer never restates its
+    numbers.
+  - The tick reads regular files directly in the `proof` directory only.
+  - A fold "How it was measured" holds each script file under its name, in a block of its own, with the other folds.
 
 ### Masterclass
 
@@ -564,6 +584,10 @@ Subject: `<subject>`
 #### Requirements
 
 - **R<n>** <requirement, in EARS>
+
+#### Proof
+
+- **P<n>** <claim>
 
 #### Shape
 

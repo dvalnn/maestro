@@ -283,6 +283,8 @@ export function startSlice(
 	input: {
 		request: string;
 		risk: Risk;
+		/** What the spec's proof claims, as `claims` takes them; empty for none. */
+		claims?: string;
 		encore?: string;
 		revisionBase?: string;
 	},
@@ -301,6 +303,7 @@ export function startSlice(
 			input.request,
 			"--revises",
 			revisionBase ? `${revisionBase}^!` : "",
+			...(input.claims ? ["--claims", input.claims] : []),
 			// Tests come first only on the first build: an encore's change already holds them.
 			...(input.encore ? ["-c", "classics.build.testFirst=false"] : []),
 		],

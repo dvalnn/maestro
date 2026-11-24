@@ -322,8 +322,9 @@ const contextSection = (spec: Spec) =>
 		`Subject: \`${spec.subject}\``,
 	]);
 
-const requirementLines = (requirements: readonly string[]) =>
-	requirements.map((r, i) => `- **R${i + 1}** ${continued(r, "  ")}`);
+/** `items` as bullets led by their position, such as `**R1**`. */
+const numberedLines = (tag: string, items: readonly string[]) =>
+	items.map((item, i) => `- **${tag}${i + 1}** ${continued(item, "  ")}`);
 
 /** A figure: its caption, its source fenced, then its notes numbered as its superscripts are. */
 const figureLines = ({ kind, caption, source, notes }: Figure) => [
@@ -336,9 +337,10 @@ const figureLines = ({ kind, caption, source, notes }: Figure) => [
 const shapeLines = (figures: readonly Figure[]) =>
 	figures.flatMap((f, i) => [...(i ? [""] : []), ...figureLines(f)]);
 
-/** The sections the owner approves a spec by, each it has: requirements, shape, decisions, consequences, left out. */
+/** The sections the owner approves a spec by, each it has: requirements, proof, shape, decisions, consequences, left out. */
 const designSections = (spec: Spec) => [
-	...section("Requirements", requirementLines(spec.requirements ?? [])),
+	...section("Requirements", numberedLines("R", spec.requirements ?? [])),
+	...section("Proof", numberedLines("P", spec.proof ?? [])),
 	...section("Shape", shapeLines(spec.figures ?? [])),
 	...section("Decisions", pointLines(spec.decisions)),
 	...section("Consequences", spec.consequences ? [spec.consequences] : []),
@@ -726,6 +728,28 @@ export const encoreRequest = (request: string, changes: readonly Change[]) =>
 	].join("\n");
 
 /**
+ * A claim's measurement: a sentence, a row per case, the differences the script ignored as the change intends, and what
+ * it did not cover.
+ */
+export type ProofRow = { what: string; before: string; after: string };
+export type ProofResult =
+	| {
+			result: string;
+			rows: ProofRow[];
+			ignored: string[];
+			notCovered: string[];
+	  }
+	| { notMeasured: string };
+
+/** What the slice's prover left. */
+export type Proof = {
+	/** Each claim's result, by the claim's number from 1; a claim the prover could not measure holds `notMeasured`. */
+	results: Readonly<Record<number, ProofResult>>;
+	/** The prover's script files, `prove.sh` first. */
+	scripts: readonly { name: string; text: string }[];
+};
+
+/**
  * What a landed slice's PR says: `spend` holds each slice concert of the issue, oldest first, `upheld` the review's
  * upheld findings as a Markdown list, and `pr` the body the slice's writer wrote.
  */
@@ -742,7 +766,9 @@ export type Landed = {
 	interim?: boolean;
 	/** Which of the change's tests fail on the base, when the concert ran the check. */
 	guards?: Guards;
-	/** The "What the user sees" section, which follows the notice. */
+	/** What the slice's prover left, held against the spec's claims. */
+	proof?: Proof;
+	/** The "What the user sees" section, which follows the proof. */
 	userSees?: string;
 	/** The paths the change touches, to hold against the spec's `touches`. */
 	touched?: readonly string[];
@@ -933,6 +959,89 @@ function testsRecord(landed: Landed) {
 	];
 }
 
+const PROOF_ROWS = 6;
+const CELL_MAX = 60;
+const SENTENCE_MAX = 200;
+
+/** `text` on one line, cut to `max` characters with an ellipsis. Sandbox text, so no line break or pipe survives. */
+const clipped = (text: string, max: number) => {
+	const one = oneLine(text);
+	return one.length > max ? `${one.slice(0, max - 1)}…` : one;
+};
+
+const cells = (...texts: string[]) =>
+	`| ${texts.map((t) => clipped(t, CELL_MAX).replaceAll("|", "\\|")).join(" | ")} |`;
+
+/** Claim `n`'s measurement: its result in bold, a table of up to PROOF_ROWS rows, then the ignored and not covered lines. */
+function resultBlock(n: number, measured: ProofResult) {
+	if ("notMeasured" in measured)
+		return [
+			`**P${n}:** not measured`,
+			"",
+			clipped(measured.notMeasured, SENTENCE_MAX),
+		];
+	const { result, rows, ignored, notCovered } = measured;
+	const listed = (lead: string, items: string[]) =>
+		items.length
+			? [
+					"",
+					`${lead}: ${items.map((i) => clipped(i, SENTENCE_MAX)).join("; ")}.`,
+				]
+			: [];
+	return [
+		`**P${n}: ${clipped(result, SENTENCE_MAX)}**`,
+		...(rows.length
+			? [
+					"",
+					"| | Before | After |",
+					"| --- | --- | --- |",
+					...rows
+						.slice(0, PROOF_ROWS)
+						.map((r) => cells(r.what, r.before, r.after)),
+				]
+			: []),
+		...listed("Ignored, as the change intends", ignored),
+		...listed("Not covered", notCovered),
+	];
+}
+
+/**
+ * The "Proof" section: each of the spec's claims in order, with its result, or `not measured` when the prover left
+ * none. The tick's own, so the writer's cap neither counts nor folds it. None when the spec has no claims.
+ */
+function proofSection({ result, proof }: Landed) {
+	const claims = result.spec?.proof ?? [];
+	if (!claims.length) return undefined;
+	const blocks = claims.map((_, i) => {
+		const measured = proof?.results[i + 1];
+		return measured
+			? resultBlock(i + 1, measured)
+			: [`**P${i + 1}:** not measured`];
+	});
+	return ["## Proof", ...blocks.flatMap((b) => ["", ...b])].join("\n");
+}
+
+const SCRIPT_LANGUAGES = ["sh", "py", "ts", "js", "json"];
+
+/** The scripts that made the proof, folded, each under its name; none when the spec has no claims or the prover left no script. */
+function proofRecord({ result, proof }: Landed) {
+	if (!result.spec?.proof?.length || !proof?.scripts.length) return [];
+	return [
+		"<details><summary>How it was measured</summary>",
+		"",
+		...proof.scripts.flatMap(({ name, text }) => {
+			const extension = name.split(".").pop() ?? "";
+			return [
+				`\`${name}\``,
+				"",
+				fenced(text, SCRIPT_LANGUAGES.includes(extension) ? extension : "text"),
+				"",
+			];
+		}),
+		...FOLD_END,
+	];
+}
+
 /** The most non-blank lines the writer's body shows outside its `<details>` blocks. */
 const VISIBLE_MAX = 40;
 
@@ -1056,6 +1165,7 @@ function writtenBody(landed: Landed, pr: string) {
 		...testsLine(landed),
 		...dangerLine(landed, pr),
 		"",
+		...proofRecord(landed),
 		...testsRecord(landed),
 		...findingsRecord(landed),
 		...planRecord(landed),
@@ -1077,7 +1187,13 @@ function writtenBody(landed: Landed, pr: string) {
  */
 export function pullBody(landed: Landed) {
 	const body = landed.pr ? writtenBody(landed, landed.pr) : builtBody(landed);
-	return [landed.notice, landed.interim && INTERIM, landed.userSees, body]
+	return [
+		landed.notice,
+		landed.interim && INTERIM,
+		proofSection(landed),
+		landed.userSees,
+		body,
+	]
 		.filter(Boolean)
 		.join("\n\n");
 }
@@ -1151,6 +1267,7 @@ function builtBody(landed: Landed) {
 			...(decisions.length ? ["", ...decisions] : []),
 		]),
 		...block("Evidence", evidenceLines(landed)),
+		...proofRecord(landed),
 		...planRecord(landed),
 		...reviewRecord(landed),
 		...findingsRecord(landed),

@@ -117,6 +117,13 @@ const Figures = Json<ValueOf<typeof Figure>[]>({
 	items: Figure.schema,
 	maxItems: MAX_FIGURES,
 });
+/** The most claims a spec's proof holds. */
+export const MAX_PROOF = 3;
+const Proof = Json<string[]>({
+	type: "array",
+	items: Text().schema,
+	maxItems: MAX_PROOF,
+});
 const SPEC_FIELDS = {
 	what: Text(),
 	decisions: List(Point),
@@ -126,7 +133,7 @@ const SPEC_FIELDS = {
 /** The planner's spec: `requirements` in EARS, numbered R1 on by position. */
 const SpecPart = shape(
 	{ ...SPEC_FIELDS, requirements: List(Text()), consequences: Text() },
-	{ figures: Figures },
+	{ figures: Figures, proof: Proof },
 );
 /** A triage spec; a direct ruling's is marked `brief` and has no figures or consequences. */
 const Spec = shape(
@@ -135,6 +142,7 @@ const Spec = shape(
 		requirements: List(Text()),
 		figures: Figures,
 		consequences: Text(),
+		proof: Proof,
 		brief: Bool(),
 	},
 );

@@ -4,7 +4,7 @@ the body covers both as one change, the PR's whole diff. Write no title and no `
 them, with the spend and the risk. Add no attribution, emoji or sign-off.
 
 The reader is the owner, who reads the visible part of the body and nothing else. Keep the text outside `<details>`
-under 40 lines, and say nothing twice.
+under 40 lines, and say nothing twice. The tick shows the proof runs above your body, so never restate their numbers.
 
 The spec picks the form:
 

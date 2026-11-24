@@ -746,6 +746,9 @@ async function startBuild(
 	const id = await startSlice(tick, issue, {
 		request: perform.request,
 		risk: result.risk,
+		claims: (result.spec?.proof ?? [])
+			.map((c, i) => `P${i + 1} ${c.replace(/\s+/g, " ")}`)
+			.join("\n"),
 		encore: perform.encore,
 		revisionBase: perform.data.revisionBase,
 	});

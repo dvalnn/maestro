@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
 	chmodSync,
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -1741,6 +1742,62 @@ describe("a build", () => {
 			expect(body.includes("**Tests:** 1 new or edited test fails")).toBe(
 				shown,
 			);
+		},
+	);
+
+	test.each([
+		["a regular result file and the script", "file", true],
+		["a result file of the wrong shape", "shape", false],
+		// The sandbox wrote the directory: a link in it is never followed to a file of the host.
+		["a link", "link", false],
+	])(
+		"with %s in the slice's proof directory, the PR body shows the proof only when the file is read",
+		async (_, kind, shown) => {
+			const proof = mkdtempSync(join(tmpdir(), "factory-proof-"));
+			const file = join(proof, "1.json");
+			// A script of the sandbox's own shows; a link in its place never reads the host's file.
+			mkdirSync(join(proof, "scripts"));
+			writeFileSync(join(proof, "scripts/prove.sh"), "echo measured\n");
+			const leak = join(mkdtempSync(join(tmpdir(), "factory-host-")), "s");
+			writeFileSync(leak, "secret");
+			symlinkSync(leak, join(proof, "scripts/leak.sh"));
+			if (kind === "link") {
+				const host = join(mkdtempSync(join(tmpdir(), "factory-host-")), "g");
+				writeFileSync(host, "secret");
+				symlinkSync(host, file);
+			} else
+				writeFileSync(
+					file,
+					kind === "shape"
+						? JSON.stringify({ result: "size: 51%", rows: [{ what: 1 }] })
+						: // A reason beside a row is a hedge: the measurement still shows.
+							JSON.stringify({
+								result: "size: 51%",
+								rows: [{ what: "a", before: "2 kB", after: "1 kB" }],
+								notMeasured: "one pack was left out",
+							}),
+				);
+			const t = setup(
+				[
+					specced(7, "in-progress", {
+						slice: "s1",
+						result: {
+							...ready,
+							spec: { ...spec, proof: ["it shrinks"] },
+						},
+					}),
+				],
+				[sliceConcert("s1", 7)],
+				{ s1: { status: "ok", outputs: {} } },
+				undefined,
+				{ reports: { s1: { ...NO_REPORT, pr: "## Summary\n\nx", proof } } },
+			);
+			await t.run();
+			const body = t.opened[0]?.body ?? "";
+			expect(body.includes("**P1: size: 51%**")).toBe(shown);
+			expect(body).toContain(shown ? "## Proof" : "**P1:** not measured");
+			expect(body).not.toContain("secret");
+			expect(body).toContain("`prove.sh`\n\n```sh\necho measured\n```");
 		},
 	);
 

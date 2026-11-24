@@ -166,6 +166,24 @@ describe("starting a concert", () => {
 			],
 		],
 		[
+			"a slice for a spec with proof claims, which it takes as a param of their own",
+			(t) => startSlice(t.tick, issue, { ...BUILD_INPUT, claims: "P1 a" }),
+			MAIN,
+			[
+				"perform",
+				treeAt(MAIN, "slice.ts"),
+				"--request",
+				"build it",
+				"--revises",
+				"",
+				"--claims",
+				"P1 a",
+				...presets("low"),
+				...NAMED,
+				...pinned(MAIN),
+			],
+		],
+		[
 			"a slice whose risk label overrides the triaged risk",
 			(t) =>
 				startSlice(t.tick, { ...issue, labels: ["risk/high"] }, BUILD_INPUT),

@@ -12,6 +12,7 @@ Give the `plan` reply field in exactly this shape: `spec` only for `ready-for-ag
   "spec": {
     "what": "the problem, why now and the change that meets it",
     "requirements": ["When <trigger>, the <system> shall <response>."],
+    "proof": ["one claim from the need's so-that, in a sentence"],
     "figures": [
       { "kind": "seams", "caption": "Red: an edge that goes.", "source": "flowchart LR ...", "notes": ["one fact"] }
     ],
@@ -54,6 +55,9 @@ Give the `plan` reply field in exactly this shape: `spec` only for `ready-for-ag
   - State: `While <state>, the <system> shall <response>.`
   - Unwanted: `If <condition>, then the <system> shall <response>.`
   - Optional: `Where <feature>, the <system> shall <response>.`
+- `proof`: zero to three claims, one sentence each, from the need's "so that". Each is observable by running something:
+  a size, a count, two outputs that are the same, a command that now succeeds. A claim is no requirement restated, so
+  leave it out when a test pins the need. A prover measures each claim on the base and on the change.
 - `figures`: the change's shape, drawn before the decisions are written, by Figures below. Leave it out when nothing
   fits.
 - `consequences`: a short paragraph or a line: what the change makes easier or harder, and its cost.

@@ -18,6 +18,9 @@ import {
 	dataOf,
 	isInterim,
 	type Moved,
+	type Proof,
+	type ProofResult,
+	type ProofRow,
 	pullBody,
 	seenSection,
 	specCommentOf,
@@ -140,6 +143,73 @@ function guardsOf(dir: string): Guards | undefined {
 	return red && unloaded && green ? { red, unloaded, green } : undefined;
 }
 
+const SCRIPTS_DIR = "scripts";
+const MAIN_SCRIPT = "prove.sh";
+const RESULT_FILE = /^(\d+)\.json$/;
+
+const isText = (v: unknown): v is string => typeof v === "string";
+const isTexts = (v: unknown): v is string[] =>
+	Array.isArray(v) && v.every(isText);
+
+const parsed = (text: string): unknown => {
+	try {
+		return JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+};
+
+/** `doc` as a claim's measurement, none when it has the wrong shape or says nothing. */
+function measurementOf(doc: unknown): ProofResult | undefined {
+	if (!isJson(doc)) return undefined;
+	const { result, rows, ignored = [], notCovered = [] } = doc;
+	const isRow = (r: unknown): r is ProofRow =>
+		isJson(r) && isText(r.what) && isText(r.before) && isText(r.after);
+	// A reason counts only with no rows: a script that measured and then hedged still measured.
+	const unmeasured = !(Array.isArray(rows) && rows.length);
+	if (unmeasured && isText(doc.notMeasured) && doc.notMeasured.trim())
+		return { notMeasured: doc.notMeasured };
+	if (!isText(result) || !result.trim()) return undefined;
+	if (!Array.isArray(rows) || !rows.every(isRow)) return undefined;
+	if (!isTexts(ignored) || !isTexts(notCovered)) return undefined;
+	return { result, rows, ignored, notCovered };
+}
+
+/**
+ * The prover's files in the `proof` directory `dir`: each `<n>.json` as claim `n`'s measurement, parsed here, and
+ * the files of its `scripts` directory, `prove.sh` first. A sandbox wrote `dir`, so only regular files directly in it
+ * and in `scripts` are read: a link there could name any file of the host. A file that does not parse is no measurement.
+ */
+function proofOf(dir: string): Proof {
+	const regular = (at: string) =>
+		readdirSync(at, { withFileTypes: true }).filter((f) => f.isFile());
+	const read = (name: string) => readFileSync(join(dir, name), "utf8");
+	const results: Record<number, ProofResult> = {};
+	for (const f of regular(dir)) {
+		const n = RESULT_FILE.exec(f.name)?.[1];
+		if (!n) continue;
+		const measured = measurementOf(parsed(read(f.name)));
+		if (measured) results[Number(n)] = measured;
+	}
+	const scriptsAt = join(dir, SCRIPTS_DIR);
+	// A link in place of the directory is no directory here.
+	const scripts = readdirSync(dir, { withFileTypes: true }).some(
+		(f) => f.isDirectory() && f.name === SCRIPTS_DIR,
+	)
+		? regular(scriptsAt)
+				.map((f) => ({
+					name: f.name,
+					text: readFileSync(join(scriptsAt, f.name), "utf8").trimEnd(),
+				}))
+				.sort(
+					(a, b) =>
+						Number(b.name === MAIN_SCRIPT) - Number(a.name === MAIN_SCRIPT) ||
+						(a.name < b.name ? -1 : 1),
+				)
+		: [];
+	return { results, scripts };
+}
+
 /**
  * The PR text of `issue`'s slice, with its `report` and the `spend` of its concerts (factory.md, Rules, Landing and
  * PRs: PRs).
@@ -164,6 +234,7 @@ function pullText(
 		reviewers: report.reviewers,
 		touched: report.touched,
 		guards: report.guards ? guardsOf(report.guards) : undefined,
+		proof: report.proof ? proofOf(report.proof) : undefined,
 	};
 	return {
 		title: result.spec.subject,

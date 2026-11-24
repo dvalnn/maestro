@@ -74,6 +74,8 @@ export type Report = {
 	seen?: string;
 	/** The directory holding the `guards.json` the slice wrote, when the concert has one. */
 	guards?: string;
+	/** The directory of the prover's result files and script, when the concert has one. */
+	proof?: string;
 	/** The last review, as its consolidator ruled it, and for a review concert the findings it upheld. */
 	review?: string;
 	/** The paths the slice's change touches, when its result names them. */
@@ -523,6 +525,7 @@ export function maestro(bin = "maestro"): Maestro {
 				pr: prOf(result),
 				seen: outputPath(result, "seen"),
 				guards: outputPath(result, "guards"),
+				proof: outputPath(result, "proof"),
 				review: outputText(result, "review"),
 				reviewers: reviewersOf(instancesOf(doc)),
 				touched: touchedOf(result),

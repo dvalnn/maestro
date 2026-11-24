@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { buildChange, fixUntilClean, type Upheld } from "@maestro/classics";
 import {
 	changeset,
-	check,
 	commits,
 	MarkdownOut,
 	read,
@@ -28,7 +27,17 @@ import {
 } from "@maestro/sdk";
 import FIGURES from "./prompts/_figures.md" with { type: "text" };
 import PLAIN from "./prompts/_plain.md" with { type: "text" };
-import { JUDGED, markdownOf, task } from "./shared";
+import {
+	type Base,
+	JUDGED,
+	LANE_BASE,
+	markdownOf,
+	onBase,
+	proverOn,
+	proving,
+	recipe,
+	task,
+} from "./shared";
 import WRITER from "./slice/prompts/writer.md" with { type: "text" };
 
 // ADR 0008: a code node's function must be exported by its composition file.
@@ -102,9 +111,10 @@ const noticeLines = (upheld: number, held: string[], unreviewed: boolean) => [
 /**
  * The changeset, the last round's upheld findings as `upheld.md`, whether the PR is a draft with its notice, the
  * writer's PR body, unchanged, the `delivered` count, the last `review`, the `seen` directory of transcript pictures
- * and the `guards` directory holding `guards.json`, when the changeset holds a patch; the body is empty when the
- * writer delivered none, and `seen` and `guards` empty when the check that makes them did not settle ok, as `review`
- * is when no consolidator ruled. `touched` holds each path the
+ * the `guards` directory holding `guards.json` and the `proof` directory of the prover's results and script, when the
+ * changeset holds a patch; the body is empty when the writer delivered none, and `seen`, `guards` and `proof` empty
+ * when the check that makes them did not settle ok or, for `proof`, was not composed, as `review` is when no
+ * consolidator ruled. `touched` holds each path the
  * patches touch, those of the PR `revised` included, sorted.
  * A rejection when the changeset holds no patch, so the slice settles `rejected`.
  * - `draft` is true when the last review's `delivered` is 0, findings remain upheld, or the patches, or those
@@ -121,6 +131,7 @@ export function requirePatch(
 		written,
 		seen,
 		guarded,
+		proved,
 	}: {
 		changeset: ArtifactRef;
 		revised?: ArtifactRef;
@@ -130,6 +141,7 @@ export function requirePatch(
 		written: Settled<ArtifactRef>[];
 		seen: Settled<ArtifactRef>[];
 		guarded: Settled<ArtifactRef>[];
+		proved?: Settled<ArtifactRef>[];
 	},
 	ctx: CodeContext,
 ) {
@@ -164,6 +176,7 @@ export function requirePatch(
 		changeset,
 		seen: checked("seen", seen),
 		guards: checked("guards", guarded),
+		proof: checked("proof", proved ?? []),
 		upheld: file,
 		draft,
 		notice,
@@ -196,7 +209,9 @@ export const slice = composition(
 			"Leaves the changeset, the findings the last review upheld, whether the PR is a draft with its notice, and a",
 			"writer's PR body: over the PR it revises when given, empty when the writer failed, how many lenses the last",
 			"review delivered, that review, the paths the change touches, the transcript pictures `just pictures` draws of the change in the review's sandbox, and the",
-			"`guards.json` `just guards` writes of which of the change's tests fail on the base, each an empty directory when its check failed. Fails when the changeset holds no patch.",
+			"`guards.json` `just guards` writes of which of the change's tests fail on the base, each an empty directory when its check failed.",
+			"When given claims, a prover writes a script that measures each on the base and on the change, and a check runs it:",
+			"the `proof` directory holds the results and the script, empty when no claim was made or the run failed. Fails when the changeset holds no patch.",
 		].join("\n"),
 		params: {
 			request: Text({ description: "The brief: what to build" }),
@@ -205,6 +220,11 @@ export const slice = composition(
 				description:
 					"Git revisions of the target holding the PR this build revises, such as C^!; empty for a fresh build",
 			}),
+			claims: Text({
+				default: "",
+				description:
+					"What the change is for, one numbered claim per line, such as `P1 it shrinks`; empty for no proof",
+			}),
 		},
 		examples: [
 			{
@@ -212,7 +232,7 @@ export const slice = composition(
 			},
 		],
 	},
-	({ request, revises }) => {
+	({ request, revises, claims }) => {
 		const built = use(
 			buildChange,
 			{ spec: markdownOf(request, "request") },
@@ -260,22 +280,28 @@ export const slice = composition(
 			out: { pr: MarkdownOut("pr.md") },
 			tolerate: "rejected",
 		});
-		// A revision's lane is cut from the PR it revises, so the base is that PR's: its first commit's parent.
-		const base = revises
-			? '"$(git rev-list --reverse "$REVISES" | head -n 1)^"'
-			: '"$MAESTRO_LANE_BASE"';
-		const onBase = (recipe: string, label: string) =>
-			check(
-				read(reviewed.out.lane),
-				{
-					run: `just ${recipe} "$MAESTRO_CHECK_OUTPUT" ${base}`,
-					timeout: "10m",
-					...(revises && { env: { REVISES: revises } }),
-				},
-				{ label, tolerate: "rejected" },
-			);
-		const seen = onBase("pictures", "seen");
-		const guarded = onBase("guards", "guarded");
+		const base: Base = revises
+			? {
+					word: '"$(git rev-list --reverse "$REVISES" | head -n 1)^"',
+					env: { REVISES: revises },
+				}
+			: LANE_BASE;
+		const seen = onBase(reviewed.out.lane, base, recipe("pictures"), "seen");
+		const guarded = onBase(
+			reviewed.out.lane,
+			base,
+			recipe("guards"),
+			"guarded",
+		);
+		// A revision's PR is proved from its own base: the revised PR's changeset names it.
+		const proved = claims
+			? onBase(
+					proverOn(reviewed.out.lane, claims, prior ?? changes).out.lane,
+					base,
+					proving,
+					"proved",
+				)
+			: undefined;
 		return code(requirePatch, {
 			in: {
 				changeset: changes,
@@ -288,6 +314,9 @@ export const slice = composition(
 				guarded: allSettled([guarded.out.output], {
 					label: "guarded_settled",
 				}),
+				proved:
+					proved &&
+					allSettled([proved.out.output], { label: "proved_settled" }),
 			},
 			out: {
 				changeset: Dir(),
@@ -300,6 +329,7 @@ export const slice = composition(
 				touched: List(Text()),
 				seen: Dir(),
 				guards: Dir(),
+				proof: Dir(),
 			},
 			label: "result",
 			tolerate: "rejected",

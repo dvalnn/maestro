@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import {
 	type ArtifactRef,
@@ -7,7 +13,7 @@ import {
 	reject,
 	type Settled,
 } from "@maestro/sdk";
-import { JUDGED } from "./shared";
+import { JUDGED, proving } from "./shared";
 import { requirePatch } from "./slice";
 import { call, classics, maestro, scratch, targetRepo } from "./testing/stub";
 
@@ -272,6 +278,59 @@ test.each([
 	},
 );
 
+test.each([
+	["claims given", ["--claims", "P1 a\nP2 b"], true],
+	// The request's own text never starts a prover: only the claims param does.
+	["none, a Proof heading in the request", [], false],
+])(
+	"with %s, a prover and its check are composed: %s; the prover forks the reviewed lane, the check reads the prover's, and the changeset stays the reviewed lane's",
+	async (_, flags, proved) => {
+		const { nodes, edges, agents } = await composed(
+			["low"],
+			"--request",
+			"#### Proof\n\n- **P1** a\n\n#### Shape\n",
+			...flags,
+		);
+		const ids = nodes.map((n) => n.id);
+		expect(ids.includes("prover")).toBe(proved);
+		expect(ids.includes("proved")).toBe(proved);
+		expect(agents.some((a) => a.profile === "prover")).toBe(proved);
+		expect(nodes.find((n) => n.id === "result")?.out).toHaveProperty("proof");
+		expect(from(edges, "result", "proved").length).toBe(proved ? 1 : 0);
+		if (!proved) return;
+		expect(from(edges, "proved", "lane")).toEqual([
+			{ node: "prover", port: "lane" },
+		]);
+		expect(from(edges, "changes", "lane")).toEqual(
+			from(edges, "writer", "lane"),
+		);
+		expect(JSON.stringify(nodes.find((n) => n.id === "prover"))).toContain(
+			"P1",
+		);
+	},
+);
+
+test("prove.ts composes with claims and revs: a prover, then its check on the lane's base", async () => {
+	const out = await maestro([
+		"compose",
+		".maestro/prove.ts",
+		"--claims",
+		"P1 a",
+		"--revs",
+		"HEAD^!",
+		"--json",
+		"-c",
+		`packs=[${await classics}]`,
+	]);
+	const { nodes } = JSON.parse(out).plan.ir as { nodes: Node[] };
+	expect(nodes.map((n) => n.id)).toEqual(
+		expect.arrayContaining(["prover", "proved"]),
+	);
+	expect(JSON.stringify(nodes.find((n) => n.id === "proved"))).toContain(
+		"$MAESTRO_LANE_BASE",
+	);
+});
+
 test.each(["low", "medium", "high"])(
 	"under --preset %s, the consolidator rules by the slice's grounds",
 	async (risk) => {
@@ -354,9 +413,19 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		delivered = 1,
 		seen: Settled<ArtifactRef>[] = [{ outcome: "failed", reason: "x" }],
 		guarded: Settled<ArtifactRef>[] = [{ outcome: "failed", reason: "x" }],
+		proved?: Settled<ArtifactRef>[],
 	) =>
 		requirePatch(
-			{ changeset: ref, upheld, delivered, review, written, seen, guarded },
+			{
+				changeset: ref,
+				upheld,
+				delivered,
+				review,
+				written,
+				seen,
+				guarded,
+				proved,
+			},
 			{ path: () => dir, scratch: ctx } as unknown as CodeContext,
 		);
 	const patched = made("base", "0001.patch");
@@ -371,15 +440,23 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		touched: [],
 		seen: join(ctx, "seen"),
 		guards: join(ctx, "guards"),
+		proof: join(ctx, "proof"),
 	});
 	expect(readdirSync(join(ctx, "seen"))).toEqual([]);
 	expect(readdirSync(join(ctx, "guards"))).toEqual([]);
+	expect(readdirSync(join(ctx, "proof"))).toEqual([]);
 	expect(run(patched, [], [], 1, [{ outcome: "ok", value: pr }])).toMatchObject(
 		{ seen: pr },
 	);
 	expect(
 		run(patched, [], [], 1, [], [{ outcome: "ok", value: pr }]),
 	).toMatchObject({ guards: pr });
+	expect(
+		run(patched, [], [], 1, [], [], [{ outcome: "ok", value: pr }]),
+	).toMatchObject({ proof: pr });
+	expect(
+		run(patched, [], [], 1, [], [], [{ outcome: "failed", reason: "x" }]),
+	).toMatchObject({ proof: join(ctx, "proof") });
 	expect(readFileSync(join(ctx, "notice.md"), "utf8")).toBe("");
 	expect(readFileSync(upheldFile, "utf8")).toBe("# Upheld findings\n\nNone.\n");
 	const failed = run(patched, [{ outcome: "failed", reason: "x" }]);
@@ -394,6 +471,7 @@ test("requirePatch returns a changeset that holds a patch, the writer's body unc
 		touched: [],
 		seen: join(ctx, "seen"),
 		guards: join(ctx, "guards"),
+		proof: join(ctx, "proof"),
 	});
 	expect(readFileSync(join(ctx, "pr.md"), "utf8")).toBe("");
 	expect(run(patched, [], [], 0)).toMatchObject({
@@ -538,3 +616,33 @@ test.each(["low", "medium", "high"])(
 		expect(JSON.parse(ran.out).status).toBe("ok");
 	},
 );
+
+test("the proving shell runs the prover's script on the base's tree and on the lane, and copies the script files beside the results", () => {
+	const repo = mkdtempSync(join(scratch, "proving-"));
+	const sh = (cmd: string) =>
+		expect(Bun.spawnSync(["sh", "-c", cmd], { cwd: repo }).exitCode).toBe(0);
+	const commit = (value: string) =>
+		sh(
+			`echo ${value} >value.txt && git add -A && git -c user.name=t -c user.email=t@t commit -qm ${value}`,
+		);
+	sh("git init -q");
+	writeFileSync(join(repo, "package.json"), '{"name":"p","version":"1.0.0"}\n');
+	sh("bun install");
+	commit("before");
+	mkdirSync(join(repo, ".proof"));
+	writeFileSync(
+		join(repo, ".proof/prove.sh"),
+		'echo "$(cat "$1/value.txt") $(cat "$2/value.txt")" >"$3/1.json"\n',
+	);
+	commit("after");
+	const out = mkdtempSync(join(scratch, "proved-"));
+	const ran = Bun.spawnSync(["sh", "-c", proving("HEAD~1")], {
+		cwd: repo,
+		env: { ...process.env, MAESTRO_CHECK_OUTPUT: out },
+	});
+	expect(ran.stderr.toString()).toBe("");
+	expect(readFileSync(join(out, "1.json"), "utf8")).toBe("before after\n");
+	expect(readFileSync(join(out, "scripts/prove.sh"), "utf8")).toContain(
+		"1.json",
+	);
+});
