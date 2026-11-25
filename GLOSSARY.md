@@ -21,7 +21,7 @@ Each entry is a one-line definition; the rest of a term lives in its home, linke
   port, Missing output, Settled, Reducer, Artifact, Worker
 - [Configuration](#configuration): Core config, Config namespace, Registrant, Workspace, Data root, Config snapshot,
   Composed config, Gap
-- [Engine and hosts](#engine-and-hosts): Engine, Host, Host setup, Conductor
+- [Engine and hosts](#engine-and-hosts): Engine, Host, Host setup, Operator, Conductor, Approval node, Ruling
 - [Agents](#agents): Agent node, Harness, Runtime, Agent environment, Probe, Instructions, Seat, Seat call, Work agent,
   Verdict agent, Blocked, Obstacle, Lesson, Envelope, Relay, Task, Checklist, Attachment, Sighting, Outbox, Session,
   Context policy, Handoff, Handoff note
@@ -213,7 +213,15 @@ host.
 **Host setup**: What the engine gives a host in its hooks: its config namespaces' values and its own store under the
 data root.
 
+**Operator**: A person or a conductor who composes and performs through the CLI. [Home](docs/requirements.md#actors)
+
 **Conductor**: An agent session that drives the CLI as the operator. [Home](docs/architecture.md#2-system-context)
+
+**Approval node**: A node that holds its concert until an operator rules on it.
+[Home](docs/adr/0021-a-concert-holds-at-an-approval-node.md)
+
+**Ruling**: An operator's answer to an approval node: `ok`, or `rejected` with a reason. _Avoid_: for an owner's
+decision in `docs/rulings.md`, say decision.
 
 ### Agents
 

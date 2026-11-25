@@ -67,7 +67,7 @@ Priority: **Must** is required. **Should** is wanted and may slip. **May** is op
 ### Core: graph and engine (CORE)
 
 - **CORE-01 (Must).** The graph model has node kinds `code`, `parMap`, `map`, `find`, `parFind`, `fold`, `loop`,
-  `assert` and host kinds, with `when` guards and subcomposition scopes.
+  `assert`, `approval` and host kinds, with `when` guards and subcomposition scopes.
 - **CORE-02 (Must).** Ports are typed with schemas that serialize to JSON Schema. Compose type-checks every edge.
 - **CORE-03 (Must).** The IR distinguishes edge kinds `data`, `collect` and `control`. Fan-in is an explicit `collect`
   edge or a reducer node, never inferred (D-08).
@@ -113,6 +113,10 @@ Priority: **Must** is required. **Should** is wanted and may slip. **May** is op
 - **CORE-19 (Must).** A node instance carries named additive numbers (metrics). The engine sums each name per concert
   and exposes the totals to the CLI. It attaches no meaning to a name (D-23), except the token sum `limits.tokens`
   bounds. The host half of the totals arrives with HOST-07.
+- **CORE-20 (Must).** An `approval` node holds its concert until an operator rules `ok` or `rejected`
+  ([ADR 0021](adr/0021-a-concert-holds-at-an-approval-node.md)). The held instance stays `running` and emits an
+  `awaiting` event. The record store holds each request and its ruling. The first ruling wins, and it counts only for
+  the resume key the request was made under. Compose bounds the approvals of a concert.
 
 ### Configuration (CFG)
 
@@ -247,6 +251,10 @@ The executable is `maestro`. Commands, flags, aliases and exit codes are in `mae
   - `compose --help` and `perform --help` given a composition add the same params block.
 - **CLI-09 (Must).** The CLI loads `$XDG_CONFIG_HOME/maestro/.env` when it exists, a variable already set in the
   environment winning. The release binary loads no `.env` or `bunfig.toml` from the cwd.
+- **CLI-10 (Must).** `approval` lists and rules (CORE-20). With no argument it lists the open approval requests of every
+  concert, each with its prompt and its inputs. Given a concert id it rules `ok` or `rejected` with a reason, and it
+  names the instance when the concert holds at more than one. A refused ruling exits non-zero and names the concert's
+  outcome.
 
 ### Packs and distribution (PACK, DIST)
 
