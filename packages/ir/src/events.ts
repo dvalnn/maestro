@@ -15,6 +15,7 @@ export type HostEvent = Readonly<Record<string, unknown>>;
  * - `running`: it started.
  * - `settled`: it settled, with its outcome, reason and host enrichment.
  * - `reused`: a resume kept its `ok` record from before.
+ * - `awaiting`: it holds for a ruling on its approval request (ADR 0021), still `running`.
  * - `progress`: its host emitted `event`, stored as given.
  * - `log`: its worker wrote `line`, or its cancel hook failed.
  */
@@ -27,6 +28,7 @@ export type EventBody =
 			enrichment?: Enrichment;
 	  }
 	| { type: "reused" }
+	| { type: "awaiting" }
 	| { type: "progress"; event: HostEvent }
 	| { type: "log"; line: string };
 

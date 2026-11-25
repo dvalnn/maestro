@@ -351,7 +351,8 @@ SDK-08. The `@maestro/testkit` package offers:
 - **Graph assertions.** `buildIr` builds a composition, `shapeOf` counts an IR's nodes, kinds and edges, and `composeIr`
   gives the plan's bounds or the diagnostics.
 - **Stub concert.** `stubConcert` performs an IR over the real executor with scripted host nodes and stubbed code, for
-  outcome propagation and resume tests.
+  outcome propagation and resume tests. Its `rule` option rules on each approval request through the record, and without
+  it each request is rejected with a reason that names the missing rule.
 
 ## Worked examples
 

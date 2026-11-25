@@ -13,11 +13,14 @@ import type {
 } from "@maestro/core/host";
 import type { CodeEntry, LoadCode } from "@maestro/core/node";
 import {
+	type ApprovalRequest,
 	type InstanceRecord,
 	openRecord,
 	type PerformOptions,
 	perform,
 	type Records,
+	type Ruling,
+	Unrulable,
 } from "@maestro/core/perform";
 import {
 	type ArtifactRef,
@@ -2002,27 +2005,266 @@ test.each([
 	expect(performed.filter((k) => k.includes("check"))).toEqual(checks);
 });
 
-test("an approval settles failed and names itself, as nothing holds at one", async () => {
-	const ir = graph(
+/** How often a held approval in these tests reads its ruling, in milliseconds. */
+const APPROVAL_POLL_MS = 5;
+const OK: Ruling = { outcome: "ok" };
+
+/** `draft` feeds the approval `hold`, which `publish` waits on. */
+const approvalGraph = () =>
+	graph(
 		[
 			code("draft", "draft", { out: { text: STRING } }),
 			{
 				id: "hold",
 				kind: "approval",
 				prompt: "Publish?",
-				in: { text: STRING },
+				in: { text: STRING, version: STRING },
+				literals: { version: "9.9.9" },
 			},
+			code("publish", "publish"),
 		],
-		[data("draft.text", "hold.text")],
-		"hold",
+		[
+			data("draft.text", "hold.text"),
+			{ kind: "control", from: { node: "hold" }, to: { node: "publish" } },
+		],
+		"publish",
 	);
-	const { result } = await play(ir, {
-		code: { draft: () => ({ text: "x" }) },
+
+/** Performs `ir`, `approvalGraph` by default, in `dir` or a new workspace, and waits until its request opens. */
+async function heldConcert(
+	options: { dir?: string; ir?: Ir; approvalPollMs?: number } = {},
+) {
+	const dir = await storage(options);
+	const concert = await start({
+		ir: options.ir ?? approvalGraph(),
+		hosts: [],
+		loadCode: loader({
+			draft: () => ({ text: "v1" }),
+			publish: () => ({}),
+			other: () => ({}),
+		}),
+		dir,
+		concurrency: 1,
+		approvalPollMs: options.approvalPollMs ?? APPROVAL_POLL_MS,
+	});
+	const record = readerIn(dir);
+	let [request] = record.openApprovals(concert.id);
+	while (!request) {
+		await Bun.sleep(APPROVAL_POLL_MS);
+		[request] = record.openApprovals(concert.id);
+	}
+	return { dir, concert, record, request };
+}
+
+/** What `write` throws, `undefined` when it throws nothing. */
+function thrownBy(write: () => void): unknown {
+	try {
+		write();
+	} catch (error) {
+		return error;
+	}
+}
+
+test("an approval holds running with an awaiting event until ruled ok, then its dependent starts", async () => {
+	const asked: ApprovalRequest[] = [];
+	const { result, record, concert } = await play(approvalGraph(), {
+		code: { draft: () => ({ text: "v1" }), publish: () => ({}) },
+		rule: (request) => {
+			asked.push(request);
+			return OK;
+		},
+	});
+	expect(result).toMatchObject({ node: "publish", outcome: "ok" });
+	expect(asked).toEqual([
+		expect.objectContaining({
+			concert,
+			node: "hold",
+			expansion: "",
+			prompt: "Publish?",
+			inputs: { text: "v1", version: "9.9.9" },
+		}),
+	]);
+	const hold = record.events(concert).filter((e) => e.node === "hold");
+	expect(hold.map((e) => e.type)).toEqual(["running", "awaiting", "settled"]);
+	expect(record.openApprovals()).toEqual([]);
+});
+
+test("a rejected ruling settles the concert rejected with its reason as the root cause", async () => {
+	const { result } = await play(approvalGraph(), {
+		code: { draft: () => ({ text: "v1" }), publish: () => ({}) },
+		rule: () => ({ outcome: "rejected", reason: "not this draft" }),
+	});
+	expect(result).toEqual({
+		node: "hold",
+		expansion: "",
+		outcome: "rejected",
+		reason: "not this draft",
+	});
+});
+
+test("a stubbed concert rejects an approval no rule answers, naming the missing rule", async () => {
+	const { result } = await play(approvalGraph(), {
+		code: { draft: () => ({ text: "v1" }), publish: () => ({}) },
 	});
 	expect(result).toMatchObject({
 		node: "hold",
+		outcome: "rejected",
+		reason: "stubConcert was given no rule for approval 'hold'",
+	});
+});
+
+test.each([
+	["an error", new Error("rule broke")],
+	["an Unrulable", new Unrulable({ id: "c", status: "running" }, "rule broke")],
+])(
+	"a stubbed concert whose rule throws %s is cancelled, and rejects with it",
+	async (_, broke) => {
+		const { dir } = await workspace();
+		const playing = stubConcert(approvalGraph(), {
+			dir,
+			code: { draft: () => ({ text: "v1" }), publish: () => ({}) },
+			rule: () => {
+				throw broke;
+			},
+		});
+		await expect(playing).rejects.toBe(broke);
+		const record = readerIn(dir);
+		const [id = ""] = record.ids();
+		expect(recorded(record, id)).toMatchObject({ status: "failed" });
+		expect(byInstance(record.instances(id)).hold).toMatchObject({
+			status: "failed",
+			reason: CANCELLED_CONCERT,
+		});
+	},
+);
+
+test("a held approval takes no slot under the concurrency cap, so a sibling still executes", async () => {
+	const ir = graph(
+		[{ id: "hold", kind: "approval", prompt: "Go?" }, code("other", "other")],
+		[],
+		"hold",
+	);
+	const { concert, record } = await heldConcert({ ir });
+	while (byInstance(record.instances(concert.id)).other?.status !== "ok")
+		await Bun.sleep(APPROVAL_POLL_MS);
+	expect(record.openApprovals(concert.id)).toHaveLength(1);
+	await concert.cancel();
+	await concert.done;
+});
+
+test("open approvals are listed across concerts oldest first, or for one concert", async () => {
+	const first = await heldConcert();
+	const second = await heldConcert({ dir: first.dir });
+	expect(first.record.openApprovals()).toEqual([first.request, second.request]);
+	expect(first.record.openApprovals(second.concert.id)).toEqual([
+		second.request,
+	]);
+	for (const { concert } of [first, second]) {
+		await concert.cancel();
+		await concert.done;
+	}
+});
+
+test("a held approval reads its ruling only at its poll interval, and a cancel wakes it at once", async () => {
+	const { concert, record, request } = await heldConcert({
+		approvalPollMs: 60_000,
+	});
+	record.rule(request, OK);
+	await Bun.sleep(APPROVAL_POLL_MS * 10);
+	expect(byInstance(record.instances(concert.id)).hold?.status).toBe("running");
+	const cancelled = Date.now();
+	await concert.cancel();
+	await concert.done;
+	expect(Date.now() - cancelled).toBeLessThan(1000);
+});
+
+test("a resume reuses an ok approval whose key matches, and asks again once its inputs change", async () => {
+	const asked: string[] = [];
+	const rule = (request: ApprovalRequest) => {
+		asked.push(String(request.inputs.text));
+		return OK;
+	};
+	const fails = () => {
+		throw new Error("publish broke");
+	};
+	const { dir, concert } = await play(approvalGraph(), {
+		code: { draft: () => ({ text: "v1" }), publish: fails },
+		rule,
+	});
+	const again = await play(concert, {
+		dir,
+		code: { draft: () => ({ text: "v1" }), publish: fails },
+		rule,
+	});
+	expect(again.result).toMatchObject({ node: "publish", outcome: "failed" });
+	expect(asked).toEqual(["v1"]);
+	const changed = await play(concert, {
+		dir,
+		code: { draft: () => ({ text: "v2" }), publish: () => ({}) },
+		codeHash: () => `sha256:${"1".repeat(64)}`,
+		rule,
+	});
+	expect(changed.result).toMatchObject({ node: "publish", outcome: "ok" });
+	expect(asked).toEqual(["v1", "v2"]);
+	const holds = changed.record
+		.events(concert)
+		.filter((e) => e.node === "hold")
+		.map((e) => e.type);
+	expect(holds).toEqual([
+		"running",
+		"awaiting",
+		"settled",
+		"reused",
+		"running",
+		"awaiting",
+		"settled",
+	]);
+});
+
+test("a held concert keeps wait timing out, and a kill settles the held approval failed and refuses its ruling", async () => {
+	const { concert, record, request } = await heldConcert();
+	expect(record.openApprovals()).toContainEqual(request);
+	expect(await record.wait(concert.id, APPROVAL_POLL_MS * 4)).toBeUndefined();
+	await concert.cancel();
+	expect(await concert.done).toEqual({
 		outcome: "failed",
-		reason: expect.stringContaining("approval 'hold'"),
+		reason: CANCELLED_CONCERT,
+	});
+	expect(byInstance(record.instances(concert.id)).hold).toMatchObject({
+		status: "failed",
+		reason: CANCELLED_CONCERT,
+	});
+	expect(record.openApprovals()).toEqual([]);
+	const refused = thrownBy(() => record.rule(request, OK));
+	expect(refused).toBeInstanceOf(Unrulable);
+	expect(refused).toMatchObject({
+		message: `concert '${concert.id}' settled failed, so it takes no ruling\nResume the concert to ask again`,
+		concert: { id: concert.id, status: "failed" },
+	});
+});
+
+test("the first ruling wins: a second one, one under another key and a rejection without a reason are refused", async () => {
+	const { concert, record, request } = await heldConcert();
+	const rejected: Ruling = { outcome: "rejected", reason: "too late" };
+	expect(() =>
+		record.rule(request, { outcome: "rejected", reason: " " }),
+	).toThrow("a rejected ruling needs a reason");
+	expect(() => record.rule({ ...request, key: "other" }, OK)).toThrow(
+		Unrulable,
+	);
+	record.rule(request, OK);
+	expect(record.openApprovals(concert.id)).toEqual([]);
+	expect(() => record.rule(request, rejected)).toThrow(
+		`approval 'hold' of concert '${concert.id}' was already ruled ok`,
+	);
+	expect(await concert.done).toMatchObject({
+		node: "publish",
+		outcome: "ok",
+	});
+	const refused = thrownBy(() => record.rule(request, rejected));
+	expect(refused).toBeInstanceOf(Unrulable);
+	expect(refused).toMatchObject({
+		concert: { id: concert.id, status: "ok" },
 	});
 });
 

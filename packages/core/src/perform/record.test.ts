@@ -15,6 +15,7 @@ import {
 	openWriter,
 	PROCESS_EXITED,
 	Unencorable,
+	Unrulable,
 } from "./record";
 
 const OPENERS = 6;
@@ -28,7 +29,7 @@ const IR_FIXTURE = join(
 );
 const A = { node: "a", expansion: "" };
 const V4 = 4;
-const CURRENT_VERSION = 10;
+const CURRENT_VERSION = 11;
 /** The record store schema at version 4, the oldest one an upgrade starts from. */
 const V4_SCHEMA = `
 CREATE TABLE concerts (
@@ -443,6 +444,7 @@ test("removing a concert deletes its rows, and a running concert is refused", as
 	record.begin({ id: "kept", ir, startedAt: 2 });
 	for (const id of ["gone", "kept"]) {
 		record.start(id, A, 3);
+		record.ask(id, A, { key: "k", prompt: "Go?", inputs: {} }, 3);
 		record.settle(
 			id,
 			A,
@@ -459,13 +461,47 @@ test("removing a concert deletes its rows, and a running concert is refused", as
 	const db = new Database(path);
 	const rows = (table: string, concert: string) =>
 		db.query(`SELECT 1 FROM ${table} WHERE concert = ?`).all(concert).length;
-	for (const table of ["instances", "metrics", "events"]) {
+	for (const table of ["instances", "metrics", "events", "approvals"]) {
 		expect([rows(table, "gone"), rows(table, "kept")]).toEqual([
 			0,
-			1 + (table === "events" ? 1 : 0),
+			1 + (table === "events" ? 2 : 0),
 		]);
 	}
 	db.close();
+	record.close();
+	reader.close();
+});
+
+test("a ruling is refused once its instance is no longer held, and a resume drops the request before the approval asks again", async () => {
+	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+	const path = join(dir, "record.db");
+	const record = openWriter(path);
+	const reader = openRecord(path);
+	const ir = await fixtureIr();
+	const hold = { node: "hold", expansion: "" };
+	const asked = { key: "k", prompt: "Go?", inputs: { v: 1 } };
+	const request = { concert: "c", ...hold, key: "k" };
+	record.begin({ id: "c", ir, startedAt: 1 });
+	record.start("c", hold, 2);
+	record.ask("c", hold, asked, 3);
+	record.settle("c", hold, { outcome: "failed", reason: "halted" }, 4);
+	expect(() => reader.rule(request, { outcome: "ok" })).toThrow(
+		new Unrulable(
+			{ id: "c", status: "running" },
+			"approval 'hold' of concert 'c' is no longer held, so it takes no ruling\nList its open approvals and rule on the current request",
+		),
+	);
+	record.finish("c", { outcome: "failed", reason: "x" }, 5);
+	record.resume({ id: "c", ir });
+	record.start("c", hold, 6);
+	expect(reader.openApprovals()).toEqual([]);
+	expect(() => reader.rule(request, { outcome: "ok" })).toThrow(
+		"concert 'c' holds at no approval 'hold'",
+	);
+	record.ask("c", hold, asked, 7);
+	expect(reader.openApprovals()).toEqual([
+		{ ...request, prompt: "Go?", inputs: { v: 1 }, askedAt: 7 },
+	]);
 	record.close();
 	reader.close();
 });

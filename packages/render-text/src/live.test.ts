@@ -504,6 +504,16 @@ describe("eventLine", () => {
 		]);
 	});
 
+	test("an awaiting event keeps its instance running with awaiting as its latest line, and shows as its word", () => {
+		const held = eventsOf([
+			["best", "", 0, { type: "running" }],
+			["best", "", 100, { type: "awaiting" }],
+		]);
+		const [state] = seen(new Map(), held).values();
+		expect(state).toMatchObject({ state: "running", latest: "awaiting" });
+		expect(line(held[1])).toBe("  +0.1s  best                  awaiting");
+	});
+
 	test("pads the instance to at most 24 cells, however long the graph's longest path, and shows a longer one whole", () => {
 		const long = `${"deep/".repeat(6)}node`;
 		const wide: Ir = {

@@ -40,7 +40,10 @@ export type InstanceState = NodeInstance & {
 	reason?: string;
 	startedAt?: number;
 	settledAt?: number;
-	/** Its latest progress event's word and detail, on one line, a `NOT_LATEST` word's event aside. */
+	/**
+	 * Its latest progress event's word and detail, on one line, a `NOT_LATEST` word's event aside, or `awaiting` once it
+	 * holds for a ruling.
+	 */
 	latest?: string;
 	/** The actor a progress event announced for it, as `agentText` shows it before any tokens. */
 	agent?: string;
@@ -207,6 +210,8 @@ function folded(
 			};
 		case "reused":
 			return { ...base, state: "ok", reused: true };
+		case "awaiting":
+			return { ...base, latest: "awaiting" };
 		case "progress":
 			return progressed(base, event);
 		case "log":
@@ -862,6 +867,8 @@ function wordOf(event: Annotated): [word: string, detail: string] {
 			return [event.outcome, event.reason ?? ""];
 		case "reused":
 			return ["ok", "reused"];
+		case "awaiting":
+			return ["awaiting", ""];
 		case "log":
 			return ["log", event.line];
 		case "progress":

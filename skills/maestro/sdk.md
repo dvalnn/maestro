@@ -5,31 +5,36 @@ checks. How a file uses it is [composition.md](composition.md).
 
 ## `@maestro/sdk`
 
-| Name                                                        | Gives                                                                          |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `composition(name, { doc, params, examples }, fn)`          | A composition; `fn(params)` returns its result node                            |
-| `Text`, `Int`, `Float`, `Bool`                              | Value types, called with `{ default, description }`; no default means required |
-| `Enum([...])`, `List(T)`, `Struct({ ... })`, `Json(schema)` | Choice and structured value types                                              |
-| `Optional(T)`                                               | A param or port that may be absent: not required, `undefined` in the build     |
-| `File()`, `Dir()`, `JsonFile(T)`, `Markdown()`              | Artifact types                                                                 |
-| `code(fn, { in, out, timeout })`                            | A code node; `fn` is an exported `(inputs, ctx) => outputs`                    |
-| `reject(reason, outputs?)`                                  | A code node's `rejected` verdict, returned from `fn`                           |
-| `use(sub, ports, { params })`                               | A subcomposition, in a scope of its own; leave out `Optional` ports            |
-| `assert(cond, message)`                                     | A build-time check over plain values                                           |
-| `assert(ref, message, { onFail })`                          | A perform-time check, settling `rejected` or `failed` when false               |
-| `iter.map(items, body, { onError })`                        | `body(item)` per item, in order; `onError` (`"stop"` or `"continue"`) required |
-| `iter.parMap(items, body, { onError, key })`                | `body(item)` per item, all at once; `key(item)` names each instance            |
-| `iter.find(items, body, cond)`                              | In order, up to the first result meeting `cond`                                |
-| `iter.parFind(items, body, cond)`                           | All at once, the first to meet `cond` wins                                     |
-| `iter.fold(items, { first, step })`                         | An accumulator carried item to item                                            |
-| `loop.while(cond, { init, step, max, tolerate })`           | Steps while `cond(state)` holds, tested first: 0 to `max` steps                |
-| `loop.doWhile(cond, { init, step, max, tolerate })`         | Steps, then tests each result: 1 to `max` steps                                |
-| `firstOk(results)`, `okOnly(results)`                       | The first `ok` result; the `ok` ones                                           |
-| `allSettled(results)`                                       | Every result with its outcome                                                  |
-| `readJson(ref)`                                             | A JSON artifact read into a typed, schema-checked Ref                          |
-| `not(ref)`                                                  | A negated `Ref<Bool>`                                                          |
+| Name                                                        | Gives                                                                             |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `composition(name, { doc, params, examples }, fn)`          | A composition; `fn(params)` returns its result node                               |
+| `Text`, `Int`, `Float`, `Bool`                              | Value types, called with `{ default, description }`; no default means required    |
+| `Enum([...])`, `List(T)`, `Struct({ ... })`, `Json(schema)` | Choice and structured value types                                                 |
+| `Optional(T)`                                               | A param or port that may be absent: not required, `undefined` in the build        |
+| `File()`, `Dir()`, `JsonFile(T)`, `Markdown()`              | Artifact types                                                                    |
+| `code(fn, { in, out, timeout })`                            | A code node; `fn` is an exported `(inputs, ctx) => outputs`                       |
+| `reject(reason, outputs?)`                                  | A code node's `rejected` verdict, returned from `fn`                              |
+| `use(sub, ports, { params })`                               | A subcomposition, in a scope of its own; leave out `Optional` ports               |
+| `assert(cond, message)`                                     | A build-time check over plain values                                              |
+| `assert(ref, message, { onFail })`                          | A perform-time check, settling `rejected` or `failed` when false                  |
+| `approval(prompt, { in })`                                  | A hold until an operator rules `ok` or `rejected` on `prompt` and the `in` values |
+| `iter.map(items, body, { onError })`                        | `body(item)` per item, in order; `onError` (`"stop"` or `"continue"`) required    |
+| `iter.parMap(items, body, { onError, key })`                | `body(item)` per item, all at once; `key(item)` names each instance               |
+| `iter.find(items, body, cond)`                              | In order, up to the first result meeting `cond`                                   |
+| `iter.parFind(items, body, cond)`                           | All at once, the first to meet `cond` wins                                        |
+| `iter.fold(items, { first, step })`                         | An accumulator carried item to item                                               |
+| `loop.while(cond, { init, step, max, tolerate })`           | Steps while `cond(state)` holds, tested first: 0 to `max` steps                   |
+| `loop.doWhile(cond, { init, step, max, tolerate })`         | Steps, then tests each result: 1 to `max` steps                                   |
+| `firstOk(results)`, `okOnly(results)`                       | The first `ok` result; the `ok` ones                                              |
+| `allSettled(results)`                                       | Every result with its outcome                                                     |
+| `readJson(ref)`                                             | A JSON artifact read into a typed, schema-checked Ref                             |
+| `not(ref)`                                                  | A negated `Ref<Bool>`                                                             |
 
 `items` is a written list or a Ref; over a Ref, `max` is required. A loop's `max` is a literal or a param.
+
+An `approval` has no outputs, so a dependent reads its `ok` and `reason` or waits on it. Its process holds while it
+waits for the ruling, so perform a composition with an approval with `--detach`. A `rejected` ruling's reason becomes
+the concert's root cause.
 
 A code function's `ctx` carries:
 

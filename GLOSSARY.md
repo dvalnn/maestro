@@ -218,7 +218,7 @@ data root.
 **Conductor**: An agent session that drives the CLI as the operator. [Home](docs/architecture.md#2-system-context)
 
 **Approval node**: A node that holds its concert until an operator rules on it.
-[Home](docs/adr/0021-a-concert-holds-at-an-approval-node.md)
+[Home](docs/architecture.md#approval-hold)
 
 **Ruling**: An operator's answer to an approval node: `ok`, or `rejected` with a reason. Not an R-nn entry in
 `docs/rulings.md`, which is an owner's ruling on the design.

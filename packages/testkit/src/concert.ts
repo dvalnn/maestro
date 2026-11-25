@@ -5,20 +5,27 @@ import { valuesLayer } from "@maestro/core/config";
 import type { Host, Roots } from "@maestro/core/host";
 import type { CodeEntry, LoadCode } from "@maestro/core/node";
 import {
+	type ApprovalRequest,
+	type Concert,
 	type ConcertResult,
 	openRecord,
 	perform,
 	type Records,
+	type Ruling,
+	Unrulable,
 } from "@maestro/core/perform";
 import {
 	type CodeContext,
 	type Ir,
+	indexGraph,
 	mapWorkers,
 	type WorkerRef,
 } from "@maestro/ir";
 import { type FakeScript, fakeHost } from "./fake-host";
 
 const DEFAULT_CONCURRENCY = 4;
+/** How often a stubbed concert's held approvals read their ruling, and its rulings are given, in milliseconds. */
+const STUB_POLL_MS = 5;
 
 /** A code node's or key function's stand-in, typed by whatever inputs it reads. */
 type Stub = (inputs: never, context: CodeContext) => unknown;
@@ -50,6 +57,11 @@ export type StubOptions = HostsOptions &
 		concurrency?: number;
 		/** The roots hosts resolve from. A user root under `dir`, and no packs, by default. */
 		roots?: Roots;
+		/**
+		 * The ruling on each approval request as it opens, through the record as an operator gives one. Without it, each
+		 * request is rejected with a reason naming the missing rule.
+		 */
+		rule?: (request: ApprovalRequest) => Ruling;
 	};
 
 /** A concert performed to its end. */
@@ -123,9 +135,19 @@ async function performIn(
 		recordPath,
 		dir,
 		concurrency: options.concurrency ?? DEFAULT_CONCURRENCY,
+		approvalPollMs: STUB_POLL_MS,
 	});
-	const result = await concert.done;
 	const record = openRecord(recordPath);
+	let result: ConcertResult;
+	try {
+		[result] = await Promise.all([
+			concert.done,
+			ruleUntil(record, concert, options.rule ?? unruledIn(ir)),
+		]);
+	} catch (error) {
+		record.close();
+		throw error;
+	}
 	return {
 		id: concert.id,
 		result,
@@ -136,6 +158,55 @@ async function performIn(
 			if (!options.dir) await rm(dir, { recursive: true, force: true });
 		},
 	};
+}
+
+/** The rule of a stubbed concert of `ir` given none: it rejects, naming the instance as `maestro ls` does. */
+const unruledIn =
+	(ir: Ir) =>
+	(request: ApprovalRequest): Ruling => ({
+		outcome: "rejected",
+		reason: `stubConcert was given no rule for approval '${indexGraph(ir).instanceName(request)}'`,
+	});
+
+/**
+ * Rules each open approval request of `concert` by `rule` until it settles. A `rule` that throws cancels the concert,
+ * so no approval stays held, and rejects with its error once the concert has settled.
+ */
+async function ruleUntil(
+	record: Records,
+	concert: Concert,
+	rule: (request: ApprovalRequest) => Ruling,
+): Promise<void> {
+	let settled = false;
+	const stop = () => {
+		settled = true;
+	};
+	concert.done.then(stop, stop);
+	try {
+		while (!settled) {
+			for (const request of record.openApprovals(concert.id))
+				ruleOn(record, request, rule);
+			await Bun.sleep(STUB_POLL_MS);
+		}
+	} catch (error) {
+		await concert.cancel();
+		await concert.done.catch(() => undefined);
+		throw error;
+	}
+}
+
+function ruleOn(
+	record: Records,
+	request: ApprovalRequest,
+	rule: (request: ApprovalRequest) => Ruling,
+): void {
+	const ruling = rule(request);
+	try {
+		record.rule(request, ruling);
+	} catch (error) {
+		// A halt can settle the instance between the read and the ruling.
+		if (!(error instanceof Unrulable)) throw error;
+	}
 }
 
 /** The IR stored for concert `id`. @throws Error when the record has no such concert. */

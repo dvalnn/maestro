@@ -395,6 +395,7 @@ by `type`:
 | `running`  |                                               | The instance started.                               |
 | `settled`  | `outcome`, optional `reason` and `enrichment` | It settled.                                         |
 | `reused`   |                                               | A resume kept its `ok` record from before.          |
+| `awaiting` |                                               | An approval waits for a ruling, still `running`.    |
 | `progress` | `event` (a `HostEvent`)                       | Its host emitted `event`, stored as given.          |
 | `log`      | `line`                                        | Its worker wrote `line`, or its cancel hook failed. |
 

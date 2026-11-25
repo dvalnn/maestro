@@ -207,8 +207,8 @@ or `parFind` contributes its item key and the other groups their iteration index
 outside groups). It is shown merged into the id, as `parMap[risk]/skeptic`. Events and records use this identity.
 
 A node instance is ready when all `data` and `collect` inputs are settled and its `control` edges allow it, and runs up
-to the concurrency cap. A false `when` guard makes it `skipped`; compose resolves guards that depend only on known
-values.
+to the concurrency cap. A held approval takes no place under the cap. A false `when` guard makes it `skipped`; compose
+resolves guards that depend only on known values.
 
 The outcomes are `ok`, `rejected`, `failed` and `skipped`:
 
@@ -330,6 +330,19 @@ Cancelling a concert cancels running instances through their kinds' cancel hook,
 settles them as `failed` with a cancellation reason. A code node that runs past the timeout its author set settles
 `failed`. It has none by default.
 
+### Approval hold
+
+An approval instance holds as `running` until an operator rules (ADR 0021). It has no timeout of its own, but the
+concert's `limits.timeout` still ends a hold. It writes an approval request under its resume key, with its prompt and
+every input value, literals included. It then emits one `awaiting` event and reads the record at a fixed interval for
+the ruling. It takes no place under the concurrency cap.
+
+A ruling of `ok` settles it `ok`. A `rejected` ruling settles it `rejected`, and the reason becomes the concert's root
+cause. A kill settles it `failed`, as it settles any running instance. A resume reuses an `ok` approval whose resume key
+still matches, and any other resume writes a new request.
+
+Refs: CORE-20, ADR 0021.
+
 ## 8. Configuration
 
 Params and config resolve by one ladder, highest precedence first:
@@ -416,6 +429,7 @@ no coordination beyond lane isolation. It holds:
   it holds, measured as it settles and again when an encore of it settles.
 - Node instances: outcomes with reasons, durations, metrics, artifact references and each leaf's wired inputs.
 - Events.
+- Approval requests: the latest request of each approval instance, with its resume key, prompt and ruling.
 
 - **Stale rows.** A resume marks the concert's instance rows **stale**. Each one it reuses or replaces stops being
   stale, and the metrics of a replaced attempt still count towards the concert's.
@@ -430,6 +444,9 @@ no coordination beyond lane isolation. It holds:
   and logged. What lasts is in artifacts, lanes and events.
 - **Queries** the CLI needs: list concerts with filters, find one by id, list a concert's node instances, wait for a
   terminal state, read the result, set a tour, resume and remove.
+- **Rulings.** The open approval requests of every concert are listed with their prompts and inputs, literals included.
+  One write rules on a request, and the first ruling wins. The write refuses a request that was ruled, replaced under
+  another resume key, or whose instance or concert has settled.
 - **Artifacts** are files under the concert's area, referenced by content hash and provenance (the node instance that
   produced them). Large values are artifacts, not inline.
 

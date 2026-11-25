@@ -1,6 +1,7 @@
 import { rm, rmdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
+	type ApprovalNode,
 	boundOf,
 	type CodeNode,
 	canonicalJson,
@@ -100,7 +101,12 @@ type PerformBase = {
 	 * instance settles, the concert is cancelled and settles `failed` naming the limit. None by default.
 	 */
 	limits?: ConcertLimits;
+	/** How often a held approval reads the record for its ruling, in milliseconds. `APPROVAL_POLL_MS` by default. */
+	approvalPollMs?: number;
 };
+
+/** How often a held approval reads the record for its ruling by default, in milliseconds. */
+const APPROVAL_POLL_MS = 1000;
 
 /**
  * `ir` passed `parseIr`, and each code reference in it carries its code's current `codeHash` (ADR 0008). The concert is
@@ -198,6 +204,7 @@ type Live = {
 	inflight: Set<Promise<void>>;
 	order: number;
 	limits: ConcertLimits;
+	approvalPollMs: number;
 };
 
 /**
@@ -420,6 +427,7 @@ async function performed(
 		inflight,
 		order: 0,
 		limits: options.limits ?? {},
+		approvalPollMs: options.approvalPollMs ?? APPROVAL_POLL_MS,
 	};
 	const top = ir.nodes.filter((n) => index.groupsOf(n.id).length === 0);
 	await startFrame(c, top, root);
@@ -799,6 +807,9 @@ async function leaf(
 		c.kit.record.reuse(c.id, instance, Date.now());
 		return { outcome: "ok", outputs: kept.outputs, key, reused: true };
 	}
+	// A hold executes nothing, so it takes no slot from the concurrency cap.
+	if (node.kind === "approval")
+		return { ...(await hold(c, node, frame, instance, inputs, key)), key };
 	await c.slots.acquire();
 	try {
 		return { ...(await settleLeaf(c, node, frame, instance, inputs)), key };
@@ -809,22 +820,56 @@ async function leaf(
 
 async function settleLeaf(
 	c: Live,
-	node: Leaf,
+	node: Exclude<Leaf, ApprovalNode>,
 	frame: Frame,
 	instance: NodeInstance,
 	inputs: Inputs,
 ): Promise<Settling> {
-	// No executor holds at an approval, so it fails rather than pass unruled (ADR 0021).
-	if (node.kind === "approval")
-		return {
-			outcome: "failed",
-			reason: `this maestro cannot hold at approval '${node.id}' for a ruling; remove the approval to perform`,
-		};
 	if (node.kind !== "assert") return execute(c, node, frame, instance, inputs);
 	const late = haltOf(frame);
 	if (late) return late;
 	start(c, instance, Date.now(), wiredInputs(node, inputs));
 	return asserted(node, inputs);
+}
+
+/**
+ * Holds an approval instance `running` (ADR 0021): it records the request under `key`, then reads the record every
+ * `approvalPollMs` until a ruling lands, and settles by it, or with its halt once halted.
+ */
+async function hold(
+	c: Live,
+	node: ApprovalNode,
+	frame: Frame,
+	instance: NodeInstance,
+	inputs: Inputs,
+	key: string,
+): Promise<Settling> {
+	const late = haltOf(frame);
+	if (late) return late;
+	const { record } = c.kit;
+	start(c, instance, Date.now(), wiredInputs(node, inputs));
+	const request = { key, prompt: node.prompt, inputs };
+	record.ask(c.id, instance, request, Date.now());
+	let wake = () => {};
+	const entry: Running = { frame, cancel: async () => wake() };
+	c.running.add(entry);
+	try {
+		for (;;) {
+			if (entry.halted) return entry.halted;
+			const ruling = record.ruling(c.id, instance);
+			if (ruling?.outcome === "ok") return { outcome: "ok", outputs: {} };
+			if (ruling) return ruling;
+			await new Promise<void>((go) => {
+				const timer = setTimeout(go, c.approvalPollMs);
+				wake = () => {
+					clearTimeout(timer);
+					go();
+				};
+			});
+		}
+	} finally {
+		c.running.delete(entry);
+	}
 }
 
 /**

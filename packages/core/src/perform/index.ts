@@ -7,6 +7,7 @@ export {
 } from "./artifacts";
 export { type Concert, type PerformOptions, perform } from "./perform";
 export {
+	type ApprovalRequest,
 	type ConcertFilter,
 	type ConcertRecord,
 	type ConcertResult,
@@ -16,7 +17,9 @@ export {
 	type InstanceRecord,
 	openRecord,
 	type Records,
+	type Ruling,
 	Unencorable,
 	Unresumable,
+	Unrulable,
 	unresumable,
 } from "./record";

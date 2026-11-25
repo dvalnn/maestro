@@ -18,6 +18,20 @@ import { instanceKey, isRecord } from "../shared";
 const NEW_STORE_VERSION = 0;
 /** The oldest schema version an upgrade starts from. */
 const OLDEST_UPGRADABLE_VERSION = 4;
+const APPROVALS_TABLE = `CREATE TABLE approvals (
+	concert TEXT NOT NULL,
+	node TEXT NOT NULL,
+	expansion TEXT NOT NULL,
+	key TEXT NOT NULL,
+	prompt TEXT NOT NULL,
+	inputs TEXT NOT NULL,
+	ruling TEXT CHECK (ruling IN ('ok', 'rejected')),
+	reason TEXT,
+	asked_at INTEGER NOT NULL,
+	ruled_at INTEGER,
+	PRIMARY KEY (concert, node, expansion),
+	CHECK ((ruling IS 'rejected') = (reason IS NOT NULL) AND (ruling IS NULL) = (ruled_at IS NULL))
+) STRICT`;
 /**
  * `UPGRADE_STEPS[i]` upgrades a record store from version `OLDEST_UPGRADABLE_VERSION + i` to the next. A step only adds.
  */
@@ -29,6 +43,7 @@ const UPGRADE_STEPS = [
 	"ALTER TABLE concerts ADD COLUMN disk_use INTEGER",
 	"ALTER TABLE concerts ADD COLUMN snapshot TEXT",
 	"ALTER TABLE concerts ADD COLUMN facts TEXT",
+	APPROVALS_TABLE,
 ];
 /** The version of the schema below, kept in SQLite's `user_version`. */
 const SCHEMA_VERSION = OLDEST_UPGRADABLE_VERSION + UPGRADE_STEPS.length;
@@ -47,6 +62,7 @@ const CONCERT_TABLES = [
 	"earlier_metrics",
 	"artifacts",
 	"events",
+	"approvals",
 ];
 /** How often `wait` reads a concert's status, in milliseconds. */
 const WAIT_POLL_MS = 50;
@@ -72,6 +88,9 @@ export const CONCERT_FINISHED = "the concert finished before it settled";
 // `snapshot` is its config snapshot (JSON): each layer's text and how it was read, NULL in a row written before
 // snapshots were kept (ADR 0019). `facts` is each host's facts (JSON, by host name) of its latest attempt, NULL in a row
 // written before they were kept.
+// `approvals` holds an approval instance's request (ADR 0021): the resume key, prompt and every input value, literals
+// included, it was made under, and its ruling once one lands, NULL until then, with the reason of a `rejected` one. A
+// resume that replaces the instance deletes its row.
 const SCHEMA = `
 CREATE TABLE concerts (
 	id TEXT PRIMARY KEY,
@@ -145,6 +164,7 @@ CREATE TABLE events (
 	body TEXT NOT NULL
 ) STRICT;
 CREATE INDEX events_by_concert ON events (concert, seq);
+${APPROVALS_TABLE};
 `;
 
 /** One segment of a tour slug: lower-case letters and digits in words joined by single hyphens. */
@@ -281,7 +301,24 @@ export type EnrichedInstance = {
 	enrichment: Enrichment;
 };
 
-/** The record outside a concert's attempt: its reads, and the operator's bookkeeping (tour, remove). */
+/** An operator's answer to an approval (ADR 0021): `ok`, or `rejected` with a non-empty reason. */
+export type Ruling =
+	| { outcome: "ok" }
+	| { outcome: "rejected"; reason: string };
+
+/**
+ * An approval request no ruling has answered, of an instance held `running`: the resume key it was made under, its
+ * prompt, and every input value it rules on, literals included. `askedAt` is epoch milliseconds.
+ */
+export type ApprovalRequest = NodeInstance & {
+	concert: string;
+	key: string;
+	prompt: string;
+	inputs: Inputs;
+	askedAt: number;
+};
+
+/** The record outside a concert's attempt: its reads, and the operator's bookkeeping (tour, remove, rulings). */
 export interface Records {
 	/** The concert, or `undefined` for an id the record does not hold. */
 	find(concert: string): ConcertRecord | undefined;
@@ -294,7 +331,8 @@ export interface Records {
 	/** Keeps `bytes` as the disk the concert holds. */
 	setDiskUse(concert: string, bytes: number): void;
 	/**
-	 * Deletes the concert's rows: the concert, its instances, metrics, artifact references and events.
+	 * Deletes the concert's rows: the concert, its instances, metrics, artifact references, events and approval
+	 * requests.
 	 * @throws Error when the concert is running.
 	 */
 	remove(concert: string): void;
@@ -308,6 +346,19 @@ export interface Records {
 	events(concert: string, after?: number): ConcertEvent[];
 	/** The concert's metrics, each name summed over its instances and over the attempts a resume replaced (CORE-19). */
 	metrics(concert: string): Metrics;
+	/** The open approval requests of every concert, or of `concert` alone, oldest first. */
+	openApprovals(concert?: string): ApprovalRequest[];
+	/**
+	 * Rules on `request`, the open approval request of its instance made under its resume key `key` (ADR 0021). The
+	 * first ruling wins.
+	 * @throws Unrulable when the concert or the instance has settled, the request was ruled already or replaced under
+	 * another key, or the concert holds no such request.
+	 * @throws Error when the record holds no such concert, or a `rejected` ruling has an empty reason.
+	 */
+	rule(
+		request: Pick<ApprovalRequest, "concert" | "node" | "expansion" | "key">,
+		ruling: Ruling,
+	): void;
 	/** The concert once it settles, or `undefined` when `timeoutMs` passes first. Another process may be performing it. */
 	wait(concert: string, timeoutMs?: number): Promise<ConcertRecord | undefined>;
 	close(): void;
@@ -372,6 +423,19 @@ export interface RecordWriter {
 		settling: Settling,
 		at: number,
 	): void;
+	/**
+	 * Records the approval request of `instance` under its resume key `key`, with its `awaiting` event. `inputs` are all
+	 * its input values, literals included. `start` drops a request from before a resume with the instance's record.
+	 * @throws Error when the instance is not running or already has a request.
+	 */
+	ask(
+		concert: string,
+		instance: NodeInstance,
+		request: { key: string; prompt: string; inputs: Inputs },
+		at: number,
+	): void;
+	/** The ruling on the approval request of `instance`, `undefined` until one lands. */
+	ruling(concert: string, instance: NodeInstance): Ruling | undefined;
 	/**
 	 * Appends a progress or log event of `instance`.
 	 * @throws Error when the instance is not running.
@@ -438,6 +502,27 @@ type InstanceRow = {
 	settled_at: number | null;
 	key: string | null;
 	stale: number;
+};
+
+type ApprovalRow = NodeInstance & {
+	concert: string;
+	key: string;
+	prompt: string;
+	asked_at: number;
+	inputs: string;
+};
+
+/** What a ruling names: an approval request by its concert, instance and resume key. */
+type Requested = Pick<
+	ApprovalRequest,
+	"concert" | "node" | "expansion" | "key"
+>;
+
+/** An approval row's key and ruling, with its instance's status. */
+type Held = {
+	key: string;
+	ruling: Ruling["outcome"] | null;
+	instance: InstanceStatus;
 };
 
 type EventRow = {
@@ -672,6 +757,13 @@ function lookupOf(db: Database, alive: Alive): Lookup {
 function readerOf(db: Database, look: Lookup): Records {
 	const { rowIf, rowOf, reaped } = look;
 	const concert = (id: string) => concertOf(rowOf(id));
+	/** Settles each `running` concert whose process is gone, so no query reads it as live. */
+	const reapAll = () => {
+		for (const row of db
+			.query<ConcertRow, []>("SELECT * FROM concerts WHERE status = 'running'")
+			.all())
+			reaped(row);
+	};
 
 	return {
 		find: (id) => {
@@ -686,12 +778,7 @@ function readerOf(db: Database, look: Lookup): Records {
 				.all()
 				.map((row) => row.id),
 		concerts(filter = {}) {
-			for (const row of db
-				.query<ConcertRow, []>(
-					"SELECT * FROM concerts WHERE status = 'running'",
-				)
-				.all())
-				reaped(row);
+			reapAll();
 			return db
 				.query<ConcertRow, (string | number | null)[]>(
 					`SELECT * FROM concerts WHERE (?1 IS NULL OR status = ?1) AND (?2 IS NULL OR composition = ?2)
@@ -768,6 +855,42 @@ function readerOf(db: Database, look: Lookup): Records {
 			rowOf(id);
 			return metricsOf(db, id);
 		},
+		openApprovals(id) {
+			reapAll();
+			return db
+				.query<ApprovalRow, [string | null]>(
+					`SELECT a.concert, a.node, a.expansion, a.key, a.prompt, a.inputs, a.asked_at FROM approvals a
+					JOIN instances i USING (concert, node, expansion)
+					WHERE a.ruling IS NULL AND i.status = 'running' AND (?1 IS NULL OR a.concert = ?1)
+					ORDER BY a.asked_at, a.concert, a.node, a.expansion`,
+				)
+				.all(id ?? null)
+				.map(({ asked_at, inputs, ...row }) => ({
+					...row,
+					inputs: JSON.parse(inputs),
+					askedAt: asked_at,
+				}));
+		},
+		rule: writing(db, (request: Requested, ruling: Ruling) => {
+			if (ruling.outcome === "rejected" && ruling.reason.trim() === "")
+				throw new Error(
+					"a rejected ruling needs a reason. Say why the request is rejected",
+				);
+			const { concert, node, expansion } = request;
+			const refused = unrulable(rowOf(concert), request, heldBy(db, request));
+			if (refused) throw refused;
+			db.exec(
+				"UPDATE approvals SET ruling = ?, reason = ?, ruled_at = ? WHERE concert = ? AND node = ? AND expansion = ?",
+				[
+					ruling.outcome,
+					ruling.outcome === "ok" ? null : ruling.reason,
+					Date.now(),
+					concert,
+					node,
+					expansion,
+				],
+			);
+		}),
 		async wait(id, timeoutMs = Number.POSITIVE_INFINITY) {
 			const deadline = Date.now() + timeoutMs;
 			let found = concert(id);
@@ -822,6 +945,7 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 		);
 		db.exec(`DELETE FROM metrics ${where}`, [id, node, expansion]);
 		db.exec(`DELETE FROM artifacts ${where}`, [id, node, expansion]);
+		db.exec(`DELETE FROM approvals ${where}`, [id, node, expansion]);
 	};
 
 	const restart = writing(db, (id: string, ir: Ir, limits?: ConcertLimits) => {
@@ -932,6 +1056,48 @@ function writerOf(db: Database, look: Lookup): RecordWriter {
 					);
 			},
 		),
+		ask: writing(
+			db,
+			(
+				id: string,
+				instance: NodeInstance,
+				{
+					key,
+					prompt,
+					inputs,
+				}: { key: string; prompt: string; inputs: Inputs },
+				at: number,
+			) => {
+				writable(id, instance, ["running"]);
+				db.exec(
+					"INSERT INTO approvals (concert, node, expansion, key, prompt, inputs, asked_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+					[
+						id,
+						instance.node,
+						instance.expansion,
+						key,
+						prompt,
+						JSON.stringify(inputs),
+						at,
+					],
+				);
+				insertEvent(db, id, instance, { type: "awaiting" }, at);
+			},
+		),
+		ruling: (id, { node, expansion }) => {
+			const row = db
+				.query<
+					{ ruling: Ruling["outcome"] | null; reason: string | null },
+					[string, string, string]
+				>(
+					"SELECT ruling, reason FROM approvals WHERE concert = ? AND node = ? AND expansion = ?",
+				)
+				.get(id, node, expansion);
+			if (!row?.ruling) return undefined;
+			return row.ruling === "ok"
+				? { outcome: "ok" }
+				: { outcome: "rejected", reason: row.reason ?? "" };
+		},
 		note: writing(
 			db,
 			(id: string, instance: NodeInstance, body: EventBody, at: number) => {
@@ -972,6 +1138,63 @@ export class Unresumable extends Error {
 		);
 		this.concert = concert;
 	}
+}
+
+/** The refusal of a ruling, naming the concert's status (ADR 0021). */
+export class Unrulable extends Error {
+	override readonly name = "Unrulable";
+	readonly concert: { id: string; status: ConcertStatus };
+
+	constructor(concert: Unrulable["concert"], message: string) {
+		super(message);
+		this.concert = concert;
+	}
+}
+
+/**
+ * The refusal of a ruling on `request` of the concert `row`, given `held`, the approval row of its instance: unless the
+ * concert is running and holds that instance at an unruled request made under the same key.
+ */
+function unrulable(
+	row: ConcertRow,
+	request: Requested,
+	held: Held | undefined,
+): Unrulable | undefined {
+	const { id, status } = row;
+	const approval = `approval '${request.node}${request.expansion}' of concert '${id}'`;
+	const refuse = (message: string) => new Unrulable({ id, status }, message);
+	if (status !== "running")
+		return refuse(
+			`concert '${id}' settled ${status}, so it takes no ruling${unresumable(concertOf(row)) ? "" : "\nResume the concert to ask again"}`,
+		);
+	if (!held)
+		return refuse(
+			`concert '${id}' holds at no approval '${request.node}${request.expansion}'\nList its open approvals and rule on one of them`,
+		);
+	if (held.key !== request.key)
+		return refuse(
+			`${approval} asks again on other inputs\nList its open approvals and rule on the current request`,
+		);
+	if (held.ruling !== null)
+		return refuse(
+			`${approval} was already ruled ${held.ruling}\nThe first ruling stands`,
+		);
+	if (held.instance !== "running")
+		return refuse(
+			`${approval} is no longer held, so it takes no ruling\nList its open approvals and rule on the current request`,
+		);
+}
+
+/** The approval row of `request`'s instance, with that instance's status, `undefined` when it has none. */
+function heldBy(db: Database, request: Requested): Held | undefined {
+	return (
+		db
+			.query<Held, [string, string, string]>(
+				`SELECT a.key, a.ruling, i.status AS instance FROM approvals a JOIN instances i USING (concert, node, expansion)
+				WHERE a.concert = ? AND a.node = ? AND a.expansion = ?`,
+			)
+			.get(request.concert, request.node, request.expansion) ?? undefined
+	);
 }
 
 /**
