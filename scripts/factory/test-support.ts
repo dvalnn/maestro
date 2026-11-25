@@ -19,6 +19,11 @@ export const BOT = "forge-bot";
 
 export type Stored = Issue & { open: boolean; comments: Comment[] };
 
+/** A forge call the factory never makes. */
+const unused = async (): Promise<never> => {
+	throw new Error("forge: the factory makes no release call");
+};
+
 /**
  * A forge in memory that logs every write. Like Forgejo given a name it does not know, it ignores every query and
  * lists all open issues. `cut` names a write that fails once, as a tick cut short would.
@@ -172,6 +177,11 @@ export function fakeForge(
 			return heads[branch] ?? `sha-${branch}`;
 		},
 		status: async () => "success",
+		release: unused,
+		createRelease: unused,
+		upload: unused,
+		download: unused,
+		closeMilestone: unused,
 	};
 	return {
 		forge,

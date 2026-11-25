@@ -9,6 +9,8 @@ export const TOKEN_KEY = "MAESTRO_TM_TOKEN";
 const PAGE = 50;
 /** How the forge refuses to arm auto-merge on a PR that is already armed. */
 const ARMED = /^forge: 409 from .*already scheduled/is;
+/** How the forge answers a read of something it does not have. */
+const MISSING = /^forge: 404 from /;
 const MERGE_STYLE = "fast-forward-only";
 
 export type Issue = {
@@ -71,6 +73,17 @@ export type NewIssue = {
  */
 export type IssueQuery = { milestone?: string; label?: string };
 
+/** A file attached to a release, and the URL it downloads from. */
+type Asset = { name: string; url: string };
+type Release = { id: number; assets: Asset[] };
+/** A release to create, its tag at commit `target` when the tag does not exist yet. */
+type NewRelease = {
+	tag: string;
+	target: string;
+	body: string;
+	prerelease: boolean;
+};
+
 /** The forge account the tick acts as, whose name and email every commit it makes carries. */
 export type Account = { login: string; name: string; email: string };
 
@@ -103,8 +116,17 @@ export type Forge = {
 	depend(issue: number, blocker: number): Promise<void>;
 	/** The open issues `issue` depends on. */
 	blockers(issue: number): Promise<number[]>;
-	/** Pushes `commit` of the checkout at `dir` as `branch` over HTTPS, replacing what the branch held. */
-	push(dir: string, commit: string, branch: string): Promise<void>;
+	/**
+	 * Pushes `commit` of the checkout at `dir` as `branch` over HTTPS, replacing what the branch held, or, when `force` is
+	 * false, only as a fast-forward of it. `signal` kills the push.
+	 */
+	push(
+		dir: string,
+		commit: string,
+		branch: string,
+		force?: boolean,
+		signal?: AbortSignal,
+	): Promise<void>;
 	/** Opens a pull request and returns its number. */
 	openPull(pull: NewPull): Promise<number>;
 	/** Sets `pull`'s title and body. */
@@ -121,6 +143,18 @@ export type Forge = {
 	head(branch: string): Promise<string>;
 	/** The state of the `check` push context on `commit`, or none when CI has posted none. */
 	status(commit: string): Promise<string | undefined>;
+	/** The release tagged `tag`, if there is one. */
+	release(tag: string): Promise<Release | undefined>;
+	createRelease(release: NewRelease): Promise<Release>;
+	/** Attaches the file at `path` to release `id` under its own name. */
+	upload(id: number, path: string): Promise<void>;
+	/**
+	 * The bytes at `url`, an asset's download URL.
+	 * @throws Error when `url` is not on the forge's host, so the token reaches no other.
+	 */
+	download(url: string): Promise<Uint8Array>;
+	/** Closes milestone `id`, unless it already is. */
+	closeMilestone(id: number): Promise<void>;
 };
 
 /** The context Forgejo Actions gives the push run of the `check` workflow. */
@@ -159,10 +193,15 @@ export function loadEnvFile(env: NodeJS.ProcessEnv = process.env) {
  */
 async function run(
 	command: string[],
-	{ cwd, env }: { cwd?: string; env?: Record<string, string> } = {},
+	{
+		cwd,
+		env,
+		signal,
+	}: { cwd?: string; env?: Record<string, string>; signal?: AbortSignal } = {},
 ) {
 	const child = Bun.spawn(command, {
 		cwd,
+		signal,
 		stdin: "ignore",
 		stdout: "pipe",
 		stderr: "pipe",
@@ -249,22 +288,21 @@ async function push(
 	creds: () => Promise<Credentials>,
 	dir: string,
 	refspec: string,
+	signal?: AbortSignal,
 ) {
 	const { host, owner, repo, token } = await creds();
 	const basic = Buffer.from(`${token}:`).toString("base64");
 	// The header goes through git's environment, so the token reaches no argv, config file or remote URL.
-	await run(
-		["git", "push", `https://${host}/${owner}/${repo}.git`, `+${refspec}`],
-		{
-			cwd: dir,
-			env: {
-				GIT_TERMINAL_PROMPT: "0",
-				GIT_CONFIG_COUNT: "1",
-				GIT_CONFIG_KEY_0: "http.extraHeader",
-				GIT_CONFIG_VALUE_0: `Authorization: Basic ${basic}`,
-			},
+	await run(["git", "push", `https://${host}/${owner}/${repo}.git`, refspec], {
+		cwd: dir,
+		signal,
+		env: {
+			GIT_TERMINAL_PROMPT: "0",
+			GIT_CONFIG_COUNT: "1",
+			GIT_CONFIG_KEY_0: "http.extraHeader",
+			GIT_CONFIG_VALUE_0: `Authorization: Basic ${basic}`,
 		},
-	);
+	});
 }
 
 function object(value: unknown, what: string): Json {
@@ -340,6 +378,27 @@ const pullOf = (o: Json): Pull => ({
 	deletions: num(o, "deletions"),
 	files: num(o, "changed_files"),
 });
+
+const releaseOf = (body: unknown): Release => {
+	const o = object(body, "release");
+	return {
+		id: num(o, "id"),
+		assets: objects(o.assets ?? [], "assets").map((a) => ({
+			name: text(a, "name"),
+			url: text(a, "browser_download_url"),
+		})),
+	};
+};
+
+/** A multipart form holding the file at `path` as its `attachment` field, under the file's name. */
+async function formOf(path: string) {
+	const form = new FormData();
+	form.set(
+		"attachment",
+		new File([await Bun.file(path).bytes()], basename(path)),
+	);
+	return form;
+}
 
 type Api = (method: string, path: string, body?: unknown) => Promise<unknown>;
 
@@ -542,22 +601,22 @@ export function forge(
 				.filter((b) => text(b, "state") === "open")
 				.map((b) => num(b, "number"));
 		},
-		push: (dir, commit, branch) =>
-			push(creds, dir, `${commit}:refs/heads/${branch}`),
+		push: (dir, commit, branch, force = true, signal) =>
+			push(
+				creds,
+				dir,
+				`${force ? "+" : ""}${commit}:refs/heads/${branch}`,
+				signal,
+			),
 		openPull: async (pull) =>
 			num(object(await api("POST", "/pulls", pull), "pull"), "number"),
 		editPull: async (pull, title, body) => {
 			await api("PATCH", `/pulls/${pull}`, { title, body });
 		},
 		attach: async (number, path) => {
-			const form = new FormData();
-			form.set(
-				"attachment",
-				new File([await Bun.file(path).bytes()], basename(path)),
-			);
 			const url = `/issues/${number}/assets?${query({ name: basename(path) })}`;
 			return text(
-				object(await api("POST", url, form), "attachment"),
+				object(await api("POST", url, await formOf(path)), "attachment"),
 				"browser_download_url",
 			);
 		},
@@ -593,6 +652,46 @@ export function forge(
 			);
 			const push = statuses.find(isPush);
 			return push && state(push);
+		},
+		release: async (tag) => {
+			try {
+				return releaseOf(await api("GET", `/releases/tags/${tag}`));
+			} catch (error) {
+				if (error instanceof Error && MISSING.test(error.message)) return;
+				throw error;
+			}
+		},
+		createRelease: async ({ tag, target, body, prerelease }) =>
+			releaseOf(
+				await api("POST", "/releases", {
+					tag_name: tag,
+					target_commitish: target,
+					name: tag,
+					body,
+					prerelease,
+				}),
+			),
+		upload: async (id, path) => {
+			const url = `/releases/${id}/assets?${query({ name: basename(path) })}`;
+			await api("POST", url, await formOf(path));
+		},
+		download: async (url) => {
+			const { host, token } = await creds();
+			const at = new URL(url);
+			if (at.protocol !== "https:" || at.hostname !== host)
+				throw new Error(`forge: ${url} is not on ${host}`);
+			const response = await send(url, {
+				headers: { Authorization: `token ${token}` },
+			});
+			if (!response.ok)
+				throw new Error(`forge: ${response.status} from GET ${url}`);
+			return new Uint8Array(await response.arrayBuffer());
+		},
+		closeMilestone: async (id) => {
+			const path = `/milestones/${id}`;
+			if (text(object(await api("GET", path), path), "state") === "closed")
+				return;
+			await api("PATCH", path, { state: "closed" });
 		},
 	};
 }

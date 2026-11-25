@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
 	chmodSync,
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -61,6 +62,136 @@ test("a push gives git the token through its environment config only", async () 
 		.filter((line) => line.includes(basic) || line.includes(TOKEN));
 	expect(holders).toEqual([`GIT_CONFIG_VALUE_0=Authorization: Basic ${basic}`]);
 });
+
+test("a push that may not force gives git a refspec without the +, so only a fast-forward lands", async () => {
+	await withShims(() => forge(signedIn).push(dir, "abc123", "main", false));
+	expect(readFileSync(argv, "utf8")).toBe(
+		"push\nhttps://forge.example/owner/repo.git\nabc123:refs/heads/main\n",
+	);
+});
+
+test("a push its signal kills before git sends the update pushes nothing", async () => {
+	const slow = mkdtempSync(join(tmpdir(), "factory-forge-slow-"));
+	const pushed = join(slow, "pushed");
+	writeFileSync(
+		join(slow, "git"),
+		`#!/bin/sh\nif [ "$1" = remote ]; then cat ${remote}; exit 0; fi\nsleep 1\ntouch ${pushed}\n`,
+	);
+	chmodSync(join(slow, "git"), 0o755);
+	const path = process.env.PATH;
+	process.env.PATH = `${slow}:${path}`;
+	const kill = new AbortController();
+	try {
+		const pushing = forge(signedIn).push(
+			dir,
+			"abc123",
+			"main",
+			false,
+			kill.signal,
+		);
+		setTimeout(() => kill.abort(), 200);
+		await expect(pushing).rejects.toThrow();
+	} finally {
+		process.env.PATH = path;
+	}
+	await Bun.sleep(1200);
+	expect(existsSync(pushed)).toBe(false);
+});
+
+test("a release the forge does not have is none, and one it has gives its id and assets", async () => {
+	const { send } = recording((url) =>
+		url.endsWith("/v1.0.0")
+			? [200, { id: 4, assets: [{ name: "a.gz", browser_download_url: "u" }] }]
+			: [404, { message: "not found" }],
+	);
+	const api = forge(signedIn, send);
+	await withShims(async () => {
+		expect(await api.release("v0.9.0")).toBeUndefined();
+		expect(await api.release("v1.0.0")).toEqual({
+			id: 4,
+			assets: [{ name: "a.gz", url: "u" }],
+		});
+	});
+});
+
+test("a release read the forge refuses otherwise than 404 throws", async () => {
+	const { send } = recording(() => [500, { message: "broken" }]);
+	const read = withShims(() => forge(signedIn, send).release("v1.0.0"));
+	await expect(read).rejects.toThrow(
+		"forge: 500 from GET /releases/tags/v1.0.0",
+	);
+});
+
+test("creating a release posts its tag, the commit to tag, the body and the pre-release flag", async () => {
+	const { calls, send } = recording(() => [201, { id: 4 }]);
+	const created = await withShims(() =>
+		forge(signedIn, send).createRelease({
+			tag: "v1.0.0-rc.1",
+			target: "abc123",
+			body: "Notes.",
+			prerelease: true,
+		}),
+	);
+	expect(created).toEqual({ id: 4, assets: [] });
+	expect(calls[0]?.url).toEndWith("/repos/owner/repo/releases");
+	expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+		tag_name: "v1.0.0-rc.1",
+		target_commitish: "abc123",
+		name: "v1.0.0-rc.1",
+		body: "Notes.",
+		prerelease: true,
+	});
+});
+
+test("uploading posts the file as the attachment field of a release's assets, named", async () => {
+	const gz = join(dir, "a.gz");
+	writeFileSync(gz, "zipped");
+	const { calls, send } = recording(() => [201, {}]);
+	await withShims(() => forge(signedIn, send).upload(4, gz));
+	expect(calls[0]?.url).toEndWith(
+		"/repos/owner/repo/releases/4/assets?name=a.gz",
+	);
+	const form = calls[0]?.init.body as FormData;
+	const file = form.get("attachment") as File;
+	expect([file.name, await file.text()]).toEqual(["a.gz", "zipped"]);
+});
+
+test("a download sends the token to the forge's host only", async () => {
+	const { calls, send } = recording(() => [200, "bytes"]);
+	const api = forge(signedIn, send);
+	const got = await withShims(() =>
+		api.download("https://forge.example/owner/repo/releases/download/v1/a.gz"),
+	);
+	expect(new TextDecoder().decode(got)).toBe('"bytes"');
+	expect(calls[0]?.init.headers).toMatchObject({
+		Authorization: `token ${TOKEN}`,
+	});
+	await expect(
+		withShims(() => api.download("https://elsewhere.example/a.gz")),
+	).rejects.toThrow("is not on forge.example");
+	expect(calls).toHaveLength(1);
+});
+
+test.each([
+	["open", 1],
+	["closed", 0],
+])(
+	"closing a milestone that is %s leaves it closed, with %p writes",
+	async (before, writes) => {
+		const milestone = { id: 3, state: before };
+		let written = 0;
+		const send: Send = async (_, init) => {
+			if (init.method === "PATCH") {
+				written++;
+				Object.assign(milestone, JSON.parse(String(init.body)));
+			}
+			return new Response(JSON.stringify(milestone));
+		};
+		await withShims(() => forge(signedIn, send).closeMilestone(3));
+		expect(milestone.state).toBe("closed");
+		expect(written).toBe(writes);
+	},
+);
 
 test("an API call carries the token in its header and reaches the origin's host and repo", async () => {
 	const { calls, send } = recording(() => [200, { id: 5 }]);

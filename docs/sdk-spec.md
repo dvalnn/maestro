@@ -200,6 +200,9 @@ A code node is the SDK's answer to "this needs real code". It runs only at perfo
   past it settles `failed`.
 - **Trusted.** The node reads and writes what its function does. Files it hands on travel by artifact ports, and nothing
   checks other access (RISK-2).
+- **Outside the concert.** A code node may write outside the concert and reach the network. The author answers for it.
+  Such a node sits behind an approval and checks for its effect before it acts, so a resume leaves an existing effect as
+  it is. The composition's `doc` says what it writes outside the concert (ADR 0022).
 - **Context.** `ctx` offers the concert id, the clock, the instance's scratch directory, `log(line)` and `signal`, plus
   what hosts add (`env`, from the [host interface](architecture.md#6-host-interface); the type is in
   [IR: Code-function contract](../packages/ir/README.md#code-function-contract)). A file written in the scratch

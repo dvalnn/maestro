@@ -180,8 +180,8 @@ Priority: **Must** is required. **Should** is wanted and may slip. **May** is op
   `read(handle)`. A read spends no extension. A version may be extended at most once and forked or read any number of
   times, and a node takes exactly one lane input. A host `validate` hook enforces this. The mechanism is in
   [Lanes](../packages/host-repo/README.md#lanes).
-- **HOST-03 (Must).** A concert writes only its own lanes. The target's checkout, refs and commits are untouched.
-  Results leave only as a changeset node's output.
+- **HOST-03 (Must).** The repo host writes only its lanes. No host node kind writes the target's checkout, refs or
+  commits, and results leave only as a changeset node's output. A code node is the author's code (ADR 0022).
 - **HOST-04 (Must).** An agent runs sandboxed: writable only in its lane, its outbox, its session directory and the
   writable binds of the checks it may run; read-only binds declared by the node, config or those checks, and the
   artifacts it reads as attachments; secrets never written to logs, events or records.
@@ -267,7 +267,8 @@ The executable is `maestro`. Commands, flags, aliases and exit codes are in `mae
 - **DIST-01 (Must).** The baseline runtime is Bun.
 - **DIST-02 (Should).** A single executable via `bun build --compile`, on modern Linux (D-34).
 - **DIST-03 (Must).** The repository is a monorepo of separately versioned packages with an independently versioned IR.
-- **DIST-04 (Must).** No network use beyond harness and model traffic and explicit installs.
+- **DIST-04 (Must).** The engine, the hosts and the CLI use no network beyond harness and model traffic and explicit
+  installs. A code node is the author's code (ADR 0022).
 - **DIST-05 (Must).** Distribution is public (D-31): release artifacts (the `maestro` binary and package tarballs)
   served as releases of the public GitHub repository. Nothing is published to a public registry.
 

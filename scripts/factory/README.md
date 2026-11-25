@@ -31,7 +31,9 @@ already set wins over the file:
 
 [^m]: Moving to the next release is editing this value.
 
-[^t]: `.maestro/release.ts` reads the same token, and only to read the release's milestone and its open issues.
+[^t]:
+    `.maestro/release.ts` uses the same token: it reads the release's milestone, and after its approval it pushes
+    `main`, creates the forge release and closes the milestone.
 
 The host, owner and repo come from the `origin` remote (ssh or https). The account needs write access to the repo, which
 lets it push branches, open PRs, comment, request reviews, label, file issues and arm auto-merge; give it no admin

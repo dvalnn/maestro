@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fill, panel } from "@maestro/classics";
@@ -13,6 +14,7 @@ import {
 } from "@maestro/host-repo-sdk";
 import {
 	type ArtifactRef,
+	approval,
 	Bool,
 	BuildError,
 	type CodeContext,
@@ -92,6 +94,13 @@ async function git(cwd: string, signal: AbortSignal, ...args: string[]) {
 	return out;
 }
 
+/** The target's forge, called as `MAESTRO_TM_TOKEN` and cancelled with the node. */
+function forgeOf(ctx: CodeContext): Forge {
+	const send = (url: string, init: RequestInit) =>
+		fetch(url, { ...init, signal: ctx.signal });
+	return forge(process.env, send, targetOf(ctx));
+}
+
 /** Nothing when the milestone titled `title` exists and has no open issue, else a rejection naming each open one. */
 export async function milestoneReady(
 	issues: Pick<Forge, "milestone" | "open">,
@@ -122,9 +131,7 @@ export function requireMilestone(
 	{ version }: { version: string },
 	ctx: CodeContext,
 ) {
-	const send = (url: string, init: RequestInit) =>
-		fetch(url, { ...init, signal: ctx.signal });
-	return milestoneReady(forge(process.env, send, targetOf(ctx)), `v${version}`);
+	return milestoneReady(forgeOf(ctx), `v${version}`);
 }
 
 /**
@@ -143,6 +150,24 @@ export function tipOf(dir: string): string {
 	return tip;
 }
 
+/** A clone of the target at commit `base`, checked out under the scratch directory, that writes nothing to the target. */
+async function cloneAt(ctx: CodeContext, base: string) {
+	const { scratch, signal } = ctx;
+	const tree = join(scratch, "tree");
+	await git(
+		scratch,
+		signal,
+		"clone",
+		"-q",
+		"--shared",
+		"--no-checkout",
+		targetOf(ctx),
+		tree,
+	);
+	await git(tree, signal, "checkout", "-q", "--detach", base);
+	return tree;
+}
+
 /**
  * The code node that bumps every version file to `version` on top of the commit the changeset `changes` ends at, the
  * commits the panel reviewed: a changeset of the one commit `chore(release): bump to <version>`, cut in a clone that
@@ -153,20 +178,8 @@ export async function bump(
 	ctx: CodeContext,
 ) {
 	const { scratch, signal } = ctx;
-	const target = targetOf(ctx);
-	const tree = join(scratch, "tree");
 	const base = tipOf(ctx.path(changes));
-	await git(
-		scratch,
-		signal,
-		"clone",
-		"-q",
-		"--shared",
-		"--no-checkout",
-		target,
-		tree,
-	);
-	await git(tree, signal, "checkout", "-q", "--detach", base);
+	const tree = await cloneAt(ctx, base);
 	const bumped = bumpVersions(tree, version);
 	if ("problems" in bumped)
 		return reject(
@@ -197,7 +210,7 @@ export async function bump(
 	return { changeset: dir };
 }
 
-/** The result node: the candidate's notes, bump changeset, review and `dist/`, once each settled ok. */
+/** The candidate node: the release's notes, bump changeset, review and `dist/`, once each settled ok. */
 export function candidateOf(parts: {
 	notes: ArtifactRef;
 	changeset: ArtifactRef;
@@ -205,6 +218,145 @@ export function candidateOf(parts: {
 	dist: ArtifactRef;
 }) {
 	return parts;
+}
+
+/** What a publish node does in a dry run instead of its effect: logs it, and leaves main and the forge as they are. */
+function logDry(ctx: CodeContext, effect: string) {
+	ctx.log(`dry run: would ${effect}`);
+	return {};
+}
+
+/**
+ * The code node that applies the bump `changeset` in a clone under its scratch directory and pushes it to `main` as a
+ * fast-forward, unless the forge's `main` already holds it (ADR 0022). Its output is the bump's commit.
+ */
+export async function pushBump(
+	{ changeset, dry }: { changeset: ArtifactRef; dry: boolean },
+	ctx: CodeContext,
+) {
+	const dir = ctx.path(changeset);
+	const base = readFileSync(join(dir, "base"), "utf8").trim();
+	const tree = await cloneAt(ctx, base);
+	// The patch's own date commits it, so every run makes the same commit and a resume finds it on main.
+	await git(
+		tree,
+		ctx.signal,
+		"am",
+		"-q",
+		"--committer-date-is-author-date",
+		join(dir, "0001.patch"),
+	);
+	const commit = (await git(tree, ctx.signal, "rev-parse", "HEAD")).trim();
+	if (dry) return { ...logDry(ctx, `push ${commit} to main`), commit };
+	const forge = forgeOf(ctx);
+	const main = await forge.head("main");
+	// A main the target has not fetched is unknown here and reads as not holding the bump: the push then fails as a
+	// non-fast-forward, and a resume after a fetch finds it.
+	const held = await git(
+		tree,
+		ctx.signal,
+		"merge-base",
+		"--is-ancestor",
+		commit,
+		main,
+	).then(
+		() => true,
+		() => false,
+	);
+	if (!held) await forge.push(tree, commit, "main", false, ctx.signal);
+	return { commit };
+}
+
+/** The names of the files in the directory `dir`, sorted. */
+const filesIn = (dir: string) =>
+	readdirSync(dir, { withFileTypes: true })
+		.filter((f) => f.isFile())
+		.map((f) => f.name)
+		.sort();
+
+/**
+ * The code node that creates the forge release `v<version>`, its tag at `commit` and its body the `notes`, unless it
+ * exists, and attaches each file of `dist` the release lacks.
+ */
+export async function publishRelease(
+	inputs: {
+		version: string;
+		prerelease: boolean;
+		commit: string;
+		notes: ArtifactRef;
+		dist: ArtifactRef;
+		dry: boolean;
+	},
+	ctx: CodeContext,
+) {
+	const { version, prerelease, commit, dry } = inputs;
+	const tag = `v${version}`;
+	const dist = ctx.path(inputs.dist);
+	const files = filesIn(dist);
+	if (dry)
+		return logDry(
+			ctx,
+			`create the ${prerelease ? "pre-release" : "release"} ${tag} at ${commit} with ${files.join(", ")}`,
+		);
+	const forge = forgeOf(ctx);
+	const body = readFileSync(ctx.path(inputs.notes), "utf8");
+	const release =
+		(await forge.release(tag)) ??
+		(await forge.createRelease({ tag, target: commit, body, prerelease }));
+	const held = new Set(release.assets.map((a) => a.name));
+	for (const file of files)
+		if (!held.has(file)) await forge.upload(release.id, join(dist, file));
+	return {};
+}
+
+/** The first line of a `SHA256SUMS` file: a hash, and the file name it is the hash of. */
+const SUM = /^(?<hash>[0-9a-f]{64}) [ *](?<name>.+)$/m;
+
+/**
+ * The code node that checks the first asset `SHA256SUMS` in `dist` lists, as the forge release `v<version>` serves it,
+ * against its hash. A dry run checks the file in `dist` instead.
+ */
+export async function verifyRelease(
+	{ version, dist, dry }: { version: string; dist: ArtifactRef; dry: boolean },
+	ctx: CodeContext,
+) {
+	const dir = ctx.path(dist);
+	const { hash, name } =
+		SUM.exec(readFileSync(join(dir, "SHA256SUMS"), "utf8"))?.groups ?? {};
+	if (!hash || !name) return reject("dist/SHA256SUMS lists no asset");
+	const bytes = dry
+		? readFileSync(join(dir, name))
+		: await served(forgeOf(ctx), `v${version}`, name);
+	if (!bytes) return reject(`the release v${version} has no asset ${name}`);
+	const got = createHash("sha256").update(bytes).digest("hex");
+	if (got !== hash)
+		return reject(
+			`the release v${version} serves ${name} with sha256 ${got}, not ${hash} as SHA256SUMS holds\nReplace the asset, then resume`,
+		);
+	return {};
+}
+
+/** The bytes of asset `name` of the release tagged `tag`, or none when it lacks one. */
+async function served(forge: Forge, tag: string, name: string) {
+	const asset = (await forge.release(tag))?.assets.find((a) => a.name === name);
+	return asset && forge.download(asset.url);
+}
+
+/** The code node that closes the milestone `v<version>`, unless it is closed. The gate left it no open issue. */
+export async function closeMilestone(
+	{ version, dry }: { version: string; dry: boolean },
+	ctx: CodeContext,
+) {
+	const title = `v${version}`;
+	if (dry) return logDry(ctx, `close the milestone ${title}`);
+	const forge = forgeOf(ctx);
+	const id = await forge.milestone(title);
+	if (id === undefined)
+		return reject(
+			`the forge has no milestone ${title}\nCreate it, or check --version`,
+		);
+	await forge.closeMilestone(id);
+	return {};
 }
 
 /**
@@ -235,11 +387,20 @@ export const release = composition(
 	"release",
 	{
 		doc: [
-			"Build a release candidate on main@origin: for a stable, first gate on its milestone having no open issue.",
+			"Build a release candidate on main@origin, then publish it once an operator rules ok.",
+			"For a stable, it first gates on its milestone having no open issue.",
 			"A panel reviews the commits since the previous tag, a writer drafts the release notes and a check holds them to the",
 			"release structure, a code node bumps every version file, and `just release` builds and smoke-tests the bumped tree.",
-			"Leaves the notes, the bump changeset, the review and `dist/`. Fails while the review upholds a finding.",
-			"It reads origin/main as the target last fetched it, so fetch first.",
+			"Fails while the review upholds a finding. It reads origin/main as the target last fetched it, so fetch first.",
+			"The concert then holds at an approval on the notes and the review, so perform it with --detach.",
+			"",
+			"After an ok it writes outside the concert, as MAESTRO_TM_TOKEN.",
+			"It pushes the bump to the forge's main from a clone in its scratch directory, never a force push.",
+			"It creates the forge release with every file of dist/ as an asset, and checks one asset against SHA256SUMS.",
+			"For a stable, it closes the milestone. A resume leaves a pushed bump, a release, its assets and a closed milestone as",
+			"they are. It does not reinstall maestro, as install.sh refuses while a concert runs: once the concert settles, run",
+			"install.sh with MAESTRO_VERSION=v<version>, as INSTALL.md shows.",
+			"--dry-run logs each publish step instead: no push or forge write. A stable still reads its milestone.",
 		].join("\n"),
 		params: {
 			version: Text({
@@ -254,10 +415,15 @@ export const release = composition(
 				default: false,
 				description: "Cut an -rc.<n> pre-release, which no milestone gates",
 			}),
+			dryRun: Bool({
+				default: false,
+				description:
+					"Log each publish step instead of taking it: no push or forge write. A stable still reads its milestone",
+			}),
 		},
 		examples: [{ version: "0.4.1", prev: "v0.4.0" }],
 	},
-	({ version, prev, prerelease }) => {
+	({ version, prev, prerelease, dryRun: dry }) => {
 		checkVersion(version, prerelease);
 		const tag = `v${version}`;
 		// A stable spends nothing until its milestone has no open issue.
@@ -315,7 +481,7 @@ export const release = composition(
 			{ run: RELEASE, timeout: "1h" },
 			{ label: "release" },
 		);
-		return code(candidateOf, {
+		const candidate = code(candidateOf, {
 			in: {
 				notes: notes.out.notes,
 				changeset: bumped.out.changeset,
@@ -328,7 +494,48 @@ export const release = composition(
 				review: Markdown(),
 				dist: Dir(),
 			},
-			label: "result",
+			label: "candidate",
 		});
+		const { dist } = candidate.out;
+		const approved = approval(
+			`Publish ${tag}: push its bump to main and create the forge release from these notes${prerelease ? "" : ", then close its milestone"}?`,
+			{
+				in: { notes: candidate.out.notes, review: candidate.out.review },
+				label: "publish",
+			},
+		);
+		const pushed = code(pushBump, {
+			in: { changeset: candidate.out.changeset, dry },
+			out: { commit: Text() },
+			label: "push",
+			when: approved.ok,
+		});
+		const released = code(publishRelease, {
+			in: {
+				version,
+				prerelease,
+				commit: pushed.out.commit,
+				notes: candidate.out.notes,
+				dist,
+				dry,
+			},
+			out: {},
+			label: "forge_release",
+		});
+		const verified = code(verifyRelease, {
+			in: { version, dist, dry },
+			out: {},
+			label: "verify",
+			when: released.ok,
+		});
+		// A pre-release has no milestone.
+		return prerelease
+			? verified
+			: code(closeMilestone, {
+					in: { version, dry },
+					out: {},
+					label: "close",
+					when: verified.ok,
+				});
 	},
 );

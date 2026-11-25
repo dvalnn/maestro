@@ -51,8 +51,8 @@ Three properties drive the design:
 
 The **operator** is a person or a **conductor**, an agent session that drives the CLI. **Harnesses** (pi, Claude Code)
 are reached through the host's adapters, and model providers only through harnesses. The host reads a **target
-repository** to cut lanes and a concert never writes to it (HOST-03). The filesystem holds config, the record store,
-lanes and artifacts. Renderers consume the IR and events.
+repository** to cut lanes and writes only its lanes (HOST-03). The filesystem holds config, the record store, lanes and
+artifacts. Renderers consume the IR and events.
 
 ## 3. Layers and packages
 
@@ -495,8 +495,8 @@ The host carries the coding-agent concepts. The vocabulary is fixed in D-21 and 
 
 It registers the agent, check, changeset, commits and apply [node kinds](../packages/host-repo/README.md#node-kinds) and
 runs each in a [lane](../packages/host-repo/README.md#lanes), an isolated, versioned working copy cut from a target
-repository. What a concert leaves behind is a [changeset](../packages/host-repo/README.md#changesets) the operator
-applies, never a write to the target's checkout (HOST-03).
+repository. What the host leaves behind is a [changeset](../packages/host-repo/README.md#changesets) the operator
+applies. No host node kind writes the target's checkout, refs or commits (HOST-03).
 
 An agent runs a [profile](../packages/host-repo/README.md#profiles-and-prompts) in the
 [sandbox](../packages/host-repo/README.md#sandbox), a bubblewrap confinement (D-25). A
