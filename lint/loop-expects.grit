@@ -1,26 +1,23 @@
 language js
 
+pattern written_in_place() {
+	or {
+		JsArrayExpression(),
+		TsAsExpression(expression=JsArrayExpression()),
+		TsSatisfiesExpression(expression=JsArrayExpression()),
+		JsParenthesizedExpression(expression=or {
+			JsArrayExpression(),
+			TsAsExpression(expression=JsArrayExpression()),
+			TsSatisfiesExpression(expression=JsArrayExpression())
+		})
+	}
+}
+
 `expect($args)` as $call where {
 	$call <: within or {
-		JsForOfStatement(expression=$it) where {
-			not $it <: or {
-				JsArrayExpression(),
-				TsAsExpression(expression=JsArrayExpression()),
-				TsSatisfiesExpression(expression=JsArrayExpression())
-			}
-		},
-		`$it.forEach($f)` where {
-			not $it <: or {
-				JsArrayExpression(),
-				TsAsExpression(expression=JsArrayExpression()),
-				TsSatisfiesExpression(expression=JsArrayExpression()),
-				JsParenthesizedExpression(expression=or {
-					JsArrayExpression(),
-					TsAsExpression(expression=JsArrayExpression()),
-					TsSatisfiesExpression(expression=JsArrayExpression())
-				})
-			}
-		}
+		JsForOfStatement(expression=$it) where { not $it <: written_in_place() },
+		`$it.forEach($f)` where { not $it <: written_in_place() },
+		`$it?.forEach($f)` where { not $it <: written_in_place() }
 	},
 	register_diagnostic(span=$call, message="An expect in a loop over a computed collection passes when the collection is empty. Assert the whole collection with one expect, such as the list of offenders toEqual([])")
 }
