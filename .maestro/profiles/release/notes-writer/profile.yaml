@@ -1,0 +1,2 @@
+instructions: instructions.md
+runtime: { harness: claude, model: claude-sonnet-5-5, thinking: medium }
