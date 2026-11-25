@@ -264,8 +264,8 @@ documents a field with no value is left out:
   module directory and config. `wait --json` holds its result and artifact directory. `art ls --json` holds each
   artifact's absolute path and `contentHash`. `agent show` holds a profile's contents. `ls <concert> <instance> --json`
   holds a step's report, values, inputs, artifacts and session.
-- `ls`, `wait`, `watch`, `kill`, `tour`, `prune`, `artifact` and `config <concert>` read no config file, and take no
-  `--preset` or `-c`. `prune` measures a concert's disk use and releases what its hosts hold under its snapshot.
+- `ls`, `wait`, `watch`, `kill`, `approval`, `tour`, `prune`, `artifact` and `config <concert>` read no config file, and
+  take no `--preset` or `-c`. `prune` measures a concert's disk use and releases what its hosts hold under its snapshot.
 
 ### Watching
 
@@ -342,6 +342,29 @@ when it has not settled. A resize redraws. `SIGTERM`, `SIGHUP` and `SIGINT` give
 browsed graph, then a `── <key>` line and the graph again after each space-separated key (`j`, `[`, or `down`,
 `previous`, `enter`, `esc`), stopping at `q` on the tree or `interrupt`. It needs no terminal and exits with the
 concert's code, or 0 while it runs.
+
+### Approvals
+
+A concert holds at an [approval node](../../docs/architecture.md#approval-hold) until an operator rules on it.
+`approval` with no concert lists the open requests of every concert, oldest first. With none open it prints
+`no open approvals` on stderr and exits 0.
+
+Each request is a block. Its first line holds the concert's short id, the instance as `ls <concert>` names it and the
+request's age. The prompt follows, then a line per input. A text input shows on one line, and any other value as compact
+JSON. An artifact input shows as its absolute path, never cut. On a terminal any other value wider than the screen is
+cut with `…`, and a dim line points to `maestro approval --json`.
+
+An artifact that a param passes in shows as its JSON object, not as a path.
+
+- `approval --json` lists the requests, each with `concert`, `node`, `expansion`, `key`, `prompt`, `inputs`, `askedAt`
+  and `instance`. The `instance` is the name the text shows and `--instance` takes. An artifact in `inputs` is its path
+  relative to the concert's artifact directory, as in `ls`.
+- `approval <concert> ok` and `approval <concert> reject <reason>` rule on the one request the concert holds at, and
+  exit 0. A concert that holds at more than one needs `--instance`, else it is a usage error.
+- The ruling line goes to stderr. `--json` prints `{concert, node, expansion, instance, key, outcome, reason}` instead,
+  with `reason` only for a rejected ruling.
+- A refused ruling exits 1. The concert has settled, or another ruling or a kill came first, or the concert holds at no
+  request. An `--instance` that the concert has no instance of is a usage error, as in `ls`.
 
 ## Reading what a concert left
 

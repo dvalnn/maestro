@@ -34,6 +34,7 @@ home; no repo doc links into them for its facts.
 | Group field shapes, `itemKey` alphabet   | `packages/ir/README.md`               | sdk-spec, compose README           |
 | Outcomes, result rule, tolerance         | architecture: Execution model         | sdk-spec, IR README, glossary      |
 | Resume and code-hash reuse               | architecture: Execution model         | CLI README                         |
+| Approval hold and its ruling             | architecture: Approval hold           | CLI README, glossary, ADR 0021     |
 | Worker protocol                          | architecture: Workers and code nodes  | sdk-spec                           |
 | Record store, events, data root          | architecture: Record and events       | IR README, CLI README              |
 | Config snapshot of a concert             | architecture: Config snapshot         | CLI README, glossary, ADR 0019     |
@@ -84,6 +85,7 @@ home; no repo doc links into them for its facts.
 | Perform, detach, closing block              | `packages/cli/README.md` | implementation-loop          |
 | Watch, ls, artifact, changeset, agent show  | `packages/cli/README.md` | render-text README           |
 | Resume, encore, kill, prune, tours          | `packages/cli/README.md` | architecture                 |
+| Listing and ruling on approvals             | `packages/cli/README.md` | ADR 0021                     |
 | Short ids and naming instances              | `packages/cli/README.md` | glossary, render-text README |
 | Output conventions (`--json`, color, pager) | `packages/cli/README.md` |                              |
 

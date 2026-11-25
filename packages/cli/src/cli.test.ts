@@ -10,7 +10,7 @@ import { IR_VERSION } from "@maestro/ir";
 import { shortId, shortIds, stateWord } from "@maestro/render-text/live";
 import { SDK_VERSION, STDLIB_HASH } from "@maestro/sdk/loader";
 import { fakeHost } from "@maestro/testkit";
-import { fixedRun, transcript, until } from "@maestro/transcript";
+import { fixedRun, type Section, transcript, until } from "@maestro/transcript";
 import pkg from "../package.json";
 import {
 	cleanup,
@@ -2262,6 +2262,41 @@ describe("usage errors", () => {
 			/^error: maestro kill needs a concert\nUsage: maestro kill <concert>\n/,
 		],
 		[
+			"approval of a concert without a ruling",
+			["approval", "nope"],
+			/^error: maestro approval takes ok or reject after the concert, got nothing\nUsage: maestro approval\n.*\n.*\n {2}Write maestro approval <concert> ok/,
+		],
+		[
+			"approval with a word it does not take",
+			["ap", "nope", "maybe"],
+			/^error: maestro approval takes ok or reject after the concert, got 'maybe'\n/,
+		],
+		[
+			"approval ok with a word after it",
+			["approval", "nope", "ok", "now"],
+			/^error: maestro approval ok takes nothing after it, got 'now'\n/,
+		],
+		[
+			"approval reject without a reason",
+			["approval", "nope", "reject"],
+			/^error: maestro approval reject needs a reason\n/,
+		],
+		[
+			"approval reject with an empty reason",
+			["approval", "nope", "reject", " "],
+			/^error: maestro approval reject needs a reason\n/,
+		],
+		[
+			"approval reject with two reasons",
+			["approval", "nope", "reject", "a", "b"],
+			/^error: maestro approval reject takes one reason, got 2\n/,
+		],
+		[
+			"approval --instance without a concert",
+			["approval", "--instance", "go"],
+			/^error: maestro approval takes --instance only after a concert\n/,
+		],
+		[
 			"watch without a concert",
 			["watch"],
 			/^error: maestro watch needs a concert\nUsage: maestro watch <concert>\n {2}Name one as 'maestro ls' lists it$/,
@@ -2553,7 +2588,16 @@ describe("usage errors", () => {
 			);
 		}
 		const verbs = verbsOf((await w.call(["--help"])).out);
-		const reads = ["ls", "wait", "watch", "kill", "tour", "prune", "artifact"];
+		const reads = [
+			"ls",
+			"wait",
+			"watch",
+			"kill",
+			"approval",
+			"tour",
+			"prune",
+			"artifact",
+		];
 		const offenders = await wrongFlagVerbs(w, verbs, reads);
 		expect(verbs.length).toBeGreaterThan(0);
 		expect(offenders).toEqual([]);
@@ -5399,5 +5443,206 @@ describe("exit codes and error states", () => {
 		const series = `${from}\nSubject: one\n---\ndiff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-x\n+y\n-- \n2.0\n\n${from}\nSubject: two\n\n- not removed\n+ not added\n---\n`;
 		const second = diffColored(series).split("\n").slice(12);
 		expect(second.some((l) => l.startsWith(ESC))).toBe(false);
+	});
+});
+
+describe("approval", () => {
+	const APPROVE = join(FIXTURES, "approve.ts");
+	const GO = "Apply the migration\u001b[31m to staging?\r";
+
+	/** Performs `approve.ts` in `w` in the foreground with `flags`, and gives its id once both its approvals are open. */
+	async function holding(
+		w: Awaited<ReturnType<typeof world>>,
+		flags: string[] = [],
+	) {
+		const performing = w.call(["perform", APPROVE, ...flags], { hosts: [] });
+		let open: { concert: string }[] = [];
+		for (let tries = 0; open.length < 2 && tries < 500; tries += 1) {
+			await Bun.sleep(10);
+			open = json(await w.call(["approval", "--json"]));
+		}
+		expect(open).toHaveLength(2);
+		return { id: open[0]?.concert ?? "", performing };
+	}
+
+	/** Rules both approvals of concert `id` ok, so its perform settles. */
+	async function release(w: Awaited<ReturnType<typeof world>>, id: string) {
+		await w.call(["approval", id, "ok", "--instance", "go"]);
+		await w.call(["approval", id, "ok"]);
+	}
+
+	test("approval --json lists each open request, oldest first, and [] with none open", async () => {
+		const w = await world();
+		expect(await w.call(["approval", "--json"])).toEqual({
+			code: 0,
+			out: "[]",
+			err: "",
+		});
+		await fixed(async () => {
+			const { id, performing } = await holding(w);
+			// The two are asked at the same fixed time, so they list by node id.
+			const [publish, go] = json(await w.call(["approval", "--json"]));
+			expect([go, publish]).toEqual([
+				{
+					concert: id,
+					node: "go",
+					expansion: "",
+					instance: "go",
+					key: expect.any(String),
+					prompt: GO,
+					inputs: {},
+					askedAt: START,
+				},
+				{
+					concert: id,
+					node: "fan/publish",
+					expansion: "[eu]",
+					instance: "fan[eu]/publish",
+					key: expect.any(String),
+					prompt: "Publish v9.9.9 to the forge?",
+					inputs: {
+						summary: "no finding blocks\nthe release",
+						version: "9.9.9",
+						region: "eu",
+					},
+					askedAt: START,
+				},
+			]);
+			await release(w, id);
+			expect((await performing).code).toBe(0);
+		});
+	});
+
+	test("approval prints a file input as its path in the artifact area, under ~ in a terminal", async () => {
+		const w = await world();
+		const { id, performing } = await holding(w, ["--notes"]);
+		const [publish] = json(await w.call(["approval", "--json"])).filter(
+			(request: { node: string }) => request.node === "fan/publish",
+		);
+		const path = join(
+			w.root,
+			"data/maestro/concerts",
+			id,
+			"artifacts",
+			publish.inputs.notes,
+		);
+		const env = { HOME: w.root, PAGER: "", NO_COLOR: "1" };
+		const terminal = () => ({ columns: 200, rows: 40 });
+		const notesLine = (out: string) =>
+			out.split("\n").find((line) => line.trimStart().startsWith("notes"));
+		expect(notesLine((await w.call(["approval"], { env })).out)).toBe(
+			`    notes    ${path}`,
+		);
+		expect(notesLine((await w.call(["approval"], { env, terminal })).out)).toBe(
+			`    notes    ~${path.slice(w.root.length)}`,
+		);
+		await release(w, id);
+		expect((await performing).code).toBe(0);
+	});
+
+	test("approval lists and rules as transcripts/approval.txt shows, exiting 0, 2 on a bad selector and 1 on a refusal", async () => {
+		const w = await world();
+		const env = { HOME: w.root, PAGER: "", NO_COLOR: "1" };
+		const sections: Section[] = [];
+		/** Runs `args`, expects its exit `code`, and holds what it printed as section `name`. */
+		const shown = async (
+			name: string,
+			args: string[],
+			code: number,
+			terminal?: () => { columns: number; rows: number },
+		) => {
+			const result = await w.call(args, { env, terminal });
+			expect(result.code).toBe(code);
+			sections.push({
+				name,
+				columns: terminal?.().columns ?? 80,
+				shown: result.out || result.err,
+			});
+		};
+		await fixed(async (run) => {
+			await shown("maestro approval, none open", ["approval"], 0);
+			const { id, performing } = await holding(w);
+			const short = shortOf(id);
+			run.at(3_800);
+			await shown("maestro approval, two open for 3s", ["approval"], 0);
+			run.at(12 * 60_000 + 3_800);
+			await shown("maestro ap at 24 columns, 12 minutes on", ["ap"], 0, () => ({
+				columns: 24,
+				rows: 40,
+			}));
+			await shown(
+				"maestro approval <id> ok, two open",
+				["approval", short, "ok"],
+				2,
+			);
+			await shown(
+				"maestro approval <id> ok --instance nope",
+				["approval", short, "ok", "--instance", "nope"],
+				2,
+			);
+			await shown(
+				"maestro approval <id> ok --instance go",
+				["approval", short, "ok", "--instance", "go"],
+				0,
+			);
+			await shown(
+				"maestro approval <id> ok --instance go, ruled already",
+				["approval", short, "ok", "--instance", "go"],
+				1,
+			);
+			const rejected = await w.call([
+				"approval",
+				id,
+				"reject",
+				"notes miss #812",
+				"--instance",
+				"publish",
+				"--json",
+			]);
+			expect(rejected.code).toBe(0);
+			expect(json(rejected)).toEqual({
+				concert: id,
+				node: "fan/publish",
+				expansion: "[eu]",
+				instance: "fan[eu]/publish",
+				key: expect.any(String),
+				outcome: "rejected",
+				reason: "notes miss #812",
+			});
+			expect(await performing).toMatchObject({ code: 3 });
+			await shown(
+				"maestro approval <id> ok, the concert settled rejected",
+				["approval", id, "ok"],
+				1,
+			);
+			expect(
+				json(await w.call(["approval", short, "reject", "late", "--json"])),
+			).toEqual({ ok: false, error: expect.any(String), exit: 1 });
+			const broke = idOf(
+				await w.call(["perform", ...GREET], {
+					hosts: [hostOf({ outcome: "failed", reason: "flaky" })],
+				}),
+			);
+			await shown(
+				"maestro approval <id> ok, the concert failed",
+				["approval", shortOf(broke), "ok"],
+				1,
+			);
+			const live = await held(w, ["perform", ...GREET]);
+			const { id: running } = json(
+				await w.call(["ls", "--status", "running", "--json"]),
+			)[0];
+			await shown(
+				"maestro approval <id> ok, running at no approval",
+				["approval", running, "ok"],
+				1,
+			);
+			live.finish();
+			await live.running;
+		});
+		await transcript(
+			new URL("./transcripts/approval.txt", import.meta.url),
+			sections,
+		);
 	});
 });

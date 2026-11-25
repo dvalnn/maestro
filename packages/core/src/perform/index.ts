@@ -22,4 +22,5 @@ export {
 	Unresumable,
 	Unrulable,
 	unresumable,
+	unrulable,
 } from "./record";

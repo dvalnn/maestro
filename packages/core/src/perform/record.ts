@@ -1,13 +1,14 @@
 import { Database } from "bun:sqlite";
-import type {
-	ArtifactRef,
-	ConcertEvent,
-	Enrichment,
-	EventBody,
-	Facts,
-	Ir,
-	NodeInstance,
-	Outcome,
+import {
+	type ArtifactRef,
+	type ConcertEvent,
+	type Enrichment,
+	type EventBody,
+	type Facts,
+	type Ir,
+	indexGraph,
+	type NodeInstance,
+	type Outcome,
 } from "@maestro/ir";
 import type { ConcertLimits, KeyPath, LayerName, ParsedLayer } from "../config";
 import type { HostNodeResult, Metrics } from "../host";
@@ -877,7 +878,11 @@ function readerOf(db: Database, look: Lookup): Records {
 					"a rejected ruling needs a reason. Say why the request is rejected",
 				);
 			const { concert, node, expansion } = request;
-			const refused = unrulable(rowOf(concert), request, heldBy(db, request));
+			const refused = requestRefusal(
+				rowOf(concert),
+				request,
+				heldBy(db, request),
+			);
 			if (refused) throw refused;
 			db.exec(
 				"UPDATE approvals SET ruling = ?, reason = ?, ruled_at = ? WHERE concert = ? AND node = ? AND expansion = ?",
@@ -1151,25 +1156,35 @@ export class Unrulable extends Error {
 	}
 }
 
+/** The refusal of any ruling on `concert`, unless it is running (ADR 0021). */
+export function unrulable(concert: ConcertRecord): Unrulable | undefined {
+	const { id, status } = concert;
+	return status === "running"
+		? undefined
+		: new Unrulable(
+				{ id, status },
+				`concert '${id}' settled ${status}, so it takes no ruling\n${unresumable(concert) ? "Perform its composition as a new concert to ask again" : "Resume the concert to ask again"}`,
+			);
+}
+
 /**
  * The refusal of a ruling on `request` of the concert `row`, given `held`, the approval row of its instance: unless the
  * concert is running and holds that instance at an unruled request made under the same key.
  */
-function unrulable(
+function requestRefusal(
 	row: ConcertRow,
 	request: Requested,
 	held: Held | undefined,
 ): Unrulable | undefined {
+	const settled = unrulable(concertOf(row));
+	if (settled) return settled;
 	const { id, status } = row;
-	const approval = `approval '${request.node}${request.expansion}' of concert '${id}'`;
+	const name = indexGraph(JSON.parse(row.ir)).instanceName(request);
+	const approval = `approval '${name}' of concert '${id}'`;
 	const refuse = (message: string) => new Unrulable({ id, status }, message);
-	if (status !== "running")
-		return refuse(
-			`concert '${id}' settled ${status}, so it takes no ruling${unresumable(concertOf(row)) ? "" : "\nResume the concert to ask again"}`,
-		);
 	if (!held)
 		return refuse(
-			`concert '${id}' holds at no approval '${request.node}${request.expansion}'\nList its open approvals and rule on one of them`,
+			`concert '${id}' holds at no approval '${name}'\nList its open approvals and rule on one of them`,
 		);
 	if (held.key !== request.key)
 		return refuse(

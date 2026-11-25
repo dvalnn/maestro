@@ -1,0 +1,63 @@
+## maestro approval, none open
+───────────────────────────────────────────────────────────────────────────────┐
+no open approvals
+
+## maestro approval, two open for 3s
+───────────────────────────────────────────────────────────────────────────────┐
+rrsrssxk  fan[eu]/publish  asked 3s ago
+  Publish v9.9.9 to the forge?
+    summary  no finding blocks the release
+    version  9.9.9
+    region   eu
+
+rrsrssxk  go  asked 3s ago
+  Apply the migration\u001b[31m to staging?\r
+
+## maestro ap at 24 columns, 12 minutes on
+───────────────────────┐
+rrsrssxk  fan[eu]/publish  asked 12m03s ago
+  Publish v9.9.9 to the
+  forge?
+    summary  no finding…
+    version  9.9.9
+    region   eu
+
+rrsrssxk  go  asked 12m03s ago
+  Apply the
+  migration\u001b[31m to
+  staging?\r
+Full values: maestro approval --json
+
+## maestro approval <id> ok, two open
+───────────────────────────────────────────────────────────────────────────────┐
+error: concert rrsrssxk holds at 2 approvals: fan[eu]/publish, go
+  Name one with --instance
+
+## maestro approval <id> ok --instance nope
+───────────────────────────────────────────────────────────────────────────────┐
+error: no instance 'nope' in concert rrsrssxk
+  List them with 'maestro ls rrsrssxk'
+
+## maestro approval <id> ok --instance go
+───────────────────────────────────────────────────────────────────────────────┐
+ruled ok: approval 'go' of concert rrsrssxk
+
+## maestro approval <id> ok --instance go, ruled already
+───────────────────────────────────────────────────────────────────────────────┐
+error: concert rrsrssxk holds at no open approval 'go'
+  It may be ruled already. List the open approvals with 'maestro approval'
+
+## maestro approval <id> ok, the concert settled rejected
+───────────────────────────────────────────────────────────────────────────────┐
+error: concert '01a154df-b99f-7ad8-8887-8772f0ceca8e' settled rejected, so it takes no ruling
+  Resume the concert to ask again
+
+## maestro approval <id> ok, the concert failed
+───────────────────────────────────────────────────────────────────────────────┐
+error: concert '01a154df-b99f-73be-85a0-a093bd8d72a8' settled failed, so it takes no ruling
+  Resume the concert to ask again
+
+## maestro approval <id> ok, running at no approval
+───────────────────────────────────────────────────────────────────────────────┐
+error: concert opxpxlyt holds at no open approval
+  It may be ruled already. List the open approvals with 'maestro approval'

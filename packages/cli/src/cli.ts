@@ -90,6 +90,12 @@ const VERBS: readonly Verb[] = [
 		load: async () => (await import("./records")).kill,
 	},
 	{
+		name: "approval",
+		alias: "ap",
+		summary: "List the open approvals, or rule on one",
+		load: async () => (await import("./records")).approval,
+	},
+	{
 		name: "config",
 		alias: "cfg",
 		summary:

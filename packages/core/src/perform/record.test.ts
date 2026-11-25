@@ -16,6 +16,7 @@ import {
 	PROCESS_EXITED,
 	Unencorable,
 	Unrulable,
+	unrulable,
 } from "./record";
 
 const OPENERS = 6;
@@ -472,13 +473,13 @@ test("removing a concert deletes its rows, and a running concert is refused", as
 	reader.close();
 });
 
-test("a ruling is refused once its instance is no longer held, and a resume drops the request before the approval asks again", async () => {
+test("a ruling is refused, naming the instance, once it is no longer held, and a resume drops the request before the approval asks again", async () => {
 	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
 	const path = join(dir, "record.db");
 	const record = openWriter(path);
 	const reader = openRecord(path);
 	const ir = await fixtureIr();
-	const hold = { node: "hold", expansion: "" };
+	const hold = { node: "topics/draft", expansion: "[a]" };
 	const asked = { key: "k", prompt: "Go?", inputs: { v: 1 } };
 	const request = { concert: "c", ...hold, key: "k" };
 	record.begin({ id: "c", ir, startedAt: 1 });
@@ -488,7 +489,7 @@ test("a ruling is refused once its instance is no longer held, and a resume drop
 	expect(() => reader.rule(request, { outcome: "ok" })).toThrow(
 		new Unrulable(
 			{ id: "c", status: "running" },
-			"approval 'hold' of concert 'c' is no longer held, so it takes no ruling\nList its open approvals and rule on the current request",
+			"approval 'topics[a]/draft' of concert 'c' is no longer held, so it takes no ruling\nList its open approvals and rule on the current request",
 		),
 	);
 	record.finish("c", { outcome: "failed", reason: "x" }, 5);
@@ -496,7 +497,7 @@ test("a ruling is refused once its instance is no longer held, and a resume drop
 	record.start("c", hold, 6);
 	expect(reader.openApprovals()).toEqual([]);
 	expect(() => reader.rule(request, { outcome: "ok" })).toThrow(
-		"concert 'c' holds at no approval 'hold'",
+		"concert 'c' holds at no approval 'topics[a]/draft'",
 	);
 	record.ask("c", hold, asked, 7);
 	expect(reader.openApprovals()).toEqual([
@@ -505,6 +506,53 @@ test("a ruling is refused once its instance is no longer held, and a resume drop
 	record.close();
 	reader.close();
 });
+
+test("a settled concert takes no ruling: ok names a new concert as the next step, failed a resume", async () => {
+	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+	const path = join(dir, "record.db");
+	const record = openWriter(path);
+	const reader = openRecord(path);
+	const ir = await fixtureIr();
+	const hold = { node: "hold", expansion: "" };
+	for (const [id, outcome] of [
+		["done", "ok"],
+		["broke", "failed"],
+	] as const) {
+		record.begin({ id, ir, startedAt: 1 });
+		record.start(id, hold, 2);
+		record.ask(id, hold, { key: "k", prompt: "Go?", inputs: {} }, 3);
+		expect(unrulable(reader.find(id) ?? never())).toBeUndefined();
+		const ending =
+			outcome === "ok"
+				? ({ outcome, outputs: {} } as const)
+				: ({ outcome, reason: "x" } as const);
+		record.settle(id, hold, ending, 4);
+		record.finish(id, { ...hold, ...ending }, 5);
+	}
+	const done = new Unrulable(
+		{ id: "done", status: "ok" },
+		"concert 'done' settled ok, so it takes no ruling\nPerform its composition as a new concert to ask again",
+	);
+	const broke = new Unrulable(
+		{ id: "broke", status: "failed" },
+		"concert 'broke' settled failed, so it takes no ruling\nResume the concert to ask again",
+	);
+	expect(unrulable(reader.find("done") ?? never())).toEqual(done);
+	expect(unrulable(reader.find("broke") ?? never())).toEqual(broke);
+	for (const [id, refusal] of [
+		["done", done],
+		["broke", broke],
+	] as const)
+		expect(() =>
+			reader.rule({ concert: id, ...hold, key: "k" }, { outcome: "ok" }),
+		).toThrow(refusal);
+	record.close();
+	reader.close();
+});
+
+const never = (): never => {
+	throw new Error("no such concert");
+};
 
 test("a running concert is settled when the alive check says its process is gone", async () => {
 	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
@@ -517,6 +565,20 @@ test("a running concert is settled when the alive check says its process is gone
 		outcome: "failed",
 		reason: PROCESS_EXITED,
 	});
+	reader.close();
+	record.close();
+});
+
+test("the open approvals leave out the request of a concert whose process died while it held", async () => {
+	dir = await mkdtemp(join(tmpdir(), "maestro-record-"));
+	const path = join(dir, "record.db");
+	const record = openWriter(path);
+	const hold = { node: "hold", expansion: "" };
+	record.begin({ id: "c", ir: await fixtureIr(), startedAt: 1 });
+	record.start("c", hold, 2);
+	record.ask("c", hold, { key: "k", prompt: "Go?", inputs: {} }, 3);
+	const reader = openRecord(path, { alive: () => false });
+	expect(reader.openApprovals()).toEqual([]);
 	reader.close();
 	record.close();
 });

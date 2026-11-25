@@ -11,6 +11,7 @@ Commands:
   wait        (wt)   Wait for a concert to settle
   watch       (w)    Show a concert's node instances live until it settles
   kill        (k)    Stop a running concert
+  approval    (ap)   List the open approvals, or rule on one
   config      (cfg)  Show a composition's or a concert's config and where each value came from
   agent       (ag)   List agent profiles, or show one's environment
   repertoire  (rep)  List installed packs and their compositions
@@ -233,6 +234,34 @@ Arguments:
 
 Flags:
       --json  Print one JSON document on stdout
+
+Common flags: --color, --debug, -h/--help (see 'maestro --help')
+
+## maestro approval --help
+───────────────────────────────────────────────────────────────────────────────────────────────────┐
+List the open approvals, or rule on one
+
+Usage: maestro approval [flags]  (alias: ap)
+       maestro approval <concert> ok [--instance <id>]
+       maestro approval <concert> reject <reason> [--instance <id>]
+
+Arguments:
+  <concert>        A concert that holds at an approval, as 'maestro ls' lists it
+  ok               Rule ok: the approval settles ok
+  reject <reason>  Rule rejected, saying why: the approval settles rejected with that reason
+
+Flags:
+      --json           Print one JSON document on stdout
+      --instance <id>  Rule on this instance's approval, as 'maestro approval' lists it, when the
+                       concert holds at more than one
+
+Examples:
+  # Which approvals wait for a ruling?
+  maestro approval
+  # Let a held concert go on
+  maestro approval 7f3c2a ok
+  # Reject one of two held approvals
+  maestro approval 7f3c2a reject "notes miss #812" --instance go-eu
 
 Common flags: --color, --debug, -h/--help (see 'maestro --help')
 

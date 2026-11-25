@@ -63,7 +63,7 @@ For a user who wants every task driven through a composition written for it, poi
 | 1       | The concert settled `failed`, or a composition, config or command failed | Read the message and hints; fix the cause and resume |
 | 2       | Usage error                                                              | Fix the command                                      |
 | 3       | The concert settled `rejected`, or `cs apply` left conflicts             | Report the root cause instance and its reason        |
-| 124     | `wait --timeout` passed, the concert still running                       | Wait again                                           |
+| 124     | `wait --timeout` passed, the concert still running                       | Check `maestro approval`, then wait again            |
 | 130/143 | `perform`, `resume` or `encore` was stopped by Ctrl-C or SIGTERM         | `maestro resume <id>`                                |
 
 - `rejected` is a verdict: a red check or a verdict agent's no. The concert's reason is its root cause's.

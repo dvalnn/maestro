@@ -344,10 +344,8 @@ describe("a concert in another process", () => {
 
 		const waited = await w.call(["wait", id, "--timeout", "1s"]);
 		expect(waited.code).toBe(124);
-		expect(waited.err).toMatch(
-			new RegExp(
-				`^concert ${id} is still running after 1s\nWait again, or stop it with 'maestro kill ${id}'$`,
-			),
+		expect(waited.err).toBe(
+			`concert ${id} is still running after 1s\nWait again, rule on an approval it holds at ('maestro approval' lists them), or stop it with 'maestro kill ${id}'`,
 		);
 		expect(
 			json(await w.call(["wait", id, "--timeout", "1s", "--json"])),

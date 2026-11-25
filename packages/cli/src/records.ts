@@ -1,12 +1,21 @@
+import { join } from "node:path";
+import { tildeOf } from "@maestro/core";
 import {
+	type ApprovalRequest,
 	type ConcertFilter,
 	type ConcertRecord,
 	openRecord,
+	type Records,
+	type Ruling,
+	Unrulable,
+	unrulable,
 } from "@maestro/core/perform";
 import {
+	type ArtifactRef,
 	compact,
 	DURATION_EXAMPLE,
 	type Ir,
+	indexGraph,
 	MS_PER_UNIT,
 	tokensOf,
 } from "@maestro/ir";
@@ -20,6 +29,7 @@ import {
 	shellArg,
 	shortIds,
 	stateWord,
+	wrapText,
 } from "@maestro/render-text/live";
 import { portedArtifacts } from "./artifact";
 import { changesetPointer, changesOf } from "./changeset";
@@ -36,6 +46,7 @@ import {
 	only,
 	peek,
 	RECORDED,
+	splitFirst,
 	textOf,
 	type Values,
 } from "./command";
@@ -56,12 +67,14 @@ import {
 	EXIT,
 	elapsedOf,
 	exitOf,
+	failure,
 	fittedTable,
 	formatBytes,
 	giving,
 	jsonAgain,
 	jsonOf,
 	laidOut,
+	listedOf,
 	NAME_CONCERT,
 	orAbsent,
 	paint,
@@ -665,7 +678,7 @@ async function waited(
 		});
 	else
 		deps.stderr(
-			`concert ${id} is still running after ${timeout}\nWait again, or stop it with 'maestro kill ${id}'`,
+			`concert ${id} is still running after ${timeout}\nWait again, rule on an approval it holds at ('maestro approval' lists them), or stop it with 'maestro kill ${id}'`,
 		);
 	return exitOf(status);
 }
@@ -816,5 +829,282 @@ export const tour: Command = {
 			args,
 			deps,
 			toured,
+		),
+};
+
+const APPROVAL_OPTIONS = {
+	...RECORDED,
+	instance: {
+		type: "string",
+		arg: "id",
+		desc: "Rule on this instance's approval, as 'maestro approval' lists it, when the concert holds at more than one",
+	},
+} as const satisfies Options;
+
+const APPROVAL_FIX =
+	"Write maestro approval <concert> ok, or maestro approval <concert> reject <reason>";
+
+/** A ruling `approval` is asked to give: `ruling` on the open request of concert `prefix`, at `instance` when named. */
+type Ruled = { prefix: string; ruling: Ruling; instance: string | undefined };
+
+/**
+ * The ruling `approval` is asked to give, or `undefined` to list the open approvals.
+ * @throws ArgumentError for `--instance` without a concert, or a ruling not written as the usage says.
+ */
+function approvalChecked(
+	values: Values,
+	positionals: readonly string[],
+): Ruled | undefined {
+	const [prefix, word, ...rest] = positionals;
+	const instance = textOf(values, "instance");
+	if (prefix !== undefined)
+		return { prefix, ruling: rulingOf(word, rest), instance };
+	if (instance !== undefined)
+		throw new ArgumentError(
+			"takes --instance only after a concert",
+			APPROVAL_FIX,
+		);
+	return undefined;
+}
+
+/**
+ * The ruling `word` and the words after it give: `ok` alone, or `reject` and one non-empty reason.
+ * @throws ArgumentError for anything else.
+ */
+function rulingOf(word: string | undefined, rest: readonly string[]): Ruling {
+	if (word === "ok" && rest.length === 0) return { outcome: "ok" };
+	if (word === "ok")
+		throw new ArgumentError(
+			`ok takes nothing after it, got '${rest[0]}'`,
+			APPROVAL_FIX,
+		);
+	if (word !== "reject")
+		throw new ArgumentError(
+			`takes ok or reject after the concert, got ${word === undefined ? "nothing" : `'${word}'`}`,
+			APPROVAL_FIX,
+		);
+	const reason = only(rest, "reason", APPROVAL_FIX, "reject");
+	if (reason.trim() === "")
+		throw new ArgumentError("reject needs a reason", APPROVAL_FIX);
+	return { outcome: "rejected", reason };
+}
+
+/** How the open approvals are drawn: the short ids, color, terminal width, the time now and an artifact's path. */
+type Drawing = {
+	short: ShortIds;
+	color: boolean;
+	columns: number;
+	now: number;
+	pathOf: (concert: string) => (ref: ArtifactRef) => string;
+};
+
+/** What a request's prompt is indented by, and its inputs by. */
+const PROMPT_INDENT = "  ";
+const INPUT_INDENT = "    ";
+
+/** `request`'s inputs on the ports of its node in `row`, each artifact as `pathOf` its ref. */
+const inputsOf = (
+	row: ConcertRecord,
+	request: ApprovalRequest,
+	pathOf?: (ref: ArtifactRef) => string,
+) =>
+	withArtifactPaths(
+		row.ir.nodes.find((n) => n.id === request.node)?.in ?? {},
+		request.inputs,
+		pathOf,
+	);
+
+/**
+ * The `[name, value]` input rows of `request` of concert `row`, a value cut to fit `columns` cells when above 0, and
+ * whether one was. A value that holds an artifact is never cut: its path is what the operator copies.
+ */
+function inputRows(
+	row: ConcertRecord,
+	request: ApprovalRequest,
+	{ color, columns, pathOf }: Drawing,
+) {
+	const shown = Object.entries(inputsOf(row, request, pathOf(row.id)));
+	const width = Math.max(0, ...shown.map(([name]) => Bun.stringWidth(name)));
+	const room = columns - INPUT_INDENT.length - width - "  ".length;
+	let cut = false;
+	const rows = shown.map(([name, value]) => {
+		const text =
+			typeof value === "string" ? flat(value) : JSON.stringify(value);
+		const artifact = !Bun.deepEquals(value, request.inputs[name]);
+		const fitted =
+			columns > 0 && !artifact ? cutTo(text, Math.max(room, 1)) : text;
+		cut ||= fitted !== text;
+		return [`${INPUT_INDENT}${paint("dim", name, color)}`, fitted];
+	});
+	return { rows, cut };
+}
+
+/**
+ * The block of `request` of concert `row`: its concert, instance and age, its prompt, then a line per input, and whether
+ * an input's value was cut to the terminal.
+ */
+function requestBlock(
+	row: ConcertRecord,
+	request: ApprovalRequest,
+	drawing: Drawing,
+) {
+	const { short, color, columns, now } = drawing;
+	const head = [
+		short.label(request.concert, color),
+		indexGraph(row.ir).instanceName(request),
+		`asked ${duration(now - request.askedAt, 0)} ago`,
+	].join("  ");
+	const room = columns - PROMPT_INDENT.length;
+	const prompt = request.prompt
+		.split("\n")
+		.map(flat)
+		.flatMap((line) => (room > 0 ? wrapText(line, room) : [line]))
+		.map((line) => `${PROMPT_INDENT}${line}`.trimEnd());
+	const { rows, cut } = inputRows(row, request, drawing);
+	const lines = [head, ...prompt, ...(rows.length ? [table(rows)] : [])];
+	return { text: lines.join("\n"), cut };
+}
+
+/** The open approvals of every concert, oldest first, as blocks or as one JSON list. */
+function openListed({ session, store, values, json }: Stored) {
+	const { deps } = session;
+	const requests = store.openApprovals();
+	const rowOf = (r: ApprovalRequest) => concertOf(store, r.concert);
+	if (json) {
+		const listed = requests.map((r) => ({
+			...r,
+			instance: indexGraph(rowOf(r).ir).instanceName(r),
+			inputs: inputsOf(rowOf(r), r),
+		}));
+		deps.stdout(jsonOf(listed, deps));
+		return EXIT.ok;
+	}
+	if (requests.length === 0) {
+		deps.stderr("no open approvals");
+		return EXIT.ok;
+	}
+	const color = colorOf(deps, values).out;
+	const drawing: Drawing = {
+		short: shortIds(store.ids()),
+		color,
+		columns: columnsOf(deps),
+		now: Date.now(),
+		pathOf: (concert) => (ref) => {
+			const path = join(artifactsOf(session, concert), ref.path);
+			return deps.terminal ? tildeOf(path, deps.env.HOME) : path;
+		},
+	};
+	const blocks = requests.map((r) => requestBlock(rowOf(r), r, drawing));
+	const hint = blocks.some((b) => b.cut)
+		? [hintLine(`Full values: ${jsonAgain("approval", [])}`, color)]
+		: [];
+	deps.stdout([blocks.map((b) => b.text).join("\n\n"), ...hint].join("\n"));
+	return EXIT.ok;
+}
+
+/**
+ * The open approval request of concert `row` to rule on, with its instance's name: the one at `instance` when named,
+ * else its only one.
+ * @throws CliError: a usage error for an `instance` the concert has no instance of, or for several requests and none
+ * named, and a failure for none.
+ */
+function heldAt(store: Records, row: ConcertRecord, instance?: string) {
+	const short = shortIds(store.ids()).label(row.id, false);
+	const graph = indexGraph(row.ir);
+	const named =
+		instance === undefined
+			? undefined
+			: resolveInstanceName(
+					instance,
+					instancesInOrder(store, row).map((i) => i.name),
+					short,
+				);
+	const held = store
+		.openApprovals(row.id)
+		.map((r) => ({ ...r, name: graph.instanceName(r) }))
+		.filter((r) => named === undefined || r.name === named);
+	const [request, ...more] = held;
+	if (request === undefined)
+		throw failure(
+			`concert ${short} holds at no open approval${named === undefined ? "" : ` '${named}'`}`,
+			"It may be ruled already. List the open approvals with 'maestro approval'",
+		);
+	if (more.length > 0)
+		throw usageError(
+			`concert ${short} holds at ${held.length} approvals: ${listedOf(held.map((r) => r.name))}`,
+			"Name one with --instance",
+		);
+	return { request, short };
+}
+
+/**
+ * Gives `ruling` on the open request of concert `prefix` (ADR 0021). A settled concert, or a request core refuses, is
+ * refused in core's words; a concert that holds at no open request, in this command's.
+ */
+async function ruled(
+	{ session: { deps }, store, values, json }: Stored,
+	{ prefix, ruling, instance }: Ruled,
+) {
+	const row = concertOf(store, prefix);
+	const settled = unrulable(row);
+	if (settled) throw new CliError(settled.message);
+	const { request, short } = heldAt(store, row, instance);
+	try {
+		store.rule(request, ruling);
+	} catch (error) {
+		// A kill, or another operator's ruling, can land between the read and this ruling.
+		if (error instanceof Unrulable) throw new CliError(error.message);
+		throw error;
+	}
+	const { concert, node, expansion, key, name } = request;
+	if (json)
+		deps.stdout(
+			jsonOf(
+				{ concert, node, expansion, instance: name, key, ...ruling },
+				deps,
+			),
+		);
+	else
+		deps.stderr(
+			`ruled ${stateWord(ruling.outcome, colorOf(deps, values).err)}: approval '${name}' of concert ${short}`,
+		);
+	return EXIT.ok;
+}
+
+export const approval: Command = {
+	pages: (args) => splitFirst(APPROVAL_OPTIONS, args).first === undefined,
+	usage:
+		"approval [flags]  (alias: ap)\n       maestro approval <concert> ok [--instance <id>]\n       maestro approval <concert> reject <reason> [--instance <id>]",
+	arguments: [
+		[
+			"<concert>",
+			"A concert that holds at an approval, as 'maestro ls' lists it",
+		],
+		["ok", "Rule ok: the approval settles ok"],
+		[
+			"reject <reason>",
+			"Rule rejected, saying why: the approval settles rejected with that reason",
+		],
+	],
+	options: APPROVAL_OPTIONS,
+	examples: [
+		["Which approvals wait for a ruling?", "maestro approval"],
+		["Let a held concert go on", "maestro approval 7f3c2a ok"],
+		[
+			"Reject one of two held approvals",
+			'maestro approval 7f3c2a reject "notes miss #812" --instance go-eu',
+		],
+	],
+	execute: (args, deps) =>
+		withStore(
+			{
+				options: APPROVAL_OPTIONS,
+				fix: "Flags are listed in 'maestro approval --help'",
+				check: approvalChecked,
+			},
+			args,
+			deps,
+			async (stored, ask) =>
+				ask === undefined ? openListed(stored) : ruled(stored, ask),
 		),
 };
