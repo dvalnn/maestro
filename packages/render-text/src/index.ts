@@ -121,6 +121,7 @@ const worked = (kind: string, name: string, exported: string) =>
 /** The shape of a body or top-level node `n`, labelled `name`. */
 function shape(n: Exclude<IrNode, GroupNode>, name: string): string {
 	if (n.kind === "assert") return `{${label(name, "assert")}}`;
+	if (n.kind === "approval") return `{{${label(name, "approval")}}}`;
 	if (n.kind !== "code") return `([${label(name, n.kind)}])`;
 	if (n.fanin)
 		return `[/${label(name, worked("fan-in", name, n.worker.export))}/]`;

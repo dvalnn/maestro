@@ -13,6 +13,7 @@ import {
 } from "./fixtures/workers";
 import { hostNode } from "./host";
 import {
+	approval,
 	assert,
 	Bool,
 	code,
@@ -322,6 +323,25 @@ describe("assert", () => {
 			from: { node: "task", port: "done" },
 			to: { node: "assert", port: "cond" },
 		});
+	});
+});
+
+test("an approval emits its prompt and input edges, no outputs, and returns its result", () => {
+	const ir = buildOf(() => {
+		const t = task();
+		return approval("Publish this draft?", { in: { draft: t.out.text } });
+	});
+	expect(ir.result).toEqual({ node: "approval" });
+	expect(nodeOf(ir, "approval")).toEqual({
+		id: "approval",
+		kind: "approval",
+		prompt: "Publish this draft?",
+		in: { draft: { type: "string" } },
+	});
+	expect(ir.edges).toContainEqual({
+		kind: "data",
+		from: { node: "task", port: "text" },
+		to: { node: "approval", port: "draft" },
 	});
 });
 

@@ -29,7 +29,7 @@ export type ComposeInput = {
 	packs: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
 	hosts: readonly Host[];
 	loadCode: LoadCode;
-	/** Caps by name: `instances` caps the node-instance total, any other name the total of a host's count (D-23). */
+	/** Caps by name: `instances` caps the node-instance total, any other name the total of a named count (D-23). */
 	caps: Bounds;
 };
 

@@ -1,0 +1,209 @@
+{
+	"ir": {
+		"irVersion": "1.4",
+		"composition": {
+			"id": "approval",
+			"version": "0.1.0",
+			"pack": "fixtures",
+			"doc": "Greet each planned part, and hold for an operator's ruling on each greeting."
+		},
+		"emitter": {
+			"name": "hand",
+			"version": "1"
+		},
+		"scopes": [],
+		"nodes": [
+			{
+				"id": "plan",
+				"kind": "code",
+				"out": {
+					"parts": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					}
+				},
+				"worker": {
+					"runtime": "ts",
+					"module": "guards.ts",
+					"export": "plan",
+					"codeHash": "sha256:50c022de954262e176f3c597f70204e1f960e42c633f5fc8c3fa7e455b64db9b"
+				}
+			},
+			{
+				"id": "each",
+				"kind": "parMap",
+				"cardinality": {
+					"upTo": 3
+				},
+				"onError": "stop",
+				"in": {
+					"items": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					}
+				},
+				"inner": {
+					"item": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"results": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"required": ["outcome"],
+							"additionalProperties": false,
+							"properties": {
+								"outcome": {
+									"enum": ["ok", "skipped", "rejected", "failed"]
+								},
+								"value": {
+									"type": "object"
+								},
+								"reason": {
+									"type": "string"
+								}
+							},
+							"oneOf": [
+								{
+									"required": ["value"],
+									"properties": {
+										"outcome": {
+											"const": "ok"
+										},
+										"value": true,
+										"reason": false
+									}
+								},
+								{
+									"required": ["reason"],
+									"properties": {
+										"outcome": {
+											"enum": ["rejected", "failed"]
+										},
+										"reason": true
+									}
+								},
+								{
+									"properties": {
+										"outcome": {
+											"const": "skipped"
+										}
+									}
+								}
+							]
+						}
+					}
+				},
+				"members": {
+					"result": "each/greet"
+				}
+			},
+			{
+				"id": "each/greet",
+				"kind": "code",
+				"in": {
+					"name": {
+						"type": "string"
+					}
+				},
+				"out": {
+					"text": {
+						"type": "string"
+					}
+				},
+				"worker": {
+					"runtime": "ts",
+					"module": "greet.ts",
+					"export": "greet",
+					"codeHash": "sha256:54d884a1032f6ad058f0b9b458ac56c55c09323ce7f78113db111c26fcdfc351"
+				}
+			},
+			{
+				"id": "each/approve",
+				"kind": "approval",
+				"in": {
+					"text": {
+						"type": "string"
+					}
+				},
+				"prompt": "Publish this greeting?"
+			}
+		],
+		"edges": [
+			{
+				"kind": "data",
+				"from": {
+					"node": "plan",
+					"port": "parts"
+				},
+				"to": {
+					"node": "each",
+					"port": "items"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "each",
+					"port": "item"
+				},
+				"to": {
+					"node": "each/greet",
+					"port": "name"
+				}
+			},
+			{
+				"kind": "data",
+				"from": {
+					"node": "each/greet",
+					"port": "text"
+				},
+				"to": {
+					"node": "each/approve",
+					"port": "text"
+				}
+			}
+		],
+		"result": {
+			"node": "each"
+		}
+	},
+	"expansion": {
+		"each": {
+			"": {
+				"upTo": 3
+			}
+		}
+	},
+	"bounds": {
+		"instances": {
+			"upTo": 8
+		},
+		"nodes": {
+			"plan": {
+				"exact": 1
+			},
+			"each": {
+				"exact": 1
+			},
+			"each/greet": {
+				"upTo": 3
+			},
+			"each/approve": {
+				"upTo": 3
+			}
+		},
+		"counts": {
+			"approvals": {
+				"upTo": 3
+			}
+		}
+	},
+	"diagnostics": []
+}

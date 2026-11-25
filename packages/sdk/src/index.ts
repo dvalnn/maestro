@@ -23,6 +23,7 @@ export type {
 	Result,
 } from "./graph";
 export {
+	approval,
 	assert,
 	type CodeFunction,
 	type CodeInputs,

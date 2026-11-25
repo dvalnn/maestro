@@ -207,7 +207,8 @@ const kindTag = (n: IrNode) => n.kind.slice(n.kind.lastIndexOf(".") + 1);
 
 function nodeLine(id: string, n: IrNode, name: string): string {
 	const text = `"${escaped(name)}<br/><small>${escaped(kindTag(n))}</small>"`;
-	return n.kind === "assert" ? `${id}{${text}}` : `${id}[${text}]`;
+	if (n.kind === "assert") return `${id}{${text}}`;
+	return n.kind === "approval" ? `${id}{{${text}}}` : `${id}[${text}]`;
 }
 
 /** The lines of `level` at `depth`: nodes and subgraphs, each followed by its bars. */

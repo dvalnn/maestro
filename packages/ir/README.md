@@ -60,16 +60,17 @@ Refs: CORE-17.
 
 ## Versioning
 
-`irVersion` is `"<major>.<minor>"`. This package reads `1.0` to `1.3`, and emits `1.3`.
+`irVersion` is `"<major>.<minor>"`. This package reads `1.0` to `1.4`, and emits `1.4`.
 
 - **Minor** changes are additive and optional: a new optional field, or a new value where readers already reject the
-  unknown. IR written for `1.n` keeps its meaning under every later `1.m`. A breaking change to the node config of a
-  host that ships with maestro also bumps the minor, and that host refuses a node of the older shape by name.
-- A minor that adds a field also gates that field on the version. The schema refuses the field under an older
-  `irVersion` with an `IR.schema` diagnostic at the field. So a writer that stamps an old version on a new shape fails
-  its own round-trip.
-- **Major** changes are anything else: a removed or renamed field, a new required field, a changed meaning, a new node
-  or edge kind.
+  unknown. A new engine node kind is such a value. IR written for `1.n` keeps its meaning under every later `1.m`. A
+  breaking change to the node config of a host that ships with maestro also bumps the minor, and that host refuses a
+  node of the older shape by name.
+- A minor that adds a field or a node kind also gates it on the version. The schema refuses it under an older
+  `irVersion` with an `IR.schema` diagnostic at the field or the node. So a writer that stamps an old version on a new
+  shape fails its own round-trip.
+- **Major** changes are anything else: a removed or renamed field, a new required field, a changed meaning, a new edge
+  kind.
 - A reader that supports `M.n` accepts `M.0` to `M.n`, and nothing else. It rejects another major, and a newer minor,
   with an `IR.version` diagnostic and a hint. Both checks come before the schema check, so IR of another major gets one
   clear error.
@@ -137,6 +138,7 @@ Common fields: `id`, `kind`, `source` (`file`, `line`, `column`), `in` and `out`
 | --------------- | --------------------------------------------------------------------------------------------- |
 | `code`          | `worker` `{runtime, module, export, codeHash}`, optional `fanin`[^fanin], `timeout`[^timeout] |
 | `assert`        | `message`, `onFail` (`rejected` or `failed`). The condition is an input port.                 |
+| `approval`      | `prompt`, a non-empty string[^approval]. Its inputs are what the operator rules on.           |
 | a group kind    | See [Groups](#groups).                                                                        |
 | `<host>.<kind>` | Any kind with a dot is a host kind, with an optional opaque `config` object.                  |
 
@@ -152,7 +154,7 @@ Every node also has two implicit outputs, its status ports `ok` and `reason`, wh
 and `outcome`, may not be declared in `out`. `outputValue(settled, outputs, port)` reads any port of a settled node,
 implicit or declared.
 
-Refs: D-16, D-08, ADR 0008.
+Refs: D-16, D-08, ADR 0008, ADR 0021.
 
 ### Groups
 
@@ -348,11 +350,11 @@ An `Expansion` is either:
 
 `PlanBounds`:
 
-| Field       | Holds                                                                                     |
-| ----------- | ----------------------------------------------------------------------------------------- |
-| `instances` | The node-instance total, groups included, as a `Cardinality`: `{ exact }` or `{ upTo }`.  |
-| `nodes`     | Instances per node id.                                                                    |
-| `counts`    | Each name a host's `bounds(node)` reports, times the node's instances, summed over nodes. |
+| Field       | Holds                                                                                                                  |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `instances` | The node-instance total, groups included, as a `Cardinality`: `{ exact }` or `{ upTo }`.                               |
+| `nodes`     | Instances per node id.                                                                                                 |
+| `counts`    | Each name a host's `bounds(node)` reports, times the node's instances, summed over nodes, and `approvals`.[^approvals] |
 
 A count is exact only when every group above it is a `parMap` whose items compose knows.
 
@@ -360,7 +362,7 @@ A plan for a `parMap` over two topics, then a loop, with a host that counts one 
 
 ```json
 {
-  "ir": { "irVersion": "1.3", "nodes": [], "edges": [], "schemas": {} },
+  "ir": { "irVersion": "1.4", "nodes": [], "edges": [], "schemas": {} },
   "expansion": {
     "topics": { "": { "keys": ["alpha", "beta"] } },
     "loop": { "": { "upTo": 2 } }
@@ -461,8 +463,15 @@ Refs: ADR 0007, ADR 0008, CORE-14.
 
 [^scope-pack]: The pack that declares the scope's composition. Absent, any pack's.
 
+[^approvals]: The approval-node instances, present only when the IR holds an approval (ADR 0021).
+
+[^approval]: It declares no outputs, so a dependent reads its status ports. It holds until an operator rules (ADR 0021).
+
 ## Changelog
 
+- **1.4**: the IR gained the engine node kind `approval`, with a `prompt` and no outputs (ADR 0021). IR that declares
+  1.0 to 1.3 and holds an approval fails with an `IR.schema` diagnostic at the node. Compose counts its instances as
+  `approvals`.
 - **1.3, unchanged**: a field that a minor added is refused under an older `irVersion`. IR that declares 1.0 to 1.2 and
   holds a `schemas` table, or 1.0 to 1.1 and holds a scope's `pack`, now fails. The failure is an `IR.schema` diagnostic
   at the field. Before, it loaded.

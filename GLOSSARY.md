@@ -144,7 +144,7 @@ config (for a composition's own tunables)
 **IR**: The language-neutral, versioned JSON form of a graph and its metadata, the contract between authors and the
 engine. [Home](packages/ir/README.md)
 
-**Node**: A unit of the graph with a stable id and typed ports: code, group, assert or a host kind.
+**Node**: A unit of the graph with a stable id and typed ports: code, group, assert, approval or a host kind.
 
 **Group node**: A node whose body is instantiated several times: `parMap`, `map`, `find`, `parFind`, `fold` or `loop`.
 [Home](docs/architecture.md#groups)
@@ -220,8 +220,8 @@ data root.
 **Approval node**: A node that holds its concert until an operator rules on it.
 [Home](docs/adr/0021-a-concert-holds-at-an-approval-node.md)
 
-**Ruling**: An operator's answer to an approval node: `ok`, or `rejected` with a reason. _Avoid_: for an owner's
-decision in `docs/rulings.md`, say decision.
+**Ruling**: An operator's answer to an approval node: `ok`, or `rejected` with a reason. Not an R-nn entry in
+`docs/rulings.md`, which is an owner's ruling on the design.
 
 ### Agents
 

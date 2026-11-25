@@ -243,7 +243,7 @@ test("compose names every node, inner and scope port schema once, merging equal 
 	const shown = await w.call(["compose", file, "--json"]);
 	expect(shown.code).toBe(0);
 	const { ir } = json(shown).plan;
-	expect(ir.irVersion).toBe("1.3");
+	expect(ir.irVersion).toBe("1.4");
 	expect(ir.schemas).toBeObject();
 	const maps: Record<string, unknown>[] = [
 		...ir.nodes.flatMap((n: { in?: object; out?: object; inner?: object }) => [

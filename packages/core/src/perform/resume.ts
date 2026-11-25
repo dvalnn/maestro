@@ -1,10 +1,9 @@
 import {
 	ARTIFACT_TYPES,
-	type AssertNode,
-	type CodeNode,
 	canonicalJson,
 	findMarked,
-	type HostNode,
+	type GroupNode,
+	type IrNode,
 } from "@maestro/ir";
 import type { Inputs, Outputs } from "../node";
 import { instanceKey, isRecord, sha256Hex } from "../shared";
@@ -24,14 +23,14 @@ export function keptOf(
 	return kept;
 }
 
+/** A node that is not a group: it executes, or settles, as one instance. */
+export type Leaf = Exclude<IrNode, GroupNode>;
+
 /**
  * The resume key of a leaf instance (architecture 7): a SHA-256 over its node as the IR holds it and its input
  * values, with each input artifact standing for its content hash and object keys in order.
  */
-export function resumeKey(
-	node: CodeNode | HostNode | AssertNode,
-	inputs: Inputs,
-): string {
+export function resumeKey(node: Leaf, inputs: Inputs): string {
 	const hashes = new Map<unknown, unknown>();
 	for (const [port, schema] of Object.entries(node.in ?? {}))
 		for (const { type, value } of findMarked(schema, inputs[port]))

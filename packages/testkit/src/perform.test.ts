@@ -2002,6 +2002,30 @@ test.each([
 	expect(performed.filter((k) => k.includes("check"))).toEqual(checks);
 });
 
+test("an approval settles failed and names itself, as nothing holds at one", async () => {
+	const ir = graph(
+		[
+			code("draft", "draft", { out: { text: STRING } }),
+			{
+				id: "hold",
+				kind: "approval",
+				prompt: "Publish?",
+				in: { text: STRING },
+			},
+		],
+		[data("draft.text", "hold.text")],
+		"hold",
+	);
+	const { result } = await play(ir, {
+		code: { draft: () => ({ text: "x" }) },
+	});
+	expect(result).toMatchObject({
+		node: "hold",
+		outcome: "failed",
+		reason: expect.stringContaining("approval 'hold'"),
+	});
+});
+
 test("SDK-emitted IR and the SDK's stdlib settle through compose and perform", async () => {
 	const modules: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
 		"maestro:stdlib": stdlib,

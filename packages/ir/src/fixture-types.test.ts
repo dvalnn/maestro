@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import approval from "../fixtures/approval.json";
 import fanoutFaninLoop from "../fixtures/fanout-fanin-loop.json";
 import guardsAndEscalation from "../fixtures/guards-and-escalation.json";
 import minimal from "../fixtures/minimal.json";
@@ -28,6 +29,7 @@ test("golden fixtures type-check against types.ts", () => {
 		fanoutFaninLoop,
 		guardsAndEscalation,
 		nestedGroups,
+		approval,
 	] satisfies FixtureIr[];
-	expect(fixtures).toHaveLength(4);
+	expect(fixtures).toHaveLength(5);
 });

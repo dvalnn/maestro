@@ -1,7 +1,6 @@
 import { rm, rmdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
-	type AssertNode,
 	boundOf,
 	type CodeNode,
 	canonicalJson,
@@ -74,7 +73,7 @@ import {
 	type RecordWriter,
 	type Settling,
 } from "./record";
-import { type Kept, keptOf, resumeKey } from "./resume";
+import { type Kept, keptOf, type Leaf, resumeKey } from "./resume";
 import { tsWorker } from "./ts-worker";
 
 type PerformBase = {
@@ -787,7 +786,7 @@ function notOk(state: {
 
 async function leaf(
 	c: Live,
-	node: CodeNode | HostNode | AssertNode,
+	node: Leaf,
 	frame: Frame,
 	instance: NodeInstance,
 	inputs: Inputs,
@@ -810,11 +809,17 @@ async function leaf(
 
 async function settleLeaf(
 	c: Live,
-	node: CodeNode | HostNode | AssertNode,
+	node: Leaf,
 	frame: Frame,
 	instance: NodeInstance,
 	inputs: Inputs,
 ): Promise<Settling> {
+	// No executor holds at an approval, so it fails rather than pass unruled (ADR 0021).
+	if (node.kind === "approval")
+		return {
+			outcome: "failed",
+			reason: `this maestro cannot hold at approval '${node.id}' for a ruling; remove the approval to perform`,
+		};
 	if (node.kind !== "assert") return execute(c, node, frame, instance, inputs);
 	const late = haltOf(frame);
 	if (late) return late;

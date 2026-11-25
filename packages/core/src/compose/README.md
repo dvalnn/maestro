@@ -13,16 +13,16 @@ with the `plan` as far as it got, so a caller can show a composition's gaps besi
 
 ## Input
 
-| Field      | Holds                                                                                             |
-| ---------- | ------------------------------------------------------------------------------------------------- |
-| `ir`       | IR that `parseIr` accepted.                                                                       |
-| `config`   | The layered config: its values, and each value's source (`../config`).                            |
-| `roots`    | The directories each host's setup names.                                                          |
-| `core`     | The config schemas the engine owns, by top-level key.                                             |
-| `packs`    | Each installed pack's claims: its id, then its compositions' ids, then each one's param names.    |
-| `hosts`    | The installed hosts.                                                                              |
-| `loadCode` | Resolves a worker reference to its function (ADR 0008), once per reference per compose.           |
-| `caps`     | Caps by name: `instances` caps the node-instance total, any other name the total of a host count. |
+| Field      | Holds                                                                                              |
+| ---------- | -------------------------------------------------------------------------------------------------- |
+| `ir`       | IR that `parseIr` accepted.                                                                        |
+| `config`   | The layered config: its values, and each value's source (`../config`).                             |
+| `roots`    | The directories each host's setup names.                                                           |
+| `core`     | The config schemas the engine owns, by top-level key.                                              |
+| `packs`    | Each installed pack's claims: its id, then its compositions' ids, then each one's param names.     |
+| `hosts`    | The installed hosts.                                                                               |
+| `loadCode` | Resolves a worker reference to its function (ADR 0008), once per reference per compose.            |
+| `caps`     | Caps by name: `instances` caps the node-instance total, any other name the total of a named count. |
 
 No value gets its schema defaults. `format` is an annotation only: neither compose nor perform validates it.
 
@@ -42,7 +42,8 @@ error came before.
 3. [Expansion](#expansion).
 4. Each host's `validate(graph, setup)`. Its codes get the `HOST.` prefix. One that throws or rejects gives a
    `HOST.validate` error naming the host.
-5. The plan's bounds, from the expansion, against `caps`.
+5. The plan's bounds, from the expansion, against `caps`. Beside each host's counts, `approvals` counts the instances of
+   approval nodes, so the plan says how often the concert may hold (ADR 0021).
 
 ### Expansion
 

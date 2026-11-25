@@ -58,6 +58,12 @@ describe("text forms", () => {
 		);
 	});
 
+	test("summary: reports how often a concert may hold at an approval", async () => {
+		expect(summary(await plan("approval"))).toBe(
+			"approval: up to 8 node instances, up to 3 approvals",
+		);
+	});
+
 	test("listing: leaves diagnostics to the summary count", async () => {
 		const warned = await plan("minimal");
 		warned.diagnostics = [
@@ -205,6 +211,12 @@ describe("render", () => {
 		expect(chart).toContain('  n6{"gate<br/>assert"}');
 		expect(chart).toContain('  n7["summary<br/>code summarize"]');
 		expect(chart).toContain('  n0["plan<br/>code"]');
+	});
+
+	test("draws an approval as a hexagon", async () => {
+		expect(await lines("approval")).toContain(
+			'    n3{{"approve<br/>approval"}}',
+		);
 	});
 
 	test("declares a bar inside its node's group and leaves a group's reads of its own body unbarred", async () => {

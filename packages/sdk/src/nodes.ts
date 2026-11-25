@@ -162,6 +162,26 @@ export function assert(
 	);
 }
 
+/**
+ * An approval node: the concert holds until an operator rules `ok` or `rejected` on `prompt` and the `in` values
+ * (ADR 0021). It has no outputs, so a dependent reads its status ports or waits on it.
+ */
+export function approval(
+	prompt: string,
+	opts: Common & { in?: Record<string, unknown> } = {},
+): Result {
+	return addNode(
+		{
+			kind: "approval",
+			label: "approval",
+			inputs: opts.in ?? {},
+			out: {},
+			fields: { prompt },
+		},
+		opts,
+	);
+}
+
 type Items<T> = readonly T[] | Ref<T[]>;
 
 type ItemOf<I> = I extends readonly (infer T)[]

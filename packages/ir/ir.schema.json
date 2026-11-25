@@ -54,12 +54,33 @@
 					}
 				}
 			}
+		},
+		{
+			"description": "The approval kind came in 1.4.",
+			"if": {
+				"properties": {
+					"irVersion": { "enum": ["1.0", "1.1", "1.2", "1.3"] }
+				}
+			},
+			"then": {
+				"properties": {
+					"nodes": {
+						"items": {
+							"if": {
+								"required": ["kind"],
+								"properties": { "kind": { "const": "approval" } }
+							},
+							"then": false
+						}
+					}
+				}
+			}
 		}
 	],
 	"properties": {
 		"irVersion": {
 			"description": "The IR versions this schema accepts. Bumped together with IR_VERSION.",
-			"enum": ["1.0", "1.1", "1.2", "1.3"]
+			"enum": ["1.0", "1.1", "1.2", "1.3", "1.4"]
 		},
 		"composition": {
 			"type": "object",
@@ -212,6 +233,7 @@
 							"enum": [
 								"code",
 								"assert",
+								"approval",
 								"parMap",
 								"map",
 								"find",
@@ -257,6 +279,10 @@
 				{
 					"if": { "properties": { "kind": { "const": "assert" } } },
 					"then": { "$ref": "#/$defs/assertNode" }
+				},
+				{
+					"if": { "properties": { "kind": { "const": "approval" } } },
+					"then": { "$ref": "#/$defs/approvalNode" }
 				},
 				{
 					"if": { "properties": { "kind": { "const": "parMap" } } },
@@ -307,6 +333,14 @@
 			"properties": {
 				"message": { "type": "string", "minLength": 1 },
 				"onFail": { "enum": ["rejected", "failed"] }
+			}
+		},
+		"approvalNode": {
+			"description": "Holds until an operator rules on its prompt and inputs (ADR 0021). Its only outputs are the status ports.",
+			"required": ["prompt"],
+			"properties": {
+				"prompt": { "type": "string", "minLength": 1 },
+				"out": { "maxProperties": 0 }
 			}
 		},
 		"group": {

@@ -28,6 +28,8 @@ type Tally = { n: number; exact: boolean };
 
 /** The name of the cap on the node-instance total. */
 const INSTANCES = "instances";
+/** The name of the count of approval instances. */
+const APPROVALS = "approvals";
 
 const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
 const product = (xs: readonly number[]) => xs.reduce((a, b) => a * b, 1);
@@ -66,16 +68,24 @@ function countFrom(
 	};
 }
 
-function hostCounts(
+/** The named counts of one instance of `node`: one `approvals` for an approval (ADR 0021), else its host's bounds. */
+function countsOf(
+	node: IrNode,
+	lookup: (kind: string) => HostKind | undefined,
+): Bounds {
+	if (node.kind === "approval") return { [APPROVALS]: 1 };
+	return isHostNode(node) ? (lookup(node.kind)?.host.bounds(node) ?? {}) : {};
+}
+
+function namedCounts(
 	ir: Ir,
 	nodes: Readonly<Record<string, Cardinality>>,
 	lookup: (kind: string) => HostKind | undefined,
 ): Record<string, Cardinality> {
 	const counts = new Map<string, Tally>();
-	for (const node of ir.nodes.filter(isHostNode)) {
-		const host = lookup(node.kind)?.host;
+	for (const node of ir.nodes) {
 		const instances = tally(nodes[node.id] ?? { exact: 0 });
-		for (const [name, n] of Object.entries(host?.bounds(node) ?? {})) {
+		for (const [name, n] of Object.entries(countsOf(node, lookup))) {
 			const sofar = counts.get(name) ?? { n: 0, exact: true };
 			counts.set(name, {
 				n: sofar.n + n * instances.n,
@@ -89,7 +99,8 @@ function hostCounts(
 }
 
 /**
- * The plan's bounds (D-23): node instances per node and in total, and each host's named counts summed over instances.
+ * The plan's bounds (D-23): node instances per node and in total, and the named counts, approvals and each host's,
+ * summed over instances.
  */
 export function boundsOf(
 	ir: Ir,
@@ -115,7 +126,7 @@ export function boundsOf(
 			exact: tallies.every((x) => x.exact),
 		}),
 		nodes,
-		counts: hostCounts(ir, nodes, lookup),
+		counts: namedCounts(ir, nodes, lookup),
 	};
 }
 

@@ -30,6 +30,7 @@ describe("compose", () => {
 		"nested-groups",
 		"guards-and-escalation",
 		"ship",
+		"approval",
 	])("composes the %s golden IR into its plan golden", async (name) => {
 		const expected = (await import(`@maestro/ir/plans/${name}`)).default;
 		expect(await planOf(await golden(`${name}.json`))).toEqual(expected);
@@ -241,6 +242,11 @@ describe("bounds (D-23)", () => {
 			"fanout-fanin-loop.json",
 			{ calls: 5 },
 			["'calls' may reach at least 6, over its cap of 5"],
+		],
+		[
+			"approval.json",
+			{ approvals: 2 },
+			["'approvals' may reach at least 3, over its cap of 2"],
 		],
 		[
 			"minimal.json",

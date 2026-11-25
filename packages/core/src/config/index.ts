@@ -758,7 +758,7 @@ export const CORE_CONFIG: Readonly<Record<string, JsonSchema>> = {
 export type CoreConfig = {
 	/** The most node instances in flight at once in one concert. Defaults to the CPU count. */
 	concurrency: number;
-	/** Caps by name, as compose takes them (D-23): `instances` caps a concert's node instances, any other name the total of a host count. */
+	/** Caps by name, as compose takes them (D-23): `instances` caps a concert's node instances, any other name the total of a named count. */
 	caps: Bounds;
 	/** The directory holding the record store, concert areas and node scratch. Defaults to `$XDG_DATA_HOME/maestro`. */
 	dataRoot: string;

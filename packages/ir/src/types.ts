@@ -90,6 +90,13 @@ export type AssertNode = NodeBase & {
 	onFail: Extract<Outcome, "rejected" | "failed">;
 };
 
+/** Holds until an operator rules on `prompt` and its inputs (ADR 0021). It has no outputs but its status ports. */
+export type ApprovalNode = NodeBase & {
+	kind: "approval";
+	prompt: string;
+	out?: Record<string, never>;
+};
+
 type GroupBase = NodeBase & {
 	inner: Ports;
 	/**
@@ -154,7 +161,12 @@ export type HostNode = NodeBase & {
 	config?: Record<string, unknown>;
 };
 
-export type IrNode = CodeNode | AssertNode | GroupNode | HostNode;
+export type IrNode =
+	| CodeNode
+	| AssertNode
+	| ApprovalNode
+	| GroupNode
+	| HostNode;
 
 export type DataEdge = { kind: "data"; from: PortRef; to: PortRef };
 

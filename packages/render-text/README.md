@@ -32,6 +32,7 @@ summarises both forms.
 | Code node                    | `[ ]`, its worker export shown only when it differs from the node's name |
 | Fan-in code node             | `[/ /]`, the reducer behind a `collect`                                  |
 | Assert                       | `{ }`                                                                    |
+| Approval                     | `{{ }}`                                                                  |
 | Host node                    | `([ ])`                                                                  |
 | Group header                 | `[[ ]]` inside the subgraph that names its id[^header]                   |
 | Loop region                  | Its steps, `0 to N` or `1 to N`[^loop]                                   |
@@ -96,6 +97,7 @@ flowchart TD
 | Loop or fold               | One dashed back edge from its body's last sink to its first root[^back]     |
 | Node                       | Its name over the last segment of its kind                                  |
 | Assert                     | A decision, `{ }`                                                           |
+| Approval                   | A hexagon, `{{ }}`                                                          |
 
 [^contract]:
     Each `maestro:stdlib` node's in-edges are joined to its out-edges, each joined edge drawn as its out-edge is.

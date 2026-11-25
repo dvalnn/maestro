@@ -80,6 +80,26 @@ test.each(readdirSync(fixturesDir).filter((f) => f.endsWith(".json")))(
 	},
 );
 
+test("an approval that declares an output is refused at its out", async () => {
+	const ir = await Bun.file(`${fixturesDir}/approval.json`).json();
+	const diagnostics = rejects(ir, (ir) => {
+		ir.nodes[3].out = { go: { type: "boolean" } };
+	});
+	expect(diagnostics).toMatchObject([
+		{ code: "IR.schema", path: "/nodes/3/out", node: "each/approve" },
+	]);
+});
+
+test.each<[string, Mutation, string]>([
+	["no prompt", (ir) => delete ir.nodes[3].prompt, "/nodes/3"],
+	["an empty prompt", (ir) => (ir.nodes[3].prompt = ""), "/nodes/3/prompt"],
+])("an approval with %s is refused", async (_, mutate, path) => {
+	const ir = await Bun.file(`${fixturesDir}/approval.json`).json();
+	expect(rejects(ir, mutate)).toMatchObject([
+		{ code: "IR.schema", path, node: "each/approve" },
+	]);
+});
+
 // biome-ignore lint/suspicious/noExplicitAny: mutations deliberately break the IR's types
 type Mutation = (ir: any) => void;
 
@@ -196,8 +216,8 @@ test.each<[string, Mutation, string, string, string]>([
 		"enum lists the allowed values",
 		(ir) => (ir.nodes[0].kind = "repeat"),
 		"/nodes/0/kind",
-		'must be one of "code", "assert", "parMap", "map", "find", "parFind", "fold", "loop"',
-		'Set /nodes/0/kind to one of "code", "assert", "parMap", "map", "find", "parFind", "fold", "loop"',
+		'must be one of "code", "assert", "approval", "parMap", "map", "find", "parFind", "fold", "loop"',
+		'Set /nodes/0/kind to one of "code", "assert", "approval", "parMap", "map", "find", "parFind", "fold", "loop"',
 	],
 	[
 		"const names the required value",
@@ -698,7 +718,7 @@ test.each<[string, string[], string[], Mutation, object]>([
 	[
 		"/scopes/1/pack",
 		["1.0", "1.1"],
-		["1.2", "1.3"],
+		["1.2", "1.3", "1.4"],
 		(ir) =>
 			ir.scopes.push({
 				id: "extra",
@@ -708,41 +728,54 @@ test.each<[string, string[], string[], Mutation, object]>([
 			}),
 		{},
 	],
-	["/schemas", ["1.0", "1.1", "1.2"], ["1.3"], (ir) => (ir.schemas = {}), {}],
 	[
 		"/schemas",
 		["1.0", "1.1", "1.2"],
-		["1.3"],
+		["1.3", "1.4"],
+		(ir) => (ir.schemas = {}),
+		{},
+	],
+	[
+		"/schemas",
+		["1.0", "1.1", "1.2"],
+		["1.3", "1.4"],
 		(ir) => (ir.schemas = { text: { type: "string" } }),
 		{},
 	],
 	[
 		"/nodes/1/in/prompt",
 		["1.0", "1.1", "1.2"],
-		["1.3"],
+		["1.3", "1.4"],
 		(ir) => (ir.nodes[1].in.prompt = "text"),
 		{ schemas: { text: { type: "string" } } },
 	],
 	[
 		"/nodes/1/out/text",
 		["1.0", "1.1", "1.2"],
-		["1.3"],
+		["1.3", "1.4"],
 		(ir) => (ir.nodes[1].out.text = "text"),
 		{ schemas: { text: { type: "string" } } },
 	],
 	[
 		"/nodes/0/inner/item",
 		["1.0", "1.1", "1.2"],
-		["1.3"],
+		["1.3", "1.4"],
 		(ir) => (ir.nodes[0].inner.item = "text"),
 		{ schemas: { text: { type: "string" } } },
 	],
 	[
 		"/scopes/0/ports/text",
 		["1.0", "1.1", "1.2"],
-		["1.3"],
+		["1.3", "1.4"],
 		(ir) => (ir.scopes[0].ports.text = "text"),
 		{ schemas: { text: { type: "string" } } },
+	],
+	[
+		"/nodes/8",
+		["1.0", "1.1", "1.2", "1.3"],
+		["1.4"],
+		(ir) => ir.nodes.push({ id: "hold", kind: "approval", prompt: "Go?" }),
+		{},
 	],
 ])(
 	"field %s is refused below its minor and accepted from its minor onward",
@@ -768,7 +801,7 @@ test.each<[string, string[], string[], Mutation, object]>([
 );
 
 // Seam: parseIr reports unsupported versions before examining the document's shape.
-test.each(["0.0", "2.0", "1.4"])(
+test.each(["0.0", "2.0", "1.5"])(
 	"unsupported version %s gets IR.version alone even with newer fields and a broken shape",
 	(irVersion) => {
 		const result = parseIr({
@@ -816,10 +849,10 @@ test("a newer minor version than the reader knows is rejected", () => {
 	if (result.ok) throw new Error("expected a refusal");
 	expect(result.diagnostics[0]?.code).toBe("IR.version");
 	expect(result.diagnostics[0]?.message).toBe(
-		"IR version 1.7 is newer than this maestro reads (1.3). It was emitted by a newer SDK, for example one bundled in a pack",
+		"IR version 1.7 is newer than this maestro reads (1.4). It was emitted by a newer SDK, for example one bundled in a pack",
 	);
 	expect(result.diagnostics[0]?.hint).toBe(
-		"Upgrade maestro to a version that reads IR 1.7, or re-emit the IR with an SDK that targets IR 1.3",
+		"Upgrade maestro to a version that reads IR 1.7, or re-emit the IR with an SDK that targets IR 1.4",
 	);
 });
 

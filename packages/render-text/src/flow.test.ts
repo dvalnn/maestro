@@ -247,6 +247,15 @@ describe("flow", () => {
 		expect(drawn).toContain('  n1 -.->|"next while again"| n1');
 	});
 
+	test("draws an approval as a hexagon", () => {
+		const plan = planOf(
+			[code("draft"), { id: "hold", kind: "approval", prompt: "Go?" }],
+			[data("draft", "hold")],
+			"hold",
+		);
+		expect(lines(plan)).toContain('  n1{{"hold<br/><small>approval</small>"}}');
+	});
+
 	test("finds helpers by the stdlib module: another stdlib export is contracted with its label passed through, a pack's `get` stays", () => {
 		const plan = planOf(
 			[

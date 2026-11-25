@@ -57,9 +57,9 @@ A decision sets direction; a ruling settles a question the requirements left ope
   ([CORE-19](requirements.md#core-graph-and-engine-core), [HOST-07](requirements.md#coding-agent-host-host)). v1 reports
   token counts only and has no cost or price table. Bounds: [CORE-05](requirements.md#core-graph-and-engine-core) and
   [HOST-08](requirements.md#coding-agent-host-host) set agent limits and a concert's `limits` on time and tokens, and
-  compose bounds count node instances plus named counts a host reports, such as agent runs, with caps in the
-  [compose README](../packages/core/src/compose/README.md). Why: cost is host policy that v1 does not need, and tokens
-  are enough.
+  compose bounds count node instances plus named counts a host reports, such as agent runs, and approvals, with caps in
+  the [compose README](../packages/core/src/compose/README.md). Why: cost is host policy that v1 does not need, and
+  tokens are enough.
 - **D-24** An unclaimed config key fails compose when no installed registrant claims it, and so does a `-c` key under an
   installed pack's composition the concert does not use; the same key from a file or preset is ignored
   ([CFG-05](requirements.md#configuration-cfg)). Why: typos are caught, and a shared workspace config does not break

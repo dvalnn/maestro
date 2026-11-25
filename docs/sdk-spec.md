@@ -104,6 +104,7 @@ Every node takes the options `label`, `when` and `tolerate`.
 | `loop.while(cond, opts)`                | Tests the state before each step.         | the last state         |
 | `loop.doWhile(cond, opts)`              | Tests each step's result.                 | the last state         |
 | `assert(cond, message, opts?)`          | A policy or an invariant.                 | none, or a handle      |
+| `approval(prompt, opts?)`               | Holds until an operator rules.            | a handle               |
 | `use(sub, ports, opts)`                 | Instantiates a subcomposition.            | its declared outputs   |
 
 What each does when it runs is in [architecture: Execution model](architecture.md#7-execution-model); the fields of a
@@ -134,6 +135,8 @@ group in the IR are in [IR: Groups](../packages/ir/README.md#groups). What an au
 - **`assert`.** A plain condition is checked at build, where a failure is an `ASSERT` error and `onFail` is not taken. A
   `Ref<Bool>` condition makes a node that settles `onFail`, `rejected` or `failed`, when false. It returns its handle,
   so a node can wait on it (`when: holds.ok`) and the result rule finds it as a cause.
+- **`approval`.** `prompt` is a build-time string, and `opts.in` names the values the operator rules on. The handle has
+  no outputs, so a node waits on it (`when: held.ok`). Compose reports the plan's approvals as a bound (ADR 0021).
 - **`use`.** `ports` are Refs or plain values, and `Optional` ports may be left out. `opts.params` sets the
   subcomposition's params for this instance.
 
