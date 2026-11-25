@@ -25,11 +25,13 @@ already set wins over the file:
 
 | Key                      | Does                                                                                                                     |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `MAESTRO_TM_TOKEN`       | The `maestro-tm` account's API token; required, else it exits 1 naming it                                                |
+| `MAESTRO_TM_TOKEN`       | The `maestro-tm` account's API token; required, else it exits 1 naming it[^t]                                            |
 | `MAESTRO_TM_SIGNING_KEY` | Path of an SSH key that signs its commits; unset leaves them unsigned, a missing file exits 1                            |
 | `MAESTRO_TM_MILESTONE`   | The milestone whose issues it triages and builds; required unless `--milestone` is passed, else it exits 1 naming it[^m] |
 
 [^m]: Moving to the next release is editing this value.
+
+[^t]: `.maestro/release.ts` reads the same token, and only to read the release's milestone and its open issues.
 
 The host, owner and repo come from the `origin` remote (ssh or https). The account needs write access to the repo, which
 lets it push branches, open PRs, comment, request reviews, label, file issues and arm auto-merge; give it no admin

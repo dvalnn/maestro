@@ -76,6 +76,25 @@ test("an API call carries the token in its header and reaches the origin's host 
 	});
 });
 
+test("a forge given a checkout reads the origin of that checkout, not this repository's", async () => {
+	const checkout = mkdtempSync(join(tmpdir(), "factory-checkout-"));
+	Bun.spawnSync(["git", "init", "-q", checkout]);
+	Bun.spawnSync([
+		"git",
+		"-C",
+		checkout,
+		"remote",
+		"add",
+		"origin",
+		"https://other.example/them/theirs.git",
+	]);
+	const { calls, send } = recording(() => [200, { id: 5 }]);
+	await forge(signedIn, send, checkout).comment(9, "hi");
+	expect(calls[0]?.url).toBe(
+		"https://other.example/api/v1/repos/them/theirs/issues/9/comments",
+	);
+});
+
 test("the account comes from one GET /user, with a fallback name and email", async () => {
 	const { calls, send } = recording(() => [200, { login: "maestro-tm" }]);
 	const api = forge(signedIn, send);

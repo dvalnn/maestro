@@ -182,17 +182,17 @@ const REMOTE =
 	/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?(?<host>[^:/]+)(?::\d*)?[:/](?<owner>[^/]+)\/(?<repo>[^/]+?)(?:\.git)?\/?$/i;
 
 /**
- * The `origin` forge's host, owner and repo, and the tick's token.
+ * The forge of the `origin` remote of the checkout at `checkout`: its host, owner and repo, and the tick's token.
  * @throws Error naming `MAESTRO_TM_TOKEN` and its file when the token is unset, or the remote when it is unreadable.
  */
-async function credentials(env: NodeJS.ProcessEnv) {
+async function credentials(env: NodeJS.ProcessEnv, checkout: string) {
 	const token = env[TOKEN_KEY];
 	if (!token)
 		throw new Error(
 			`forge: ${TOKEN_KEY} is not set\nSet it in ${dotenvPath(env)}`,
 		);
 	const url = (
-		await run(["git", "remote", "get-url", "origin"], { cwd: REPO })
+		await run(["git", "remote", "get-url", "origin"], { cwd: checkout })
 	).trim();
 	const { host, owner, repo } = REMOTE.exec(url)?.groups ?? {};
 	if (!host || !owner || !repo)
@@ -403,16 +403,17 @@ async function all(
 }
 
 /**
- * The forge of the `origin` remote, called directly with the token `env` holds as `MAESTRO_TM_TOKEN`; `send` is
- * `fetch` unless a test replaces it.
+ * The forge of the `origin` remote of the checkout at `checkout`, this repository unless given, called directly with
+ * the token `env` holds as `MAESTRO_TM_TOKEN`; `send` is `fetch` unless a test replaces it.
  */
 export function forge(
 	env: NodeJS.ProcessEnv = process.env,
 	send: Send = fetch,
+	checkout = REPO,
 ): Forge {
 	let credentialsOnce: Promise<Credentials> | undefined;
 	const creds = () => {
-		credentialsOnce ??= credentials(env);
+		credentialsOnce ??= credentials(env, checkout);
 		return credentialsOnce;
 	};
 	const api: Api = async (method, path, body) =>

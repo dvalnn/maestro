@@ -368,9 +368,10 @@ version left by an earlier concert (D-27, HOST-13). There is no cross-concert ex
 A concert leaves a **changeset** (a patch series) attached to the record only by ending in a changeset node. The
 changeset is a directory: `base`, the target commit the lane chain was cut from (with `since`, the commit of that
 version), then `0001.patch`, `0002.patch` and on, one commit each, subject the lane version that wrote it, and a
-`message` file when made with one. An empty changeset holds `base` alone. A changeset made with `since` has a base that
-exists only in maestro's store. So it serves `apply` and attachments inside a concert, not `cs show` or `cs apply`
-against the target.
+`message` file when made with one. Each patch opens with `git format-patch`'s `From <sha>` line, naming the commit it
+was made from: a target commit for a Commits node's version. An empty changeset holds `base` alone. A changeset made
+with `since` has a base that exists only in maestro's store. So it serves `apply` and attachments inside a concert, not
+`cs show` or `cs apply` against the target.
 
 - `maestro cs` takes the `result` node's changeset, else the last `ok` instance's, or the one a flag picks: another
   instance, or a failed, blocked or cancelled agent's kept work.

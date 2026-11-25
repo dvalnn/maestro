@@ -1,4 +1,5 @@
-import { type Rejection, reject } from "@maestro/sdk";
+import { readFileSync } from "node:fs";
+import { type ArtifactRef, type CodeContext, reject } from "@maestro/sdk";
 
 /** The headings every release's notes carry. */
 const REQUIRED = ["Install or upgrade"];
@@ -44,13 +45,12 @@ function notesProblems(notes: string): string[] {
 	];
 }
 
-/** The code node that passes release `notes` on unchanged when they keep the release structure, else rejects them naming each problem. */
-export function checkNotes({
-	notes,
-}: {
-	notes: string;
-}): { notes: string } | Rejection {
-	const problems = notesProblems(notes);
+/** The code node that passes the release `notes` file on unchanged when it keeps the release structure, else rejects it naming each problem. */
+export function checkNotes(
+	{ notes }: { notes: ArtifactRef },
+	ctx: CodeContext,
+) {
+	const problems = notesProblems(readFileSync(ctx.path(notes), "utf8"));
 	if (problems.length)
 		return reject(
 			`the release notes break their structure:\n- ${problems.join("\n- ")}`,

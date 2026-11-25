@@ -1,6 +1,20 @@
 import { expect, test } from "bun:test";
-import type { Rejection } from "@maestro/sdk";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import type { CodeContext, Rejection } from "@maestro/sdk";
+import { scratch } from "../testing/stub";
 import { checkNotes } from "./notes";
+
+const REF = { path: "notes.md", contentHash: "sha256:0" };
+
+/** What checkNotes makes of `notes`, written to the file its ref names. */
+function checked(notes: string) {
+	const file = join(mkdtempSync(join(scratch, "notes-")), "notes.md");
+	writeFileSync(file, notes);
+	return checkNotes({ notes: REF }, {
+		path: () => file,
+	} as unknown as CodeContext);
+}
 
 const ref = (n: number) =>
 	`[#${n}](https://git.amorimcasa.org/tiago/maestro/issues/${n})`;
@@ -45,13 +59,12 @@ const BARE = "- `ls` reads the compact row of a running concert.";
 
 // Seam: checkNotes passes notes in the release structure on, and rejects the rest naming each problem.
 test("notes with the required heading and a ref on every Added, Changed and Fixed bullet pass unchanged, a wrapped ref too", () => {
-	const notes = notesWith();
-	expect(checkNotes({ notes })).toEqual({ notes });
+	expect(checked(notesWith())).toEqual({ notes: REF });
 });
 
 test("notes missing the Install or upgrade heading are rejected", () => {
 	const notes = notesWith().replace("## Install or upgrade", "## Install");
-	expectRejected(checkNotes({ notes }), "`## Install or upgrade`");
+	expectRejected(checked(notes), "`## Install or upgrade`");
 });
 
 test.each(["Added", "Changed", "Fixed"])(
@@ -61,7 +74,7 @@ test.each(["Added", "Changed", "Fixed"])(
 			`## ${section}\n`,
 			`## ${section}\n\n${BARE}\n`,
 		);
-		expectRejected(checkNotes({ notes }), `## ${section}`, BARE);
+		expectRejected(checked(notes), `## ${section}`, BARE);
 	},
 );
 
@@ -72,15 +85,10 @@ test.each([
 		`${BARE} ([#713](https://github.com/dvalnn/maestro/issues/713))`,
 	],
 ])("%s is not an issue ref", (_, fixed) => {
-	expectRejected(checkNotes({ notes: notesWith(fixed) }), "## Fixed", fixed);
+	expectRejected(checked(notesWith(fixed)), "## Fixed", fixed);
 });
 
 test("notes with two problems report both", () => {
 	const notes = notesWith(BARE).replace("## Install or upgrade", "## Install");
-	expectRejected(
-		checkNotes({ notes }),
-		"`## Install or upgrade`",
-		"## Fixed",
-		BARE,
-	);
+	expectRejected(checked(notes), "`## Install or upgrade`", "## Fixed", BARE);
 });
