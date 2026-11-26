@@ -81,13 +81,14 @@ const REPLY_LEAD =
 const BLOCKED_BAR =
 	"only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.";
 const LISTS = [
+	"- Finish the task before you reply: work you could still do is never a gap.",
 	"- Most reports are the summary alone: give a list only for an item that clears its bar.",
 ];
 
 /** What each field of an agent's report means, as its reply template and `ls --help` word it. */
 export const REPORT_FIELDS = {
 	summary: "what the agent did, in one line",
-	gaps: "something the task asked that was left undone or unverified, which the reader would otherwise assume done",
+	gaps: "something the task asked that you could not finish or verify after trying, which the reader would otherwise assume done",
 	obstacles:
 		"something outside the agent's reach that stopped or slowed it, such as a missing attachment or a tool not on the PATH; not a test that failed or a check that was red",
 	lessons:
@@ -223,6 +224,8 @@ const GIT =
 	"Git reads such as `status`, `diff` and `log` work here, and every git write fails by design. Try a git mutation in a fresh `git init` under `/tmp`. `/tmp` is empty again at the start of each turn: keep nothing there that a later turn needs.";
 const SHELL =
 	"Your shell is bash, already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
+const OWNED =
+	"This is your codebase, and you will work on it again in later tasks. A shortcut taken today is a hurdle in every task after it. Leave the code you touch better than you found it.";
 const CHECKS =
 	"Run the target's checks with `check <name>`, and never write your own. Each prints the tail of its output, then ok, rejected or failed.";
 const VERIFY =
@@ -236,6 +239,7 @@ const workingCopy = (lane: Run["lane"]) =>
 	section("Working copy", [
 		...(lane ? [`${LANE_TEXT[lane]} ${GIT}`] : []),
 		SHELL,
+		...(lane === "write" ? [OWNED] : []),
 	]);
 
 function checks({ checks, lane }: Run) {

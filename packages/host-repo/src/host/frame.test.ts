@@ -1,13 +1,15 @@
 import { expect, test } from "bun:test";
 import { frame, type Run, replyKind, VERDICT } from "./frame";
 
-const LISTED = `    "gaps": ["<something the task asked that was left undone or unverified, which the reader would otherwise assume done>"],
+const LISTED = `    "gaps": ["<something the task asked that you could not finish or verify after trying, which the reader would otherwise assume done>"],
     "obstacles": ["<something outside the agent's reach that stopped or slowed it, such as a missing attachment or a tool not on the PATH; not a test that failed or a check that was red>"],
     "lessons": ["<something that changes what the next agent in this repository should do, which the code and its docs do not already say>"],
     "sightings": [{ "path": "<the file it is in>", "text": "<a defect or smell in the target outside the task's scope that the agent saw and left unfixed; never something the task asked to be fixed>", "cites": "<the rule, doc or behaviour it breaches>" }]`;
 
 const GIT =
 	"Git reads such as `status`, `diff` and `log` work here, and every git write fails by design. Try a git mutation in a fresh `git init` under `/tmp`. `/tmp` is empty again at the start of each turn: keep nothing there that a later turn needs.";
+const OWNED =
+	"This is your codebase, and you will work on it again in later tasks. A shortcut taken today is a hurdle in every task after it. Leave the code you touch better than you found it.";
 const SHELL =
 	"Your shell is bash, already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
 
@@ -28,6 +30,8 @@ test("a write-lane builder's frame states its working copy, checks and reply, in
 Your working copy is the current directory. Leave your changes uncommitted: the run records the working copy as a version when you finish. ${GIT}
 
 ${SHELL}
+
+${OWNED}
 
 ## Checks
 
@@ -63,6 +67,7 @@ ${LISTED}
     "type": "object"
   }
   \`\`\`
+- Finish the task before you reply: work you could still do is never a gap.
 - Most reports are the summary alone: give a list only for an item that clears its bar.
 - Leave out what the run already records: your changes, the checks' results and the files you wrote.
 - Add \`"blocked": "<the cause>"\` only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.`);
@@ -81,6 +86,7 @@ ${LISTED}
 \`\`\`
 
 - \`outcome\`: \`ok\` when the work passes your ruling, \`rejected\` when it does not.
+- Finish the task before you reply: work you could still do is never a gap.
 - Most reports are the summary alone: give a list only for an item that clears its bar.
 - Leave out what the run already records: the checks' results and the files you wrote.
 - Give \`"blocked": "<the cause>"\` in place of \`outcome\` only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.`;

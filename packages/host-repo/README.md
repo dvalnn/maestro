@@ -136,7 +136,8 @@ The staged system-prompt file holds the profile's instructions, when it has any,
 
 [^wc]:
     A write lane is left uncommitted, a read lane is a discarded fork the agent may change freely; git writes fail by
-    design.
+    design. A write lane's agent is told the codebase is its own to keep: no shortcut, and the code it touches left
+    better.
 
 [^frame-checks]: Never the command itself; the agent runs them and writes no new ones (HOST-15).
 
