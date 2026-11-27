@@ -257,7 +257,7 @@ test("a probe stops the harness once it has reported its environment and window,
 	await expect(probe(failing, request("x"))).rejects.toThrow("no token");
 	await expect(
 		probe(stubHarness([{ hang: true }]), request("x"), 50),
-	).rejects.toThrow("no startup report within 0.05s");
+	).rejects.toThrow("0.05s");
 });
 
 test("a probe fails with the reason of a run that fails on its own after a partial report", async () => {

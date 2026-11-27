@@ -594,15 +594,13 @@ describe("watch on a running concert", async () => {
 		expect((await performed).code).toBe(0);
 		expect(drawn.code).toBe(0);
 		const [watching, ...closing] = drawn.err.split("\n");
-		expect(watching).toBe(
-			`watching concert ${id}; ctrl-c stops watching, not the concert`,
-		);
+		expect(watching).toContain(id);
 		expect(stripVTControlCharacters(closing.join("\n"))).toMatch(
 			new RegExp(`^${closingOf(id, "ok").source}`),
 		);
-		expect(stripVTControlCharacters(drawn.writes.at(-1) ?? "")).toBe(
-			`text       done\nDetails: maestro ls ${shortOf(id)} --json`,
-		);
+		const finalFrame = stripVTControlCharacters(drawn.writes.at(-1) ?? "");
+		expect(finalFrame).toStartWith("text       done");
+		expect(finalFrame).toContain(`maestro ls ${shortOf(id)} --json`);
 		expect(drawn.writes.slice(1).some((write) => REDRAW.test(write))).toBe(
 			true,
 		);

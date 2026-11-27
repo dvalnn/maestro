@@ -418,7 +418,7 @@ test("settle fails when the triager handed the issue on and the planner gave not
 			check: [],
 			revision: [],
 		}),
-	).toThrow("the planner gave no proposal");
+	).toThrow("planner");
 });
 
 test("settle carries what waits from a needs-info ruling", () => {

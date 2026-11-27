@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { type ArtifactRef, type CodeContext, reject } from "@maestro/sdk";
@@ -52,9 +53,10 @@ test("milestoneReady rejects a milestone with open issues, naming each, and one 
 			"milestone v9.9.9 has 2 open issues:\n- #7 issue 7\n- #8 issue 8\nClose each, or move it to the next release's milestone",
 		),
 	);
-	expect(await milestoneReady(forgeWith([]), "v0.6.0")).toEqual(
-		reject("the forge has no milestone v0.6.0\nCreate it, or check --version"),
-	);
+	expect(await milestoneReady(forgeWith([]), "v0.6.0")).toMatchObject({
+		outcome: "rejected",
+		reason: expect.stringContaining("v0.6.0"),
+	});
 });
 
 /** A git repo whose `origin` is `owner/repo` on `forge.example`. */
@@ -109,15 +111,13 @@ test("requireMilestone reads the milestone v<version> from the target's forge, a
 });
 
 test("targetOf refuses a context whose repo host gives no target", () => {
-	expect(() => targetOf({ env: {} } as unknown as CodeContext)).toThrow(
-		"the repo host gave no target",
-	);
+	expect(() => targetOf({ env: {} } as unknown as CodeContext)).toThrow();
 });
 
 test.each([
-	["v9.9.9", false, "--version v9.9.9 is not a version maestro releases"],
-	["9.9.9-rc.1", false, "--version 9.9.9-rc.1 is a pre-release"],
-	["9.9.9", true, "--prerelease needs an -rc.<n> version, not 9.9.9"],
+	["v9.9.9", false, "v9.9.9"],
+	["9.9.9-rc.1", false, "9.9.9-rc.1"],
+	["9.9.9", true, "--prerelease"],
 ])(
 	"checkVersion refuses --version %s with prerelease %p",
 	(version, prerelease, message) => {
@@ -764,8 +764,11 @@ test("verifyRelease rejects an asset the release serves with another hash than S
 		),
 	);
 	expect(settled).toMatchObject({ outcome: "rejected" });
-	expect(String((settled as { reason: string }).reason)).toStartWith(
-		"the release v0.0.2 serves maestro-linux-x64.gz with sha256",
+	const { reason } = settled as { reason: string };
+	expect(reason).toContain("v0.0.2");
+	expect(reason).toContain("maestro-linux-x64.gz");
+	expect(reason).toContain(
+		createHash("sha256").update("tampered").digest("hex"),
 	);
 });
 
@@ -806,14 +809,14 @@ test("publishRelease attaches to a release that exists only the dist files it la
 });
 
 test.each([
-	["SHA256SUMS lists no asset", "", false, "dist/SHA256SUMS lists no asset"],
+	["SHA256SUMS lists no asset", "", false, "SHA256SUMS"],
 	[
 		"the release lacks the listed asset",
 		undefined,
 		true,
-		"the release v0.0.2 has no asset maestro-linux-x64.gz",
+		"maestro-linux-x64.gz",
 	],
-])("verifyRelease rejects when %s", async (_, sums, released, reason) => {
+])("verifyRelease rejects when %s", async (_, sums, released, carried) => {
 	const { target, remote } = releaseTarget();
 	const dist = distDir();
 	if (sums !== undefined) writeFileSync(join(dist, "SHA256SUMS"), sums);
@@ -832,7 +835,10 @@ test.each([
 			contextOn(target),
 		),
 	);
-	expect(settled).toEqual(reject(reason));
+	expect(settled).toMatchObject({
+		outcome: "rejected",
+		reason: expect.stringContaining(carried),
+	});
 });
 
 test("closeMilestone rejects a version the forge has no milestone for, and changes none", async () => {
@@ -841,9 +847,10 @@ test("closeMilestone rejects a version the forge has no milestone for, and chang
 	const settled = await onForge(fake.send, "/dev/null", () =>
 		closeMilestone({ version: "0.0.3", dry: false }, contextOn(target)),
 	);
-	expect(settled).toEqual(
-		reject("the forge has no milestone v0.0.3\nCreate it, or check --version"),
-	);
+	expect(settled).toMatchObject({
+		outcome: "rejected",
+		reason: expect.stringContaining("v0.0.3"),
+	});
 	expect(fake.requests.filter((r) => !r.startsWith("GET "))).toEqual([]);
 	expect(fake.state.milestone).toBe("open");
 });

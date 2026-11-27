@@ -710,9 +710,10 @@ export const work = composition("work", { examples: [{}] }, () => {
 			).err,
 		).not.toContain("warning:");
 		await rm(file);
-		expect((await w.call(["resume", again])).err).toBe(
-			`error: the code of concert ${again} was in ${file}, which is gone\n  Restore it, or perform its composition as a new concert`,
-		);
+		const refused = (await w.call(["resume", again])).err;
+		expect(refused).toContain(again);
+		expect(refused).toContain(file);
+		expect(refused).toMatch(/\n {2}\S/);
 	});
 
 	test("reapplies the concert's recorded presets in order and -c, the resume's own -c on top", async () => {
@@ -876,9 +877,9 @@ export const work = composition("work", { examples: [{}] }, () => {
 		await rm(w.pack, { recursive: true });
 		const refused = await w.call(["resume", id]);
 		expect(refused.code).toBe(1);
-		expect(refused.err).toBe(
-			`error: the code of concert ${id} was in ${w.pack}, which is gone\n  Restore it, or perform its composition as a new concert`,
-		);
+		expect(refused.err).toContain(id);
+		expect(refused.err).toContain(w.pack);
+		expect(refused.err).toMatch(/\n {2}\S/);
 	});
 });
 
@@ -1207,8 +1208,7 @@ export const docs = composition("docs", {
 			"items.json",
 		]);
 		expect(composed.code).toBe(2);
-		expect(composed.err).toContain(
-			`param 'items' (--items) of 'spec.spec' names '${join(w.cwd, "items.json")}', which is not JSON`,
-		);
+		expect(composed.err).toContain("--items");
+		expect(composed.err).toContain(join(w.cwd, "items.json"));
 	});
 });

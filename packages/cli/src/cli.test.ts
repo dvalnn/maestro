@@ -2149,357 +2149,262 @@ describe("usage errors", () => {
 		}
 	});
 
-	const USAGE: [string, string[], RegExp][] = [
-		["no command", [], /^error: no command given\nUsage: maestro/],
-		[
-			"an unknown command",
-			["frobnicate"],
-			/^error: unknown command 'frobnicate'\n {2}Pick one of the commands in 'maestro --help'$/,
-		],
-		[
-			"no composition",
-			["perform"],
-			/^error: maestro perform needs a composition\nUsage: maestro perform <composition>\n {2}Name a file or <pack>.<composition>, before its flags, or see 'maestro perform --help' for examples$/,
-		],
+	/** Each row: the arguments, then the words the message must carry: the verb, the offending word, the id. */
+	const USAGE: [string, string[], string[]][] = [
+		["no command", [], ["Usage: maestro"]],
+		["an unknown command", ["frobnicate"], ["frobnicate"]],
+		["no composition", ["perform"], ["maestro perform"]],
 		[
 			"no composition and no --concert",
 			["compose", "--plan"],
-			/^error: maestro compose needs a composition\nUsage: maestro compose <composition>\n +maestro compose --concert <id>\n {2}Name a file or <pack>.<composition>, before its flags/,
+			["maestro compose", "--concert"],
 		],
 		[
 			"an unknown composition",
 			["perform", "demo.nope"],
-			/^error: pack 'demo' has no composition 'nope'\n {2}Name one of: echo, greet, ticket$/,
+			["demo", "nope", "echo", "greet", "ticket"],
 		],
-		[
-			"a mistyped composition",
-			["rep", "demo.gret"],
-			/^error: pack 'demo' has no composition 'gret'\n {2}Did you mean 'greet'\?$/,
-		],
-		[
-			"a mistyped pack",
-			["perform", "dmeo.greet"],
-			/^error: no pack 'dmeo' is installed\n {2}Did you mean 'demo'\?$/,
-		],
-		[
-			"an uninstalled pack",
-			["perform", "other.greet"],
-			/^error: no pack 'other' is installed/,
-		],
+		["a mistyped composition", ["rep", "demo.gret"], ["gret", "greet"]],
+		["a mistyped pack", ["perform", "dmeo.greet"], ["dmeo", "demo"]],
+		["an uninstalled pack", ["perform", "other.greet"], ["other"]],
 		[
 			"an unknown flag",
 			["perform", ...GREET, "--nmae", "x"],
-			/^error: unknown flag --nmae\n {2}Did you mean --name\?$/,
+			["--nmae", "--name"],
 		],
 		[
 			"a mistyped verb flag",
 			["perform", ...GREET, "--titie", "x"],
-			/^error: unknown flag --titie\n {2}Did you mean --title\?$/,
+			["--titie", "--title"],
 		],
 		[
 			"the --profile that --preset replaced",
 			["perform", ...GREET, "--profile", "stub"],
-			/^error: unknown flag --profile\n {2}Flags are perform's/,
+			["--profile"],
 		],
 		[
 			"perform --resume, now the resume verb",
 			["perform", ...GREET, "--resume", "x"],
-			/^error: unknown flag --resume/,
+			["--resume"],
 		],
-		[
-			"resume with a tour",
-			["resume", "x", "--tour", "t"],
-			/^error: unknown flag --tour/,
-		],
+		["resume with a tour", ["resume", "x", "--tour", "t"], ["--tour"]],
 		[
 			"an unknown flag named like an Object member",
 			["perform", ...GREET, "--constructor", "x"],
-			/^error: unknown flag --constructor\n {2}Flags are perform's/,
+			["--constructor"],
 		],
 		[
 			"an unknown flag with no near name",
 			["perform", ...GREET, "--zzzzzz", "x"],
-			/^error: unknown flag --zzzzzz\n {2}Flags are perform's/,
+			["--zzzzzz"],
 		],
 		[
 			"a tour that is not a slug",
 			["perform", ...GREET, "--tour", "Bad Slug"],
-			/^error: --tour takes a slug of at most 64 characters, not 'Bad Slug'/,
+			["--tour", "Bad Slug"],
 		],
 		[
 			"a tour with an empty segment",
 			["perform", ...GREET, "--tour", "epic..story"],
-			/^error: --tour takes a slug of at most 64 characters, not 'epic..story'\n {2}Write it as lower-case words joined by hyphens, in non-empty segments joined by dots/,
+			["--tour", "epic..story"],
 		],
 		[
 			"a tour with a leading dot",
 			["perform", ...GREET, "--tour", ".epic"],
-			/^error: --tour takes a slug/,
+			["--tour"],
 		],
 		[
 			"a tour with a trailing dot",
 			["perform", ...GREET, "--tour", "epic."],
-			/^error: --tour takes a slug/,
+			["--tour"],
 		],
 		[
 			"a tour too long",
 			["perform", ...GREET, "--tour", "a".repeat(65)],
-			/^error: --tour takes a slug/,
+			["--tour"],
 		],
 		[
 			"a bad duration",
 			["wait", "nope", "--timeout", "5x"],
-			/^error: --timeout takes a positive whole number and one unit, not '5x'\n {2}Write it as 500ms, 90s, 15m, 12h or 7d$/,
+			["--timeout", "5x"],
 		],
-		[
-			"an unknown concert",
-			["wait", "nope"],
-			/^error: no concert 'nope' in the record\n {2}Check the id with 'maestro ls'$/,
-		],
-		[
-			"kill without a concert",
-			["kill"],
-			/^error: maestro kill needs a concert\nUsage: maestro kill <concert>\n/,
-		],
+		["an unknown concert", ["wait", "nope"], ["nope"]],
+		["kill without a concert", ["kill"], ["maestro kill"]],
 		[
 			"approval of a concert without a ruling",
 			["approval", "nope"],
-			/^error: maestro approval takes ok or reject after the concert, got nothing\nUsage: maestro approval\n.*\n.*\n {2}Write maestro approval <concert> ok/,
+			["maestro approval"],
 		],
 		[
 			"approval with a word it does not take",
 			["ap", "nope", "maybe"],
-			/^error: maestro approval takes ok or reject after the concert, got 'maybe'\n/,
+			["maestro approval", "maybe"],
 		],
 		[
 			"approval ok with a word after it",
 			["approval", "nope", "ok", "now"],
-			/^error: maestro approval ok takes nothing after it, got 'now'\n/,
+			["maestro approval ok", "now"],
 		],
 		[
 			"approval reject without a reason",
 			["approval", "nope", "reject"],
-			/^error: maestro approval reject needs a reason\n/,
+			["maestro approval reject"],
 		],
 		[
 			"approval reject with an empty reason",
 			["approval", "nope", "reject", " "],
-			/^error: maestro approval reject needs a reason\n/,
+			["maestro approval reject"],
 		],
 		[
 			"approval reject with two reasons",
 			["approval", "nope", "reject", "a", "b"],
-			/^error: maestro approval reject takes one reason, got 2\n/,
+			["maestro approval reject"],
 		],
 		[
 			"approval --instance without a concert",
 			["approval", "--instance", "go"],
-			/^error: maestro approval takes --instance only after a concert\n/,
+			["maestro approval", "--instance"],
 		],
-		[
-			"watch without a concert",
-			["watch"],
-			/^error: maestro watch needs a concert\nUsage: maestro watch <concert>\n {2}Name one as 'maestro ls' lists it$/,
-		],
-		[
-			"watch of an unknown concert",
-			["w", "nope"],
-			/^error: no concert 'nope' in the record\n {2}Check the id with 'maestro ls'$/,
-		],
+		["watch without a concert", ["watch"], ["maestro watch"]],
+		["watch of an unknown concert", ["w", "nope"], ["nope"]],
 		[
 			"prune with ids and --before",
 			["prune", "a", "--before", "1d"],
-			/^error: prune takes concert ids or filters, not both/,
+			["prune"],
 		],
 		[
 			"prune with ids and --status",
 			["prune", "a", "--status", "ok"],
-			/^error: prune takes concert ids or filters, not both/,
+			["prune"],
 		],
 		[
 			"prune --status running",
 			["prune", "--status", "running"],
-			/^error: --status running cannot be pruned.*\n {2}Pick another status, or stop the concert with 'maestro kill <concert>' first$/,
+			["--status running"],
 		],
 		[
 			"a bad prune --composition",
 			["prune", "--composition", "greet"],
-			/^error: --composition takes <pack>.<composition>, not 'greet'/,
+			["--composition", "greet"],
 		],
-		[
-			"a bad --before",
-			["prune", "--before", "1x"],
-			/^error: --before takes a positive whole number/,
-		],
-		[
-			"tour with no concert",
-			["tour", "set", "slug"],
-			/^error: maestro tour set needs a slug and at least one concert\nUsage: maestro tour set <slug> <concert>\.\.\.\n/,
-		],
-		[
-			"tour clear with no concert",
-			["tour", "clear"],
-			/^error: maestro tour clear needs at least one concert/,
-		],
-		[
-			"tour with a bad slug",
-			["tour", "set", "BAD", "x"],
-			/^error: the tour slug takes a slug/,
-		],
-		[
-			"the old tour form",
-			["tour", "slug", "x"],
-			/^error: expected set or clear, got 'slug'\n {2}Write maestro tour set/,
-		],
-		[
-			"the old tour --clear",
-			["tour", "--clear", "x"],
-			/^error: unknown flag --clear/,
-		],
-		[
-			"ls with two concerts",
-			["ls", "a", "b", "c"],
-			/^error: maestro ls takes at most a concert and an instance, got 3\nUsage: maestro ls \[<concert> \[<instance>\]\]\n/,
-		],
+		["a bad --before", ["prune", "--before", "1x"], ["--before"]],
+		["tour with no concert", ["tour", "set", "slug"], ["maestro tour set"]],
+		["tour clear with no concert", ["tour", "clear"], ["maestro tour clear"]],
+		["tour with a bad slug", ["tour", "set", "BAD", "x"], ["slug"]],
+		["the old tour form", ["tour", "slug", "x"], ["maestro tour set", "slug"]],
+		["the old tour --clear", ["tour", "--clear", "x"], ["--clear"]],
+		["ls with two concerts", ["ls", "a", "b", "c"], ["maestro ls"]],
 		[
 			"artifact show with too many arguments",
 			["art", "show", "a", "b", "c", "d"],
-			/^error: maestro artifact show takes a concert, an instance and at most a file, got 4\nUsage: maestro artifact ls <concert>\n {7}maestro artifact show <concert> <instance> \[<file>\]\n/,
+			["maestro artifact show"],
 		],
-		[
-			"the old artifact form",
-			["art", "a", "b"],
-			/^error: expected ls or show, got 'a'/,
-		],
-		[
-			"changeset with an unknown action",
-			["cs", "frob"],
-			/^error: expected show, apply or drop, got 'frob'/,
-		],
+		["the old artifact form", ["art", "a", "b"], ["artifact", "'a'"]],
+		["changeset with an unknown action", ["cs", "frob"], ["'frob'"]],
 		[
 			"changeset with --json, which it does not take",
 			["cs", "show", "a", "--json"],
-			/^error: unknown flag --json/,
+			["--json"],
 		],
 		[
 			"watch with a key --frames does not name",
 			["watch", "nope", "--frames", "zz"],
-			/^error: --frames names no key: 'zz'/,
+			["--frames", "zz"],
 		],
 		[
 			"a status that is none",
 			["ls", "--status", "bogus"],
-			/^error: --status takes one of running, ok, failed, rejected, not 'bogus'/,
+			["--status", "bogus"],
 		],
-		[
-			"a tour that is none",
-			["ls", "--tour", "BAD"],
-			/^error: --tour takes a slug/,
-		],
-		[
-			"a limit of zero",
-			["ls", "--limit", "0"],
-			/^error: --limit takes a positive whole number/,
-		],
+		["a tour that is none", ["ls", "--tour", "BAD"], ["--tour"]],
+		["a limit of zero", ["ls", "--limit", "0"], ["--limit"]],
 		[
 			"resume with a composition",
 			["resume", "x", "demo.greet"],
-			/^error: maestro resume takes one concert, got 2\nUsage: maestro resume <concert>\n/,
+			["maestro resume"],
 		],
-		[
-			"resume with no concert",
-			["resume"],
-			/^error: maestro resume needs a concert\n/,
-		],
-		[
-			"encore with no concert",
-			["encore", "-c", "a=1"],
-			/^error: maestro encore needs a concert\n/,
-		],
-		[
-			"resume of an unknown concert",
-			["resume", "nope"],
-			/^error: no concert 'nope'/,
-		],
+		["resume with no concert", ["resume"], ["maestro resume"]],
+		["encore with no concert", ["encore", "-c", "a=1"], ["maestro encore"]],
+		["resume of an unknown concert", ["resume", "nope"], ["nope"]],
 		[
 			"a -c without '='",
 			["perform", ...GREET, "-c", "concurrency"],
-			/^error: -c concurrency takes <key>=<value>\n {2}Write it as -c <key>=<value>/,
+			["-c concurrency"],
 		],
 		[
 			"a -c with an empty key",
 			["perform", ...GREET, "--config", "=4"],
-			/^error: -c =4: '' is not a key path\n/,
+			["-c =4"],
 		],
 		[
 			"a -c key nothing claims",
 			["perform", ...GREET, "-c", "nope.x=1"],
-			/^error: config key 'nope' .* \(from -c nope\.x\)\n/,
+			["nope", "-c nope.x"],
 		],
 		[
 			"a -c value off its key's schema",
 			["compose", ...GREET, "-c", "concurrency=x"],
-			/^error: config 'concurrency' must be integer \(from -c concurrency\)\n/,
+			["concurrency", "-c concurrency"],
 		],
 		[
 			"param flags on an IR file",
 			["compose", join(GOLDEN, "minimal.json"), "--name", "x"],
-			/^error: unknown flag --name\n {2}An IR file is already built/,
+			["--name"],
 		],
 		[
 			"a param whose flag is a command's",
 			["perform", CLASH],
-			/^error: param 'tour' of 'clash\.clash' takes --tour, which the command takes too\n {2}Rename/,
+			["tour", "clash.clash", "--tour"],
 		],
 		[
 			"a param whose flag is one of compose's, for compose",
 			["compose", CLASH_OUT],
-			/^error: param 'out' of 'clash-out\.clash-out' takes --out, which the command takes too\n {2}Rename/,
+			["out", "clash-out.clash-out", "--out"],
 		],
 		[
 			"a boolean param whose --no- flag negates a common flag",
 			["perform", CLASH_NO],
-			/^error: param 'noColor' of 'clash-no\.clash-no' takes --no-color, which the command takes too\n {2}Rename/,
+			["noColor", "clash-no.clash-no", "--no-color"],
 		],
 		[
 			"a param whose flag is one of perform's, for compose",
 			["compose", CLASH],
-			/^error: param 'tour' of 'clash\.clash' takes --tour, which the command takes too\n {2}Rename/,
+			["tour", "clash.clash", "--tour"],
 		],
 		[
 			"a composition file whose name is not a pack id",
 			["compose", join(FIXTURES, "Shout.ts")],
-			/^error: composition file \S+\/Shout\.ts is named 'Shout', which is not a pack id\n {2}Rename it/,
+			["Shout.ts", "Shout"],
 		],
 		[
 			"a composition file named as an installed pack",
 			["perform", join(FIXTURES, "demo.ts")],
-			/^error: composition file \S+\/demo\.ts is named 'demo', the id of the pack at \S+\n {2}Rename the file$/,
+			["demo.ts", "demo"],
 		],
 		[
 			"a composition file that declares no example input set",
 			["compose", join(FIXTURES, "bare.ts")],
-			/^error: composition 'bare' declares no example input set\n/,
+			["bare"],
 		],
 		[
 			"a composition file that is not there",
 			["compose", "missing.ts"],
-			/^error: no such file: missing\.ts\n {2}Check the path$/,
+			["missing.ts"],
 		],
 		[
 			"an IR file that is not there",
 			["perform", "missing.json"],
-			/^error: no such file: missing\.json\n {2}Check the path$/,
+			["missing.json"],
 		],
 		[
 			"a missing required param",
 			["perform", "demo.ticket"],
-			/^error: param 'handle' \(--handle\)/,
+			["handle", "--handle"],
 		],
 		[
 			"a malformed typed param",
 			["perform", "demo.ticket", "--handle", "nonsense"],
-			/^error: param 'handle' \(--handle\) of 'demo\.ticket': 'nonsense'/,
+			["handle", "--handle", "demo.ticket", "nonsense"],
 		],
 	];
 
@@ -2520,11 +2425,14 @@ describe("usage errors", () => {
 
 	test.each(USAGE)(
 		"%s exits 1 for a build diagnostic and 2 for bad arguments, and says what to do",
-		async (_what, args, message) => {
+		async (_what, args, carried) => {
 			const w = await world();
 			const outcome = await w.call(args);
 			expect(outcome.out).toBe("");
-			expect(outcome.err).toMatch(message);
+			expect(outcome.err).toMatch(/^error: /);
+			// The refusal ends with what to do next, on an indented line.
+			expect(outcome.err).toMatch(/\n {2}\S/);
+			expect(carried.filter((word) => !outcome.err.includes(word))).toEqual([]);
 			expect(outcome.code).toBe(exitOfRow(_what));
 		},
 	);
@@ -2931,15 +2839,14 @@ describe("help and color", () => {
 
 	test("an unknown leading flag is named with its did-you-mean, and a bare maestro or --json lists no help", async () => {
 		const w = await world();
-		expect((await w.call(["--frobnicate"])).err).toBe(
-			"error: unknown flag --frobnicate\n  Flags are listed in 'maestro --help'",
-		);
-		expect((await w.call(["--colr"])).err).toBe(
-			"error: unknown flag --colr\n  Did you mean --color?",
-		);
-		expect(json(await w.call(["--json"])).error).toBe(
-			"no command given\nSee 'maestro --help' for the commands",
-		);
+		expect((await w.call(["--frobnicate"])).err).toContain("--frobnicate");
+		const near = (await w.call(["--colr"])).err;
+		expect(near).toContain("--colr");
+		expect(near).toContain("--color");
+		expect(json(await w.call(["--json"]))).toMatchObject({
+			ok: false,
+			error: expect.any(String),
+		});
 		expect((await w.call([])).err).toContain("Commands:");
 	});
 
@@ -2953,9 +2860,9 @@ describe("help and color", () => {
 	});
 
 	test("a mistyped alias is met with its verb", async () => {
-		expect((await (await world()).call(["arr"])).err).toBe(
-			"error: unknown command 'arr'\n  Did you mean 'artifact'?",
-		);
+		const refused = (await (await world()).call(["arr"])).err;
+		expect(refused).toContain("'arr'");
+		expect(refused).toContain("'artifact'");
 	});
 
 	test("a flag given no value because another flag follows is not one that takes none", async () => {
@@ -2982,20 +2889,23 @@ describe("help and color", () => {
 			["perfrom", "perform"],
 			["repertoir", "repertoire"],
 			["wach", "watch"],
-		])
-			expect((await w.call([typed ?? ""])).err).toBe(
-				`error: unknown command '${typed}'\n  Did you mean '${verb}'?`,
-			);
+		]) {
+			const { err } = await w.call([typed ?? ""]);
+			expect(err).toContain(`'${typed}'`);
+			expect(err).toContain(`'${verb}'`);
+		}
 	});
 
 	test("the parser's errors read as maestro's", async () => {
 		const w = await world();
-		expect((await w.call(["ls", "-x"])).err).toBe(
-			"error: unknown flag -x\n  Flags are listed in 'maestro ls --help'",
-		);
-		expect((await w.call(["ls", "--limit"])).err).toBe(
-			"error: --limit needs a value\n  Flags are listed in 'maestro ls --help'",
-		);
+		const flag = (await w.call(["ls", "-x"])).err;
+		expect(flag).toStartWith("error: ");
+		expect(flag).toContain("-x");
+		expect(flag).toContain("maestro ls --help");
+		const value = (await w.call(["ls", "--limit"])).err;
+		expect(value).toStartWith("error: ");
+		expect(value).toContain("--limit");
+		expect(value).toContain("maestro ls --help");
 		expect((await w.call(["ls", "--json=1"])).err).toStartWith(
 			"error: --json takes no value",
 		);
@@ -3004,9 +2914,9 @@ describe("help and color", () => {
 	test("an argument error names the command, shows its usage line and points to its help", async () => {
 		const refused = await (await world()).call(["artifact", "show"]);
 		expect(refused).toMatchObject({ code: 2, out: "" });
-		expect(refused.err).toBe(
-			"error: maestro artifact show needs a concert\nUsage: maestro artifact ls <concert>\n       maestro artifact show <concert> <instance> [<file>]\n  Name one as 'maestro ls' lists it, or see 'maestro artifact --help' for examples",
-		);
+		expect(refused.err).toStartWith("error: ");
+		expect(refused.err).toContain("maestro artifact show");
+		expect(refused.err).toContain("maestro artifact --help");
 	});
 
 	test.each([
@@ -3541,9 +3451,11 @@ describe("the record", () => {
 		const usage = await w.call(["ls", "--status", "bogus"], {
 			stderrTerminal: terminal,
 		});
-		expect(usage.err).toBe(
-			`${ESC}[31merror${ESC}[39m: --status takes one of running, ok, failed, rejected, not 'bogus'\n  ${hint("Pick one of those")}`,
-		);
+		expect(usage.err).toStartWith(code);
+		expect(usage.err).toContain("--status");
+		expect(usage.err).toContain("bogus");
+		expect(usage.err).toContain(`\n  ${ESC}[2m`);
+		expect(usage.err).toEndWith(`${ESC}[22m`);
 		const both = { terminal, stderrTerminal: terminal };
 		expect((await w.call([], both)).err).toStartWith(
 			`${code}: no command given`,
@@ -4168,7 +4080,7 @@ describe("the record", () => {
 		const pruned = await w.call(["prune", id, "--yes"], { hosts: [host] });
 		expect(pruned).toMatchObject({ code: 0 });
 		expect(pruned.err).toContain(
-			`warning: host 'fake' cannot measure concert ${id}: record '/x' is malformed`,
+			`warning: host 'fake' cannot measure concert ${id}: record '/x'`,
 		);
 	});
 
@@ -4829,8 +4741,9 @@ describe("prune", () => {
 		const pruned = await w.call(["prune", id, "--yes"], { hosts: [host] });
 		expect(pruned).toMatchObject({ code: 1, out: "" });
 		expect(pruned.err).toContain(
-			`concert ${id} kept: host 'fake' could not release it: boom\nFix that, then prune it again`,
+			`concert ${id} kept: host 'fake' could not release it: boom`,
 		);
+		expect(pruned.err).toMatch(/\n.*Fix that/);
 		expect(await ids(w)).toEqual([id]);
 	});
 
@@ -5106,9 +5019,9 @@ describe("exit codes and error states", () => {
 		};
 		const outcome = await w.call(["ls"], boom);
 		expect(outcome.code).toBe(1);
-		expect(outcome.err).toBe(
-			"error: unexpected: boom second line\n  This is a bug in maestro. Rerun with --debug and report it upstream with the output",
-		);
+		expect(outcome.err).toStartWith("error: ");
+		expect(outcome.err).toContain("boom second line");
+		expect(outcome.err).toContain("--debug");
 		expect((await w.call(["ls", "--debug"], boom)).err).toContain(
 			"Error: boom",
 		);

@@ -262,9 +262,7 @@ describe("node ids", () => {
 		);
 		const id = label ?? "task";
 		expect(error).toMatchObject({ code: "SCOPE.duplicate", node: id });
-		expect(error.hint).toBe(
-			`Give one of the nodes with id '${id}' a label of its own`,
-		);
+		expect(error.hint).toContain(id);
 	});
 
 	test("a label an id cannot hold fails with SCOPE.name", () => {

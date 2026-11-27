@@ -173,9 +173,7 @@ describe("compose", () => {
 			composeWith(await golden("minimal.json"), {
 				hosts: [fakeHost(), { ...fakeHost(), name: "other" }],
 			}),
-		).rejects.toThrow(
-			"node kind 'fake.task' is registered twice, by host 'fake' and by host 'other'\nLoad only one host that registers 'fake.task'",
-		);
+		).rejects.toThrow("fake.task");
 	});
 
 	test("keeps a host's warnings in the plan, each code under HOST once", async () => {

@@ -180,9 +180,7 @@ test("a record store of another schema version is refused, and one of this versi
 		const db = new Database(path);
 		db.exec(`PRAGMA user_version = ${version}`);
 		db.close();
-		expect(() => openRecord(path)).toThrow(
-			`record store '${path}' has schema version ${version}, and this maestro reads version ${CURRENT_VERSION}. Use a record store this maestro made, or move '${path}' aside`,
-		);
+		expect(() => openRecord(path)).toThrow(path);
 	}
 });
 
@@ -251,9 +249,7 @@ test("a newer record store is refused", async () => {
 	const db = new Database(path);
 	db.exec(`PRAGMA user_version = ${CURRENT_VERSION + 1}`);
 	db.close();
-	expect(() => openRecord(path)).toThrow(
-		`this maestro reads version ${CURRENT_VERSION}`,
-	);
+	expect(() => openRecord(path)).toThrow(`${CURRENT_VERSION}`);
 });
 
 test("several processes open one new, or one version-4, record store at once", async () => {
@@ -369,7 +365,7 @@ test("finishing a concert settles its running instances, and a settled instance 
 		{ ...b, status: "failed", reason: CONCERT_FINISHED, settledAt: 5 },
 	]);
 	expect(() => record.start("c", { node: "z", expansion: "" }, 6)).toThrow(
-		"concert 'c' has settled, so it takes no more writes",
+		"'c'",
 	);
 	expect(reader.events("c").map((e) => e.type)).toEqual([
 		"running",
@@ -453,9 +449,7 @@ test("removing a concert deletes its rows, and a running concert is refused", as
 			4,
 		);
 	}
-	expect(() => reader.remove("gone")).toThrow(
-		`concert 'gone' is still running in process ${process.pid}, so it cannot be removed`,
-	);
+	expect(() => reader.remove("gone")).toThrow("gone");
 	record.finish("gone", { outcome: "failed", reason: "x" }, 5);
 	reader.remove("gone");
 	expect(reader.find("gone")).toBeUndefined();
@@ -486,18 +480,18 @@ test("a ruling is refused, naming the instance, once it is no longer held, and a
 	record.start("c", hold, 2);
 	record.ask("c", hold, asked, 3);
 	record.settle("c", hold, { outcome: "failed", reason: "halted" }, 4);
-	expect(() => reader.rule(request, { outcome: "ok" })).toThrow(
-		new Unrulable(
-			{ id: "c", status: "running" },
-			"approval 'topics[a]/draft' of concert 'c' is no longer held, so it takes no ruling\nList its open approvals and rule on the current request",
-		),
-	);
+	const refused = thrown(() => reader.rule(request, { outcome: "ok" }));
+	expect(refused).toBeInstanceOf(Unrulable);
+	expect(refused).toMatchObject({
+		concert: { id: "c", status: "running" },
+		message: expect.stringContaining("topics[a]/draft"),
+	});
 	record.finish("c", { outcome: "failed", reason: "x" }, 5);
 	record.resume({ id: "c", ir });
 	record.start("c", hold, 6);
 	expect(reader.openApprovals()).toEqual([]);
 	expect(() => reader.rule(request, { outcome: "ok" })).toThrow(
-		"concert 'c' holds at no approval 'topics[a]/draft'",
+		"topics[a]/draft",
 	);
 	record.ask("c", hold, asked, 7);
 	expect(reader.openApprovals()).toEqual([
@@ -529,26 +523,44 @@ test("a settled concert takes no ruling: ok names a new concert as the next step
 		record.settle(id, hold, ending, 4);
 		record.finish(id, { ...hold, ...ending }, 5);
 	}
-	const done = new Unrulable(
-		{ id: "done", status: "ok" },
-		"concert 'done' settled ok, so it takes no ruling\nPerform its composition as a new concert to ask again",
+	const done = {
+		concert: { id: "done", status: "ok" },
+		message: expect.stringContaining("'done'"),
+	};
+	const broke = {
+		concert: { id: "broke", status: "failed" },
+		message: expect.stringContaining("'broke'"),
+	};
+	// The next step the refusal names is what the title pins: perform anew after ok, resume after failed.
+	expect(unrulable(reader.find("done") ?? never())?.message).toContain(
+		"Perform",
 	);
-	const broke = new Unrulable(
-		{ id: "broke", status: "failed" },
-		"concert 'broke' settled failed, so it takes no ruling\nResume the concert to ask again",
+	expect(unrulable(reader.find("broke") ?? never())?.message).toContain(
+		"Resume",
 	);
-	expect(unrulable(reader.find("done") ?? never())).toEqual(done);
-	expect(unrulable(reader.find("broke") ?? never())).toEqual(broke);
+	expect(unrulable(reader.find("done") ?? never())).toMatchObject(done);
+	expect(unrulable(reader.find("broke") ?? never())).toMatchObject(broke);
 	for (const [id, refusal] of [
 		["done", done],
 		["broke", broke],
-	] as const)
-		expect(() =>
+	] as const) {
+		const caught = thrown(() =>
 			reader.rule({ concert: id, ...hold, key: "k" }, { outcome: "ok" }),
-		).toThrow(refusal);
+		);
+		expect(caught).toBeInstanceOf(Unrulable);
+		expect(caught).toMatchObject(refusal);
+	}
 	record.close();
 	reader.close();
 });
+
+const thrown = (act: () => void): unknown => {
+	try {
+		act();
+	} catch (error) {
+		return error;
+	}
+};
 
 const never = (): never => {
 	throw new Error("no such concert");

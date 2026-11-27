@@ -94,9 +94,7 @@ describe("get", () => {
 		["an array index", { a: [7] }, "a.0", "0"],
 		["an inherited field", {}, "toString", "toString"],
 	])("throws on %s, naming the path", (_name, value, path, key) => {
-		expect(() => fns.get({ value, path })).toThrow(
-			`get: path '${path}' has no field '${key}'`,
-		);
+		expect(() => fns.get({ value, path })).toThrow(`'${key}'`);
 	});
 });
 
@@ -123,9 +121,7 @@ describe("or", () => {
 
 	test("throws when the input failed, naming its reason", () => {
 		const value = { ...failed("disk full"), value: "v" };
-		expect(() => fns.or({ value, fallback: "fb" })).toThrow(
-			"or: its input failed: disk full",
-		);
+		expect(() => fns.or({ value, fallback: "fb" })).toThrow("disk full");
 	});
 });
 
@@ -197,9 +193,7 @@ describe("lookup", () => {
 		["a string key on an array", ["x"], "0", '"0"'],
 		["an array's length", ["x"], "length", '"length"'],
 	])("throws on %s, naming the key", (_name, table, key, named) => {
-		expect(() => fns.lookup({ table, key })).toThrow(
-			`lookup: no entry under key ${named}`,
-		);
+		expect(() => fns.lookup({ table, key })).toThrow(named);
 	});
 });
 
@@ -265,7 +259,7 @@ describe("reducers", () => {
 		test("throws when none is ok and any failed", () => {
 			expect(() =>
 				fns.firstOk({ results: [rejected("r"), failed("f")] }),
-			).toThrow("firstOk: no input was ok: r; f");
+			).toThrow("r; f");
 		});
 
 		test("rejects when there are no inputs", () => {

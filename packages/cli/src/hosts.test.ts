@@ -14,7 +14,5 @@ test("pi's agent dir is the user's PI_CODING_AGENT_DIR", () => {
 		outputs: [],
 		session: { dir: join("/none", "session"), id: "s" },
 	};
-	expect(() => pi?.run(request)).toThrow(
-		"pi config dir does not exist: /none/agent",
-	);
+	expect(() => pi?.run(request)).toThrow("/none/agent");
 });

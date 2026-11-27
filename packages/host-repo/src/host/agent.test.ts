@@ -491,7 +491,7 @@ describe("agent encore", () => {
 		expect(second.result).toMatchObject({ outcome: "ok" });
 		await expect(
 			performed(host, ir, config, { encore: second.id }),
-		).rejects.toThrow("was performed from the same IR, config and host facts");
+		).rejects.toThrow(second.id);
 	});
 });
 

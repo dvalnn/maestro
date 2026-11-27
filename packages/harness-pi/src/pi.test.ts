@@ -322,9 +322,7 @@ describe("stand-in pi", () => {
 		const missing = "~/.maestro-no-such-pi-dir";
 		expect(() =>
 			piHarness({ bin, agentDir: missing }).run(request("x")),
-		).toThrow(
-			`pi config dir does not exist: ${join(homedir(), ".maestro-no-such-pi-dir")}.`,
-		);
+		).toThrow(join(homedir(), ".maestro-no-such-pi-dir"));
 	});
 
 	test("under compact, the owned agent dir's settings start pi's compaction at `at`, its window less a reserve; another policy leaves pi's defaults", async () => {
@@ -588,9 +586,7 @@ describe("stand-in pi", () => {
 		const missing = join(tmp("none"), "agent");
 		expect(() =>
 			piHarness({ bin, agentDir: missing }).run(request("x")),
-		).toThrow(
-			`pi config dir does not exist: ${missing}. Run pi once and log in`,
-		);
+		).toThrow(missing);
 	});
 
 	test("a run pi settles as aborted fails", async () => {

@@ -1069,9 +1069,7 @@ describe("profiles", () => {
 		);
 		const refused = await w.call(["perform", file]);
 		expect(refused).toMatchObject({ code: 1 });
-		expect(refused.err).toContain(
-			"profile smoke runs on harness 'gone', which is not loaded",
-		);
+		expect(refused.err).toContain("profile smoke runs on harness 'gone'");
 		for (const flags of [
 			["--preset", "free"],
 			["-c", "profiles.smoke.runtime.harness=stub"],

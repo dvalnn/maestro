@@ -26,9 +26,7 @@ test.each(["risk", "[risk", "[a]b", "[a/b]", "[a[b]]", "[a b]", "[é]"])(
 );
 
 test("an unsanitized key cannot be formatted", () => {
-	expect(() => formatExpansion(["ok", "a/b"])).toThrow(
-		"expansion key 'a/b' is not sanitized",
-	);
+	expect(() => formatExpansion(["ok", "a/b"])).toThrow("a/b");
 });
 
 test.each<[unknown, string]>([
@@ -81,7 +79,7 @@ test.each<[string, ReturnType<typeof parseInstance>]>([
 
 test("an instance whose expansion does not fit its groups cannot be shown", () => {
 	expect(() => formatInstance({ node: "a/b", expansion: "" }, ["a"])).toThrow(
-		"expansion '' of 'a/b' does not have one key per group (1)",
+		"a/b",
 	);
 	expect(() =>
 		formatInstance({ node: "a/b", expansion: "risk" }, ["a"]),

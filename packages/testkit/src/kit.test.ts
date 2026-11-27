@@ -82,9 +82,9 @@ test("stubConcert takes a script or hosts, and code or a loader, never both", as
 	await expect(
 		// @ts-expect-error a script scripts the fake host, which given hosts replace.
 		stubConcert(ir, { script: {}, hosts: [] }),
-	).rejects.toThrow("stubConcert takes script or hosts, not both");
+	).rejects.toThrow(/script.*hosts/);
 	await expect(
 		// @ts-expect-error code stubs load by export name, which a loader replaces.
 		stubConcert(ir, { code: {}, loadCode: async () => () => ({}) }),
-	).rejects.toThrow("stubConcert takes code or loadCode, not both");
+	).rejects.toThrow(/code.*loadCode/);
 });

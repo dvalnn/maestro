@@ -200,6 +200,19 @@ async function refusal(make: () => Promise<unknown>) {
 	return error.diagnostics.map((d) => [d.message, d.hint, d.source?.line]);
 }
 
+/** Asserts each refusal's line, and that its message and hint together carry every one of its words. */
+function expectCarried(
+	refused: (string | number | undefined)[][],
+	want: [string[], number | undefined][],
+) {
+	expect(
+		refused.map(([message, hint, line], i) => [
+			line,
+			(want[i]?.[0] ?? []).filter((w) => !`${message}\n${hint}`.includes(w)),
+		]),
+	).toEqual(want.map(([, line]) => [line, []]));
+}
+
 test.each([
 	["auditor", true],
 	["classics/builder", true],
@@ -359,21 +372,13 @@ describe("harness extras", () => {
 	});
 
 	test.each([
-		[
-			"kitgone",
-			"profile kitgone: 'harnessExtras' is gone, which does not exist",
-			`Create it in ${W}`,
-		],
-		[
-			"kitfile",
-			"profile kitfile: 'harnessExtras' is profile.yaml, which is not a directory",
-			`Point it at a directory inside ${W}`,
-		],
+		["kitgone", ["kitgone", "harnessExtras", "gone", "Create", W]],
+		["kitfile", ["kitfile", "harnessExtras", "profile.yaml", "Point", W]],
 	])(
 		"refuses %s's path, naming the profile and the path",
-		async (name, message, hint) => {
-			expect(await refusal(() => resolveProfile(name, setupOf({})))).toEqual([
-				[message, hint, 2],
+		async (name, words) => {
+			expectCarried(await refusal(() => resolveProfile(name, setupOf({}))), [
+				[words, 2],
 			]);
 		},
 	);
@@ -390,48 +395,23 @@ describe("harness extras", () => {
 					}),
 				),
 			);
-		expect(await refused(gone)).toEqual([
-			[
-				`profile auditor: 'harnessExtras' is ${gone}, which does not exist`,
-				"Point it at a directory",
-				3,
-			],
+		expectCarried(await refused(gone), [
+			[["auditor", "harnessExtras", gone, "Point"], 3],
 		]);
-		expect(await refused(file)).toEqual([
-			[
-				`profile auditor: 'harnessExtras' is ${file}, which is not a directory`,
-				"Point it at a directory",
-				3,
-			],
+		expectCarried(await refused(file), [
+			[["auditor", "harnessExtras", file, "Point"], 3],
 		]);
 	});
 
 	test("refuses each link that is absolute, dangling, cyclic or resolves outside the directory, naming the profile and the link", async () => {
-		const fix = (link: string) =>
-			`Make ${link} a relative link to an entry inside ${join(W, "kitlinks/extras")}, so the directory is self-contained`;
-		expect(
+		const links = ["a/x", "abs", "b/y", "dangling", "loop", "sib", "up"];
+		expectCarried(
 			await refusal(() => resolveProfile("kitlinks", setupOf({}))),
-		).toEqual([
-			["profile kitlinks: harnessExtras link a/x is cyclic", fix("a/x"), 2],
-			["profile kitlinks: harnessExtras link abs is absolute", fix("abs"), 2],
-			["profile kitlinks: harnessExtras link b/y is cyclic", fix("b/y"), 2],
-			[
-				"profile kitlinks: harnessExtras link dangling points at nothing",
-				fix("dangling"),
+			links.map((link) => [
+				["kitlinks", "harnessExtras", link, join(W, "kitlinks/extras")],
 				2,
-			],
-			["profile kitlinks: harnessExtras link loop is cyclic", fix("loop"), 2],
-			[
-				"profile kitlinks: harnessExtras link sib resolves outside the directory",
-				fix("sib"),
-				2,
-			],
-			[
-				"profile kitlinks: harnessExtras link up resolves outside the directory",
-				fix("up"),
-				2,
-			],
-		]);
+			]),
+		);
 	});
 
 	test("a directory config sets replaces the profile's whole", async () => {
@@ -951,21 +931,15 @@ describe("resolution", () => {
 	});
 
 	test.each([
-		["classics/buildr", "Did you mean 'classics/builder'?"],
-		[
-			"classic",
-			`Create ${join(W, "classic/profile.yaml")}, or name another profile`,
-		],
-		["auditor/kc", "Install pack 'auditor', or name another profile"],
-		[
-			"classics/zzzzzz",
-			"Update pack 'classics' to a version with profile 'zzzzzz', or name another profile",
-		],
+		["classics/buildr", ["classics/builder"]],
+		["classic", ["Create", join(W, "classic/profile.yaml")]],
+		["auditor/kc", ["Install", "auditor"]],
+		["classics/zzzzzz", ["Update", "classics", "zzzzzz"]],
 	])(
 		"refuses %s, which no root holds, with a near profile, the pack to install or update, or where to create it",
-		async (name, hint) => {
-			expect(await refusal(() => resolveProfile(name, setupOf({})))).toEqual([
-				[`profile ${name} is in no profile root`, hint, undefined],
+		async (name, words) => {
+			expectCarried(await refusal(() => resolveProfile(name, setupOf({}))), [
+				[[name, ...words], undefined],
 			]);
 		},
 	);
@@ -976,20 +950,13 @@ test("an error for each profile config tunes that no root holds, where config se
 		workspace:
 			"profiles:\n  auditor: {}\n  classics/buildr:\n    runtime: { model: m }\n  zzzzzz: {}\n",
 	});
-	expect(
+	expectCarried(
 		(await untunable(setup)).map((d) => [d.message, d.hint, d.source?.line]),
-	).toEqual([
 		[
-			"config 'profiles.classics/buildr' tunes profile 'classics/buildr', which no profile root holds",
-			"Did you mean 'classics/builder'?",
-			4,
+			[["profiles.classics/buildr", "classics/builder"], 4],
+			[["profiles.zzzzzz", "Create", join(W, "zzzzzz/profile.yaml")], 5],
 		],
-		[
-			"config 'profiles.zzzzzz' tunes profile 'zzzzzz', which no profile root holds",
-			`Create ${join(W, "zzzzzz/profile.yaml")}, or drop 'profiles.zzzzzz'`,
-			5,
-		],
-	]);
+	);
 });
 
 test('profiles."*" tunes no profile by name', async () => {

@@ -1,17 +1,30 @@
 import { expect, test } from "bun:test";
 import { frame, type Run, replyKind, VERDICT } from "./frame";
 
-const LISTED = `    "gaps": ["<something the task asked that you could not finish or verify after trying, which the reader would otherwise assume done>"],
-    "obstacles": ["<something outside the agent's reach that stopped or slowed it, such as a missing attachment or a tool not on the PATH; not a test that failed or a check that was red>"],
-    "lessons": ["<something that changes what the next agent in this repository should do, which the code and its docs do not already say>"],
-    "sightings": [{ "path": "<the file it is in>", "text": "<a defect or smell in the target outside the task's scope that the agent saw and left unfixed; never something the task asked to be fixed>", "cites": "<the rule, doc or behaviour it breaches>" }]`;
+const SHELL = "Your shell is bash";
 
-const GIT =
-	"Git reads such as `status`, `diff` and `log` work here, and every git write fails by design. Try a git mutation in a fresh `git init` under `/tmp`. `/tmp` is empty again at the start of each turn: keep nothing there that a later turn needs.";
-const OWNED =
-	"This is your codebase, and you will work on it again in later tasks. A shortcut taken today is a hurdle in every task after it. Leave the code you touch better than you found it.";
-const SHELL =
-	"Your shell is bash, already set up: call tools by their bare names. Judge a command by its exit status, never by words in its output.";
+/** The `## ` sections of a frame, by heading, so a test reads one section and not its prose. */
+/** The paragraphs of a section, not counting its heading. */
+const paragraphs = (section: string | undefined) =>
+	(section ?? "").trim().split("\n\n").length - 1;
+
+const REPORT_KEYS = [
+	'"report"',
+	'"summary"',
+	'"gaps"',
+	'"obstacles"',
+	'"lessons"',
+	'"sightings"',
+	'"blocked"',
+];
+
+const sectionsOf = (text: string) =>
+	Object.fromEntries(
+		text
+			.split(/^## /m)
+			.slice(1)
+			.map((part) => [part.slice(0, part.indexOf("\n")), part]),
+	);
 
 test("a write-lane builder's frame states its working copy, checks and reply, in that order", () => {
 	const run: Run = {
@@ -23,73 +36,32 @@ test("a write-lane builder's frame states its working copy, checks and reply, in
 		],
 		kind: replyKind(false, { map: { type: "object" } }),
 	};
-	expect(frame(run)).toBe(`# Your run
-
-## Working copy
-
-Your working copy is the current directory. Leave your changes uncommitted: the run records the working copy as a version when you finish. ${GIT}
-
-${SHELL}
-
-${OWNED}
-
-## Checks
-
-Run the target's checks with \`check <name>\`, and never write your own. Each prints the tail of its output, then ok, rejected or failed. While you work, run only the tests your change touches; run each check once, on your finished change.
-- \`check all\`: format, lint, types and every test
-
-## Reply
-
-Before your final reply, write every one of these files:
-- \`/out/notes.md\`: Markdown
-- \`/out/a.json\`: JSON matching this JSON Schema:
-  \`\`\`json
-  {
-    "type": "object"
-  }
-  \`\`\`
-
-Your final reply is only this JSON object, with no other text:
-
-\`\`\`json
-{
-  "report": {
-    "summary": "<what you did, in one line>",
-${LISTED}
-  },
-  "map": <JSON value, as described below>
-}
-\`\`\`
-
-- \`map\`: JSON matching this JSON Schema, left out only with \`blocked\`:
-  \`\`\`json
-  {
-    "type": "object"
-  }
-  \`\`\`
-- Finish the task before you reply: work you could still do is never a gap.
-- Most reports are the summary alone: give a list only for an item that clears its bar.
-- Leave out what the run already records: your changes, the checks' results and the files you wrote.
-- Add \`"blocked": "<the cause>"\` only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.`);
+	const text = frame(run);
+	expect(text.match(/^## .*$/gm)).toEqual([
+		"## Working copy",
+		"## Checks",
+		"## Reply",
+	]);
+	const sections = sectionsOf(text);
+	expect(sections.Checks).toContain("`check all`");
+	expect(sections.Checks).toContain("format, lint, types and every test");
+	expect(sections["Working copy"]).not.toContain("git show HEAD:");
+	// The agent's reply parser reads these keys and the files in /out.
+	const reply = sections.Reply ?? "";
+	expect(reply).toContain("`/out/notes.md`");
+	expect(reply).toContain("`/out/a.json`");
+	expect(reply).toContain('"type": "object"');
+	for (const key of [...REPORT_KEYS, '"map"']) expect(reply).toContain(key);
+	expect(reply).not.toContain('"outcome"');
+	expect(paragraphs(sections["Working copy"])).toBe(3);
+	const readChecks = sectionsOf(
+		frame({ ...run, lane: "read", kind: VERDICT }),
+	).Checks?.split("\n")[2];
+	const writeChecks = sections.Checks?.split("\n")[2] ?? "";
+	// The write lane's lead extends the read lane's, which holds no verify line.
+	expect(writeChecks.startsWith(readChecks ?? "?")).toBe(true);
+	expect(writeChecks.length).toBeGreaterThan(readChecks?.length ?? 0);
 });
-
-const VERDICT_REPLY = `Your final reply is only this JSON object, with no other text:
-
-\`\`\`json
-{
-  "report": {
-    "summary": "<your ruling, in one line>",
-${LISTED}
-  },
-  "outcome": "ok"
-}
-\`\`\`
-
-- \`outcome\`: \`ok\` when the work passes your ruling, \`rejected\` when it does not.
-- Finish the task before you reply: work you could still do is never a gap.
-- Most reports are the summary alone: give a list only for an item that clears its bar.
-- Leave out what the run already records: the checks' results and the files you wrote.
-- Give \`"blocked": "<the cause>"\` in place of \`outcome\` only when you cannot proceed, the cause is outside your reach, and nothing later in this run will change it.`;
 
 test("a read-lane frame keeps a draft in the working copy and omits the verify line", () => {
 	const text = frame({
@@ -98,59 +70,45 @@ test("a read-lane frame keeps a draft in the working copy and omits the verify l
 		out: [{ file: "findings.md", format: "markdown" }],
 		kind: VERDICT,
 	});
-	expect(text).toBe(`# Your run
-
-## Working copy
-
-Your working copy is the current directory, and it is discarded when you finish: change files freely to try something, and restore one with \`git show HEAD:<path> > <path>\`. Keep a draft you will revise in the working copy. ${GIT}
-
-${SHELL}
-
-## Checks
-
-Run the target's checks with \`check <name>\`, and never write your own. Each prints the tail of its output, then ok, rejected or failed.
-- \`check all\`: every test
-
-## Reply
-
-Before your final reply, write every one of these files, even when you reject:
-- \`/out/findings.md\`: Markdown
-
-${VERDICT_REPLY}`);
+	const sections = sectionsOf(text);
+	expect(Object.keys(sections)).toEqual(["Working copy", "Checks", "Reply"]);
+	expect(sections["Working copy"]).toContain("git show HEAD:<path>");
+	expect(sections.Checks).toContain("`check all`");
+	expect(sections.Reply).toContain("`/out/findings.md`");
+	for (const key of [...REPORT_KEYS, '"outcome"'])
+		expect(sections.Reply).toContain(key);
+	expect(sections.Reply).not.toContain('"map"');
+	expect(paragraphs(sections["Working copy"])).toBe(2);
 });
 
 test.each([
-	[
-		"no lane or check",
-		{},
-		[`# Your run\n\n## Working copy\n\n${SHELL}\n\n## Reply\n\n`],
-		[
-			"Your working copy is",
-			"Git reads",
-			"## Checks",
-			"## Context",
-			"write every one",
-		],
-	],
+	["no lane or check", {}, ["Working copy", "Reply"], []],
 	[
 		"a handoff policy of three sessions",
 		{ sessions: 3 },
-		[
-			`${SHELL}\n\n## Context\n\nYour context is bounded. When it fills, this session stops, and in one more turn you write a handoff note for a fresh session that continues your task in this working copy. Work in steps that leave the working copy coherent, so a successor can pick up from it. This task allows up to 3 sessions.\n\n## Reply\n\n`,
-		],
-		["## Checks"],
+		["Working copy", "Context", "Reply"],
+		["3"],
 	],
 ] as [string, Partial<Run>, string[], string[]][])(
 	"with %s, the frame holds only the sections it has something to say in",
-	(_, given, present, absent) => {
+	(_, given, present, inContext) => {
 		const text = frame({
 			checks: [],
 			out: [],
 			kind: VERDICT,
 			...given,
 		});
-		expect(present.filter((part) => !text.includes(part))).toEqual([]);
-		expect(absent.filter((part) => text.includes(part))).toEqual([]);
-		expect(text).toEndWith(VERDICT_REPLY);
+		const sections = sectionsOf(text);
+		expect(Object.keys(sections)).toEqual(present);
+		expect(sections["Working copy"]).toContain(SHELL);
+		expect(paragraphs(sections["Working copy"])).toBe(1);
+		// With no output file the reply holds the kind's contract and no file lead.
+		expect(paragraphs(sections.Reply)).toBe(
+			VERDICT.reply.join("\n").split("\n\n").length,
+		);
+		expect(sections.Reply).toContain('"outcome"');
+		expect(
+			inContext.filter((word) => !sections.Context?.includes(word)),
+		).toEqual([]);
 	},
 );

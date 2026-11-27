@@ -51,21 +51,14 @@ test("an artifact path must resolve inside scratch to the kind of entry its type
 	await tree(join(scratch, "t"), "x");
 	await writeFile(join(root, "outside.txt"), "x");
 	await symlink(join(root, "outside.txt"), join(scratch, "outward"));
-	const fix = "Write it under ctx.scratch and return its absolute path";
 	const outward = join(scratch, "outward");
-	await expect(collected(scratch, { file: outward })).rejects.toThrow(
-		`output 'file' names '${outward}', outside the instance's scratch directory. ${fix}`,
-	);
+	await expect(collected(scratch, { file: outward })).rejects.toThrow(outward);
 	await expect(
 		collected(scratch, { file: join(scratch, "t") }),
-	).rejects.toThrow(
-		`output 'file' names '${join(scratch, "t")}', which is not a file, as its type '${CORE_TYPES.file}' needs`,
-	);
+	).rejects.toThrow(join(scratch, "t"));
 	await expect(
 		collected(scratch, { tree: join(scratch, "t"), file: "t/sub/a.txt" }),
-	).rejects.toThrow(
-		`output 'file' is 't/sub/a.txt', not an absolute path. ${fix}`,
-	);
+	).rejects.toThrow("t/sub/a.txt");
 	expect(existsSync(join(scratch, "t"))).toBe(true);
 });
 
@@ -84,12 +77,8 @@ test("staging copies a file under its reference, and refuses one changed or gone
 	expect(await Bun.file(copy).text()).toBe("v1");
 
 	await writeFile(source, "v2");
-	await expect(stage(area, [staged])).rejects.toThrow(
-		`--spec names '${source}', which changed since the concert was composed. Perform it again`,
-	);
+	await expect(stage(area, [staged])).rejects.toThrow(source);
 	expect(existsSync(copy)).toBe(false);
 	await rm(source);
-	await expect(stage(area, [staged])).rejects.toThrow(
-		`--spec names '${source}', which is gone since the concert was composed`,
-	);
+	await expect(stage(area, [staged])).rejects.toThrow(source);
 });

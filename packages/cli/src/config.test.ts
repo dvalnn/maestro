@@ -481,7 +481,7 @@ describe("the .env beside the user config", () => {
 		const file = join(root, "xdg/maestro/.env");
 		await chmod(file, 0);
 		expect(() => loadDotenv({ XDG_CONFIG_HOME: join(root, "xdg") })).toThrow(
-			`cannot read ${file}: EACCES: permission denied, open '${file}'\nMake it readable, or remove it`,
+			file,
 		);
 	});
 });

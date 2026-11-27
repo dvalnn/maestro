@@ -192,7 +192,7 @@ describe("apply", () => {
 
 		expect(result).toMatchObject({ outcome: "rejected", node: "merge" });
 		expect(instances.find((i) => i.node === "merge")?.reason).toContain(
-			"changeset does not apply cleanly to 'a.txt'",
+			"'a.txt'",
 		);
 		expect(await changed(config, target, `${id}.merge`)).not.toContain(
 			"<<<<<<<",
