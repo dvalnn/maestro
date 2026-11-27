@@ -19,7 +19,7 @@ import {
 import type { SandboxBackend, SandboxSpec } from "@maestro/host-repo/sandbox";
 import { claudeHarness, declared } from "./index";
 
-const FIXTURES = join(import.meta.dir, "../fixtures/2.1.330");
+const FIXTURES = join(import.meta.dir, "../fixtures/2.1.332");
 const TOKEN = "fake-setup-token";
 const dirs: string[] = [];
 const tmp = (name: string) => {
@@ -72,7 +72,7 @@ const read = (req: HarnessRequest, file: string) =>
 	readFileSync(join(req.outbox, file), "utf8");
 
 describe("stand-in claude", () => {
-	test("the recorded 2.1.330 run is read into tools, usage, prompt sizes, its model's window and a reply", async () => {
+	test("the recorded 2.1.332 run is read into tools, usage, prompt sizes, its model's window and a reply", async () => {
 		const req = request("write hello.txt");
 		const unknown = '{"type":"future_event","extra":{"a":1}}';
 		const compacted =
@@ -96,20 +96,20 @@ describe("stand-in claude", () => {
 		expect(result.reply).not.toBe("");
 		expect(result.metrics).toEqual({
 			tokens_in: 4,
-			tokens_out: 80,
-			tokens_cache_read: 9553,
-			tokens_cache_write: 2401,
+			tokens_out: 141,
+			tokens_cache_read: 9862,
+			tokens_cache_write: 2832,
 		});
 		expect(seen.filter((e) => e.kind === "tool")).toContainEqual({
 			kind: "tool",
 			name: "Write",
 			input: { file_path: "/out/note.txt", content: "hello" },
-			id: "toolu_01HNrc6yDwjMWgod2pNKqsDh",
+			id: "toolu_019tHBJub2xzMZxo5e7LxnBC",
 		});
 		expect(seen.filter((e) => e.kind === "tool_result")).toEqual([
 			{
 				kind: "tool_result",
-				id: "toolu_01HNrc6yDwjMWgod2pNKqsDh",
+				id: "toolu_019tHBJub2xzMZxo5e7LxnBC",
 				bytes: expect.any(Number),
 				error: false,
 			},
@@ -117,8 +117,8 @@ describe("stand-in claude", () => {
 		expect(
 			seen.filter((e) => e.kind === "context" || e.kind === "compaction"),
 		).toEqual([
-			{ kind: "context", used: 5911 },
-			{ kind: "context", used: 6047 },
+			{ kind: "context", used: 6220 },
+			{ kind: "context", used: 6478 },
 			{ kind: "compaction" },
 		]);
 		expect(seen.filter((e) => e.kind === "window")).toEqual([
@@ -173,7 +173,7 @@ describe("stand-in claude", () => {
 			expect(reported).toEqual([
 				{
 					kind: "environment",
-					version: "2.1.330",
+					version: "2.1.332",
 					model: "claude-haiku-5-5",
 					tools: [subagent, "Bash", "Read", "Write", "Workflow"],
 					subagents: [subagent],
@@ -478,7 +478,7 @@ describe("stand-in claude", () => {
 			tokens_in: 2,
 			tokens_out: 3,
 			tokens_cache_read: 649,
-			tokens_cache_write: 2779,
+			tokens_cache_write: 2772,
 		});
 		const projects = join(req.session.dir, "claude/projects/-lane");
 		mkdirSync(projects, { recursive: true });
@@ -486,8 +486,8 @@ describe("stand-in claude", () => {
 		expect(await metricsOf(fixture("session-2"))).toEqual({
 			tokens_in: 2,
 			tokens_out: 3,
-			tokens_cache_read: 3065,
-			tokens_cache_write: 406,
+			tokens_cache_read: 2676,
+			tokens_cache_write: 782,
 		});
 	});
 
@@ -574,8 +574,8 @@ describe("stand-in claude", () => {
 		expect(result.metrics).toEqual({
 			tokens_in: 4,
 			tokens_out: 20,
-			tokens_cache_read: 9553,
-			tokens_cache_write: 2401,
+			tokens_cache_read: 9862,
+			tokens_cache_write: 2832,
 		});
 	});
 
