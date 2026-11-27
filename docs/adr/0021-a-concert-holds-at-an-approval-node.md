@@ -37,7 +37,7 @@ NFR-09 asks for a reason. A hold needs four things that no code node has:
 - a bound that compose reports;
 - a ruling tied to the resume key.
 
-A code node is a pure function of its inputs, so each author would write those four by hand.
+The engine gives a code node none of them, so each author would write all four by hand.
 
 ## Considered options
 
