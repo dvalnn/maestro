@@ -219,16 +219,6 @@ export async function bump(
 	return { changeset: dir };
 }
 
-/** The candidate node: the release's notes, bump changeset, review and `dist/`, once each settled ok. */
-export function candidateOf(parts: {
-	notes: ArtifactRef;
-	changeset: ArtifactRef;
-	review: ArtifactRef;
-	dist: ArtifactRef;
-}) {
-	return parts;
-}
-
 /** What a publish node does in a dry run instead of its effect: logs it, and leaves main and the forge as they are. */
 function logDry(ctx: CodeContext, effect: string) {
 	ctx.log(`dry run: would ${effect}`);
@@ -520,31 +510,21 @@ export const release = composition(
 			{ run: RELEASE, timeout: "1h" },
 			{ label: "release" },
 		);
-		const candidate = code(candidateOf, {
-			in: {
-				notes: notes.out.notes,
-				changeset: bumped.out.changeset,
-				review,
-				dist: built.out.output,
-			},
-			out: {
-				notes: Markdown(),
-				changeset: Dir(),
-				review: Markdown(),
-				dist: Dir(),
-			},
-			label: "candidate",
-		});
-		const { dist } = candidate.out;
+		const dist = built.out.output;
 		const approved = approval(
-			`Publish ${tag}: push its bump to main and create the forge release from these notes${prerelease ? "" : ", then close its milestone"}?`,
+			`Publish ${tag}: push its bump to main and create the forge release from these notes and dist${prerelease ? "" : ", then close its milestone"}?`,
 			{
-				in: { notes: candidate.out.notes, review: candidate.out.review },
+				in: {
+					notes: notes.out.notes,
+					review,
+					changeset: bumped.out.changeset,
+					dist,
+				},
 				label: "publish",
 			},
 		);
 		const pushed = code(pushBump, {
-			in: { changeset: candidate.out.changeset, dry },
+			in: { changeset: bumped.out.changeset, dry },
 			out: { commit: Text() },
 			label: "push",
 			when: approved.ok,
@@ -554,7 +534,7 @@ export const release = composition(
 				version,
 				prerelease,
 				commit: pushed.out.commit,
-				notes: candidate.out.notes,
+				notes: notes.out.notes,
 				dist,
 				dry,
 			},

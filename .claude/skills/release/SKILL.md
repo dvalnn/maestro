@@ -27,16 +27,17 @@ of the same kind: the last stable for a stable, the last tag for a pre-release (
 1. **Perform.** `jj git fetch`, then
    `maestro perform .maestro/release.ts --version <version> --prev <prev> [--prerelease] --detach`, and follow it with
    `maestro wait <id>`. Done when `maestro approval` lists its `publish` approval.
-2. **Show.** Give the owner the candidate's notes and the review's findings: `maestro artifact show <id> candidate`. A
-   finding the owner accepts becomes an issue in the milestone; rule `reject` and cut again once it lands.
+2. **Show.** `maestro approval` lists the request with the path of each thing it publishes: the notes, the review, the
+   bump `changeset` and `dist`. Give the owner the notes and the review's findings. A finding the owner accepts becomes
+   an issue in the milestone; rule `reject` and cut again once it lands.
 3. **Rule.** On the owner's word, `maestro approval <id> ok`, or `maestro approval <id> reject "<reason>"`. Done when
    the concert settles `ok`: the bump is on the forge's `main`, the forge release holds every `dist/` file, and a
    stable's milestone is closed.
 4. **GitHub.** `jj git fetch` brings the tag home, and `<bump>` is `jj log -r <tag>`'s commit. Copy the notes for GitHub
    so they link nothing on the forge: drop the issue refs, since GitHub links a bare `#N` to its own issue, and point
    the `INSTALL.md` link at `https://github.com/dvalnn/maestro/blob/<tag>/INSTALL.md`. `scripts/github-sync.sh <bump>`
-   points `next` at the bump (the `github` skill). Then, from the candidate's `dist` directory
-   (`maestro artifact show <id> candidate --path`):
+   points `next` at the bump (the `github` skill). Then, from the `dist` directory
+   (`maestro artifact show <id> release --path`):
 
    ```sh
    gh release create <tag> --repo dvalnn/maestro --target <bump commit id> [--prerelease] --notes-file <github notes> *

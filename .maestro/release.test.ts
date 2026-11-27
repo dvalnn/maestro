@@ -166,13 +166,14 @@ test.each([
 });
 
 test.each([
-	["candidate", "notes", { node: "notes_check", port: "notes" }],
-	["candidate", "review", { node: "panel/upheld", port: "review" }],
-	["publish", "notes", { node: "candidate", port: "notes" }],
-	["publish", "review", { node: "candidate", port: "review" }],
+	["notes", { node: "notes_check", port: "notes" }],
+	["review", { node: "panel/upheld", port: "review" }],
+	["changeset", { node: "bump", port: "changeset" }],
+	["dist", { node: "release", port: "output" }],
 ])(
-	"%s takes its %s from %j, so an upheld finding stops the candidate before the approval",
-	async (node, port, from) => {
+	"the approval takes its %s from %j, so it shows what it publishes and an upheld finding stops it",
+	async (port, from) => {
+		const node = "publish";
 		const edges = await edgesOf([]);
 		expect(
 			edges
@@ -269,7 +270,7 @@ Pin \`v0.0.2-rc.1\`.
 type Instance = {
 	node: string;
 	status: string;
-	outputs?: Record<string, unknown>;
+	inputs?: Record<string, unknown>;
 };
 
 /**
@@ -347,7 +348,7 @@ test("a stub dry run of a pre-release holds at the approval, and once ruled ok s
 	expect(connections).toBe(0);
 	expect(revOf(remote, "main")).toBe(origin);
 	const instances = await detailed<Instance>(concert.id, data);
-	const result = instances.find((i) => i.node === "candidate")?.outputs;
+	const result = instances.find((i) => i.node === "publish")?.inputs;
 	const artifact = (path: string) =>
 		readFileSync(
 			join(data, "maestro/concerts", concert.id, "artifacts", path),
