@@ -481,6 +481,15 @@ function forgeOver(remote: string) {
 		],
 		[/page=2/, () => json([])],
 		[
+			/\/user$/,
+			() =>
+				json({
+					login: "tm",
+					full_name: "Tour Manager",
+					email: "tm@forge.example",
+				}),
+		],
+		[
 			/\/branches\/main$/,
 			() => json({ commit: { id: revOf(remote, "main") } }),
 		],
@@ -531,8 +540,11 @@ async function onForge<T>(
 	}
 }
 
-test("publishing pushes the bump to the toy main, creates the release with every dist asset, checks one, and closes the milestone; a resume writes nothing", async () => {
+test("publishing pushes the bump to the toy main, signed by the token's account, creates the release with every dist asset, checks one, and closes the milestone; a resume writes nothing", async () => {
 	const { target, origin, remote, config } = releaseTarget();
+	const key = join(mkdtempSync(join(scratch, "key-")), "key");
+	Bun.spawnSync(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key]);
+	process.env.MAESTRO_TM_SIGNING_KEY = key;
 	const { changeset } = (await bump(
 		{ version: "0.0.2", changes: changesAt(origin) },
 		contextOn(target),
@@ -562,6 +574,16 @@ test("publishing pushes the bump to the toy main, creates the release with every
 	expect(settled).toEqual([{}, {}, {}]);
 	expect(revOf(remote, "main")).toBe(commit);
 	expect(revOf(remote, "main~1")).toBe(origin);
+	const pushed = Bun.spawnSync([
+		"git",
+		"-C",
+		remote,
+		"cat-file",
+		"commit",
+		commit,
+	]).stdout.toString();
+	expect(pushed).toContain("committer Tour Manager <tm@forge.example>");
+	expect(pushed).toContain("gpgsig -----BEGIN SSH SIGNATURE-----");
 	const release = fake.state.releases.get("v0.0.2");
 	expect(release).toMatchObject({
 		target_commitish: commit,
@@ -585,6 +607,7 @@ test("publishing pushes the bump to the toy main, creates the release with every
 	expect((await publish()).commit).toBe(commit);
 	expect(fake.requests.filter((r) => !r.startsWith("GET "))).toEqual([]);
 	expect(revOf(remote, "main")).toBe(moved);
+	delete process.env.MAESTRO_TM_SIGNING_KEY;
 });
 
 /**

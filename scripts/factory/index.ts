@@ -14,6 +14,7 @@ import {
 	type Pull,
 	REQUEST_CHANGES,
 	type Review,
+	signingKeyOf,
 } from "../../.maestro/forge";
 import {
 	busySlots,
@@ -28,7 +29,7 @@ import {
 	startTriage,
 	tourOf,
 } from "./concerts";
-import { type Conflicts, landing, SIGNING_KEY } from "./land";
+import { type Conflicts, landing } from "./land";
 import {
 	type Concert,
 	checkMaestroVersion,
@@ -1328,7 +1329,7 @@ if (import.meta.main) {
 			{
 				forge: tm,
 				maestro: maestro(),
-				landing: landing(REPO, account, process.env[SIGNING_KEY] || undefined),
+				landing: landing(REPO, account, signingKeyOf(process.env)),
 				lock: () => lock(join(options.dir, "lock")),
 				say: console.log,
 				has: (path) => existsSync(join(REPO, path)),

@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { forge, loadEnvFile, type Send } from "./forge";
+import { forge, loadEnvFile, type Send, signingKeyOf } from "./forge";
 
 const TOKEN = "s3cret-token";
 const dir = mkdtempSync(join(tmpdir(), "factory-forge-"));
@@ -598,4 +598,10 @@ test("status is none when the commit has no statuses list", async () => {
 	expect(
 		await withShims(() => forge(signedIn, send).status("abc")),
 	).toBeUndefined();
+});
+
+test("a signing key at a missing path is refused by name", () => {
+	expect(() => signingKeyOf({ MAESTRO_TM_SIGNING_KEY: "/nope/key" })).toThrow(
+		/MAESTRO_TM_SIGNING_KEY.*\/nope\/key/s,
+	);
 });

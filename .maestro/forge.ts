@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { isJson, type Json } from "./json";
@@ -5,6 +6,8 @@ import { isJson, type Json } from "./json";
 const REPO = resolve(import.meta.dir, "..");
 const DOTENV = "maestro/.env";
 export const TOKEN_KEY = "MAESTRO_TM_TOKEN";
+/** The environment variable naming the SSH key that signs the commits the token's account makes. */
+export const SIGNING_KEY = "MAESTRO_TM_SIGNING_KEY";
 /** The forge's largest page. */
 const PAGE = 50;
 /** How the forge refuses to arm auto-merge on a PR that is already armed. */
@@ -161,6 +164,19 @@ export type Forge = {
 const CHECK_PUSH = "check / check (push)";
 
 /** Sends one HTTP request; the forge's seam for tests. */
+/**
+ * The SSH key `MAESTRO_TM_SIGNING_KEY` names in `env`, or none when it is unset.
+ * @throws Error naming the variable and the path when it names a file that does not exist.
+ */
+export function signingKeyOf(env: Record<string, string | undefined>) {
+	const key = env[SIGNING_KEY] || undefined;
+	if (key && !existsSync(key))
+		throw new Error(
+			`${SIGNING_KEY} names no file: ${key}\nPoint it at the SSH key, or unset it to leave commits unsigned`,
+		);
+	return key;
+}
+
 export type Send = (url: string, init: RequestInit) => Promise<Response>;
 
 /** The file `loadEnvFile` reads, `$XDG_CONFIG_HOME/maestro/.env` as maestro reads it. */

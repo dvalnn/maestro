@@ -122,9 +122,6 @@ const CONFLICTS = "maestro-tm/conflicts";
  */
 const REWRITABLE = 'revset-aliases."immutable_heads()"="trunk() | tags()"';
 
-/** The environment variable naming the SSH key that signs the commits the tick makes. */
-export const SIGNING_KEY = "MAESTRO_TM_SIGNING_KEY";
-
 /**
  * The jj config that makes `account` author and committer of what jj writes, and signs it with the SSH key at
  * `signingKey` when there is one. It rides each command's `--config`, so no jj config file changes.
@@ -168,19 +165,12 @@ async function commitOf(repo: string, revision: string) {
 	return commit;
 }
 
-/**
- * Landing workspaces of the jj repository at `repo`, whose commits `account` authors and, given `signingKey`, signs.
- * @throws Error naming `MAESTRO_TM_SIGNING_KEY` and the path when `signingKey` is a file that does not exist.
- */
+/** Landing workspaces of the jj repository at `repo`, whose commits `account` authors and, given `signingKey`, signs. */
 export function landing(
 	repo: string,
 	account: Account,
 	signingKey?: string,
 ): Landing {
-	if (signingKey && !existsSync(signingKey))
-		throw new Error(
-			`${SIGNING_KEY} names no file: ${signingKey}\nPoint it at the SSH key, or unset it to leave commits unsigned`,
-		);
 	const as = identity(account, signingKey);
 	const forget = (name: string) =>
 		run(repo, ["jj", "workspace", "forget", name]);

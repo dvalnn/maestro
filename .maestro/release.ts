@@ -26,7 +26,7 @@ import {
 	Text,
 	use,
 } from "@maestro/sdk";
-import { type Forge, forge } from "./forge";
+import { type Account, type Forge, forge, signingKeyOf } from "./forge";
 import { bumpVersions } from "./release/bump";
 import { checkNotes } from "./release/notes";
 import NOTES from "./release/prompts/notes.md" with { type: "text" };
@@ -72,15 +72,24 @@ export function targetOf(ctx: CodeContext): string {
 	return target;
 }
 
+/** The stdout of `git args` in `cwd`. */
+const git = (cwd: string, signal: AbortSignal, ...args: string[]) =>
+	gitWith({}, cwd, signal, ...args);
+
 /**
- * The stdout of `git args` in `cwd`.
+ * The stdout of `git args` in `cwd`, with `env` over git's own environment.
  * @throws Error with git's stderr when it fails.
  */
-async function git(cwd: string, signal: AbortSignal, ...args: string[]) {
+async function gitWith(
+	env: Record<string, string>,
+	cwd: string,
+	signal: AbortSignal,
+	...args: string[]
+) {
 	const child = Bun.spawn(["git", ...args], {
 		cwd,
 		signal,
-		env: GIT_ENV,
+		env: { ...GIT_ENV, ...env },
 		stdin: "ignore",
 		stdout: "pipe",
 		stderr: "pipe",
@@ -228,7 +237,8 @@ function logDry(ctx: CodeContext, effect: string) {
 
 /**
  * The code node that applies the bump `changeset` in a clone under its scratch directory and pushes it to `main` as a
- * fast-forward, unless the forge's `main` already holds it (ADR 0022). Its output is the bump's commit.
+ * fast-forward, unless the forge's `main` already holds it (ADR 0022). The token's account commits it, signed with the
+ * SSH key `MAESTRO_TM_SIGNING_KEY` names. Its output is the bump's commit.
  */
 export async function pushBump(
 	{ changeset, dry }: { changeset: ArtifactRef; dry: boolean },
@@ -237,18 +247,24 @@ export async function pushBump(
 	const dir = ctx.path(changeset);
 	const base = readFileSync(join(dir, "base"), "utf8").trim();
 	const tree = await cloneAt(ctx, base);
+	const forge = dry ? undefined : forgeOf(ctx);
+	// The forge's main takes signed commits only, so the token's account commits the bump and its key signs it.
+	const { env, options } = forge
+		? committerOf(await forge.account(), signingKeyOf(process.env))
+		: { env: {}, options: [] };
 	// The patch's own date commits it, so every run makes the same commit and a resume finds it on main.
-	await git(
+	await gitWith(
+		env,
 		tree,
 		ctx.signal,
+		...options,
 		"am",
 		"-q",
 		"--committer-date-is-author-date",
 		join(dir, "0001.patch"),
 	);
 	const commit = (await git(tree, ctx.signal, "rev-parse", "HEAD")).trim();
-	if (dry) return { ...logDry(ctx, `push ${commit} to main`), commit };
-	const forge = forgeOf(ctx);
+	if (!forge) return { ...logDry(ctx, `push ${commit} to main`), commit };
 	const main = await forge.head("main");
 	// A main the target has not fetched is unknown here and reads as not holding the bump: the push then fails as a
 	// non-fast-forward, and a resume after a fetch finds it.
@@ -265,6 +281,28 @@ export async function pushBump(
 	);
 	if (!held) await forge.push(tree, commit, "main", false, ctx.signal);
 	return { commit };
+}
+
+/**
+ * The environment and leading git options that commit as `account`, signed with the SSH key at `key` when there is
+ * one, as the tour manager signs its commits.
+ */
+function committerOf(account: Account, key: string | undefined) {
+	const env = {
+		GIT_COMMITTER_NAME: account.name,
+		GIT_COMMITTER_EMAIL: account.email,
+	};
+	const options = key
+		? [
+				"-c",
+				"gpg.format=ssh",
+				"-c",
+				`user.signingKey=${key}`,
+				"-c",
+				"commit.gpgSign=true",
+			]
+		: [];
+	return { env, options };
 }
 
 /** The names of the files in the directory `dir`, sorted. */
@@ -395,7 +433,8 @@ export const release = composition(
 			"The concert then holds at an approval on the notes and the review, so perform it with --detach.",
 			"",
 			"After an ok it writes outside the concert, as MAESTRO_TM_TOKEN.",
-			"It pushes the bump to the forge's main from a clone in its scratch directory, never a force push.",
+			"It pushes the bump to the forge's main from a clone in its scratch directory, never a force push. That account",
+			"commits it, signed with the SSH key MAESTRO_TM_SIGNING_KEY names, as main takes signed commits only.",
 			"It creates the forge release with every file of dist/ as an asset, and checks one asset against SHA256SUMS.",
 			"For a stable, it closes the milestone. A resume leaves a pushed bump, a release, its assets and a closed milestone as",
 			"they are. It does not reinstall maestro, as install.sh refuses while a concert runs: once the concert settles, run",

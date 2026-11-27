@@ -109,12 +109,6 @@ test("with a signing key set, a described commit is signed", async () => {
 	expect(who(dir, described)).toBe(`${WHO}|signed`);
 });
 
-test("a signing key at a missing path is refused by name", () => {
-	expect(() => landing("/repo", account, "/nope/key")).toThrow(
-		/MAESTRO_TM_SIGNING_KEY.*\/nope\/key/s,
-	);
-});
-
 test("a fetch brings the commits origin gained into the repository", async () => {
 	const origin = mkdtempSync(join(tmpdir(), "factory-origin-"));
 	jj(origin, "git", "init");
