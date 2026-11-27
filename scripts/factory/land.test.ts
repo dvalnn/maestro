@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Account } from "./forge";
+import type { Account } from "../../.maestro/forge";
 import { landing } from "./land";
 
 const account: Account = {

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Account } from "./forge";
+import type { Account } from "../../.maestro/forge";
 
 /** How much of a failed command's output a landing error keeps. */
 const OUTPUT_TAIL = 2000;

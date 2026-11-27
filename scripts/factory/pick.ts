@@ -1,5 +1,5 @@
+import type { Comment, Issue, Pull } from "../../.maestro/forge";
 import { RISKS, type Risk } from "../../.maestro/triage/risk";
-import type { Comment, Issue, Pull } from "./forge";
 import {
 	askOf,
 	type Data,

@@ -7,6 +7,15 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { isTourSlug, TOUR_MAX_LENGTH } from "@maestro/core";
 import {
+	dotenvPath,
+	forge,
+	type Issue,
+	loadEnvFile,
+	type Pull,
+	REQUEST_CHANGES,
+	type Review,
+} from "../../.maestro/forge";
+import {
 	busySlots,
 	isSlice,
 	isStackReview,
@@ -19,15 +28,6 @@ import {
 	startTriage,
 	tourOf,
 } from "./concerts";
-import {
-	dotenvPath,
-	forge,
-	type Issue,
-	loadEnvFile,
-	type Pull,
-	REQUEST_CHANGES,
-	type Review,
-} from "./forge";
 import { type Conflicts, landing, SIGNING_KEY } from "./land";
 import {
 	type Concert,

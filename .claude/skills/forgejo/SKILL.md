@@ -21,7 +21,7 @@ scripts/forge.py api METHOD PATH [JSON]     # JSON from stdin when "-"
 bot's when `FJ_USE_BOT=1`. The response prints as JSON.
 
 `forge.py` is agent tooling: no repository script runs it. The tour manager has its own REST client,
-`scripts/factory/forge.ts`, under its own account, so a change here never reaches the factory.
+`.maestro/forge.ts`, under its own account, so a change here never reaches the factory.
 
 | Need                      | Call                                                                                  |
 | ------------------------- | ------------------------------------------------------------------------------------- |

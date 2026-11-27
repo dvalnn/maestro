@@ -2,8 +2,8 @@
 // (factory.md, Rules, Policy: Tick base, Tour and title).
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import type { Issue } from "../../.maestro/forge";
 import type { Risk } from "../../.maestro/triage/risk";
-import type { Issue } from "./forge";
 import type { Concert, Maestro } from "./maestro";
 import { riskOf } from "./pick";
 import { halt, message, type Tick } from "./tick";

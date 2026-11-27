@@ -42,7 +42,7 @@ forge.py api POST /issues/<n>/dependencies '{"owner": "tiago", "repo": "maestro"
 ```
 
 `forge.py` is `.claude/skills/forgejo/scripts/forge.py`, agent tooling; the tour manager calls the REST API itself, in
-`scripts/factory/forge.ts`.
+`.maestro/forge.ts`.
 
 ## When a skill says "publish to the issue tracker"
 

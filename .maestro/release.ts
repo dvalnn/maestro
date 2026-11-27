@@ -26,7 +26,7 @@ import {
 	Text,
 	use,
 } from "@maestro/sdk";
-import { type Forge, forge } from "../scripts/factory/forge";
+import { type Forge, forge } from "./forge";
 import { bumpVersions } from "./release/bump";
 import { checkNotes } from "./release/notes";
 import NOTES from "./release/prompts/notes.md" with { type: "text" };

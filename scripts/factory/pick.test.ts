@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { Issue } from "./forge";
+import type { Issue } from "../../.maestro/forge";
 import { buildable, pick, riskOf } from "./pick";
 
 const free = async () => true;

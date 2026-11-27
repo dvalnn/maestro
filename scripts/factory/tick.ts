@@ -1,6 +1,6 @@
 // What every step of a tick shares: its view of the forge and maestro, and the writes a step routes an issue with.
 import { resolve } from "node:path";
-import type { Comment, Forge, Issue } from "./forge";
+import type { Comment, Forge, Issue } from "../../.maestro/forge";
 import type { Landing } from "./land";
 import type { Concert, Maestro } from "./maestro";
 import { riskOf } from "./pick";

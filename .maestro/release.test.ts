@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { type ArtifactRef, type CodeContext, reject } from "@maestro/sdk";
-import type { Forge, Issue } from "../scripts/factory/forge";
+import type { Forge, Issue } from "./forge";
 import {
 	bump,
 	checkVersion,

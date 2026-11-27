@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Issue } from "../../.maestro/forge";
 import {
 	busySlots,
 	isMasterclass,
@@ -24,7 +25,6 @@ import {
 	startStackReview,
 	startTriage,
 } from "./concerts";
-import type { Issue } from "./forge";
 import { landing } from "./land";
 import { type Concert, maestro } from "./maestro";
 import {

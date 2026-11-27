@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { isJson, type Json } from "./json";
 
-const REPO = resolve(import.meta.dir, "../..");
+const REPO = resolve(import.meta.dir, "..");
 const DOTENV = "maestro/.env";
 export const TOKEN_KEY = "MAESTRO_TM_TOKEN";
 /** The forge's largest page. */

@@ -1,16 +1,16 @@
 // Landing a slice's change as its PR to `main` (factory.md, Rules, Landing and PRs).
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Guards, Test } from "../guards";
-import { isSlice, tourOf } from "./concerts";
 import {
 	type Forge,
 	GHOST,
 	type Issue,
 	type NewPull,
 	REQUEST_CHANGES,
-} from "./forge";
-import { isJson } from "./json";
+} from "../../.maestro/forge";
+import { isJson } from "../../.maestro/json";
+import type { Guards, Test } from "../guards";
+import { isSlice, tourOf } from "./concerts";
 import type { Report, Spend } from "./maestro";
 import { riskOf } from "./pick";
 import {

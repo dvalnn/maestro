@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { isJson, type Json } from "./json";
+import { isJson, type Json } from "../../.maestro/json";
 import { unresolvedOf } from "./route";
 
 /**

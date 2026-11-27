@@ -16,6 +16,9 @@ against real `main` and every PR targets it. On a low-risk PR to `main` whose re
 arms the forge's auto-merge, fast-forward only, so the commits keep their signature; it never merges by hand, so
 `main`'s branch protection must require the `check` status for the merge to wait on CI.
 
+The tick imports from `.maestro/`, never the reverse: code a composition shares with it, such as the forge client
+`.maestro/forge.ts`, lives there.
+
 It needs maestro `0.4.0-rc.2` or later on `PATH`, and the tick checks that before it reads the forge.
 `config <concert> --json` prints the `moduleDir` the tree reader needs only from that version. It also calls `encore`,
 `artifact ls`, `ls --all` and `--detach`. It needs `jj`, `git`, `bun` and `just` to land a slice, and no python or `fj`.

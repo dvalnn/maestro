@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { validator } from "@maestro/ir";
+import type { Comment } from "../../.maestro/forge";
+import { isJson, type Json } from "../../.maestro/json";
 import type { Promotion as Proposal } from "../../.maestro/masterclass";
 import { KINDS } from "../../.maestro/masterclass/kinds";
 import type { Risk } from "../../.maestro/triage/risk";
@@ -11,8 +13,6 @@ import {
 	type Verdict,
 } from "../../.maestro/triage/schemas";
 import type { Guards, Test } from "../guards";
-import type { Comment } from "./forge";
-import { isJson, type Json } from "./json";
 import type { Reviewer, Spend } from "./maestro";
 import {
 	INTAKE,

@@ -8,7 +8,7 @@ import type {
 	NewPull,
 	Pull,
 	Review,
-} from "./forge";
+} from "../../.maestro/forge";
 import type { Conflicts, Landing } from "./land";
 import type { Concert, Maestro, Report, Result, Spend } from "./maestro";
 
