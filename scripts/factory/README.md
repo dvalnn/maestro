@@ -40,8 +40,9 @@ already set wins over the file:
 
 The host, owner and repo come from the `origin` remote (ssh or https). The account needs write access to the repo, which
 lets it push branches, open PRs, comment, request reviews, label, file issues and arm auto-merge; give it no admin
-right. Its login, name and email come from `GET /user` and author every commit the tick describes. The systemd unit
-needs no new `Environment=`, since the keys live in the `.env`.
+right. `.maestro/release.ts` pushes `main` as it, so it needs a place on `main`'s push allowlist, and its signing key on
+its forge account. Its login, name and email come from `GET /user` and author every commit the tick describes. The
+systemd unit needs no new `Environment=`, since the keys live in the `.env`.
 
 A PR that conflicts with `main` is encored from its merge onto it and lands rebased, and the tick answers a PR it
 revises; see `docs/agents/factory.md`, Rules, Build: Encore and Landing and PRs.
