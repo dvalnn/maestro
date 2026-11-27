@@ -18,7 +18,7 @@
     },
     "packages/cli": {
       "name": "@maestro/cli",
-      "version": "0.5.0-rc.1",
+      "version": "0.5.0",
       "bin": {
         "maestro": "./src/maestro.ts",
       },
@@ -40,7 +40,7 @@
     },
     "packages/core": {
       "name": "@maestro/core",
-      "version": "0.5.0-rc.1",
+      "version": "0.5.0",
       "dependencies": {
         "@maestro/ir": "workspace:*",
         "ajv": "8.20.0",
@@ -49,21 +49,21 @@
     },
     "packages/harness-claude": {
       "name": "@maestro/harness-claude",
-      "version": "0.5.0-rc.1",
+      "version": "0.5.0",
       "dependencies": {
         "@maestro/host-repo": "workspace:*",
       },
     },
     "packages/harness-pi": {
       "name": "@maestro/harness-pi",
-      "version": "0.5.0-rc.1",
+      "version": "0.5.0",
       "dependencies": {
         "@maestro/host-repo": "workspace:*",
       },
     },
     "packages/host-repo": {
       "name": "@maestro/host-repo",
-      "version": "0.5.0-rc.1",
+      "version": "0.5.0",
       "dependencies": {
         "@maestro/core": "workspace:*",
         "@maestro/host-repo-sdk": "workspace:*",
@@ -72,7 +72,7 @@
     },
     "packages/host-repo-sdk": {
       "name": "@maestro/host-repo-sdk",
-      "version": "0.5.0-rc.1",
+      "version": "0.5.0",
       "dependencies": {
         "@maestro/ir": "workspace:*",
         "@maestro/sdk": "workspace:*",
@@ -86,14 +86,14 @@
     },
     "packages/ir": {
       "name": "@maestro/ir",
-      "version": "0.5.0-rc.1",
+      "version": "0.5.0",
       "dependencies": {
         "ajv": "8.20.0",
       },
     },
     "packages/render-text": {
       "name": "@maestro/render-text",
-      "version": "0.5.0-rc.1",
+      "version": "0.5.0",
       "dependencies": {
         "@maestro/ir": "workspace:*",
       },
@@ -103,14 +103,14 @@
     },
     "packages/sdk": {
       "name": "@maestro/sdk",
-      "version": "0.5.0-rc.1",
+      "version": "0.5.0",
       "dependencies": {
         "@maestro/ir": "workspace:*",
       },
     },
     "packages/testkit": {
       "name": "@maestro/testkit",
-      "version": "0.5.0-rc.1",
+      "version": "0.5.0",
       "dependencies": {
         "@maestro/core": "workspace:*",
         "@maestro/ir": "workspace:*",
@@ -119,11 +119,11 @@
     },
     "packages/transcript": {
       "name": "@maestro/transcript",
-      "version": "0.5.0-rc.1",
+      "version": "0.5.0",
     },
     "packs/classics": {
       "name": "@maestro/classics",
-      "version": "0.5.0-rc.1",
+      "version": "0.5.0",
       "dependencies": {
         "@maestro/host-repo-sdk": "workspace:*",
         "@maestro/sdk": "workspace:*",
