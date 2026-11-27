@@ -28,8 +28,10 @@ of the same kind: the last stable for a stable, the last tag for a pre-release (
    `maestro perform .maestro/release.ts --version <version> --prev <prev> [--prerelease] --detach`, and follow it with
    `maestro wait <id>`. Done when `maestro approval` lists its `publish` approval.
 2. **Show.** `maestro approval` lists the request with the path of each thing it publishes: the notes, the review, the
-   bump `changeset` and `dist`. Give the owner the notes and the review's findings. A finding the owner accepts becomes
-   an issue in the milestone; rule `reject` and cut again once it lands.
+   bump `changeset` and `dist`. Give the owner the notes and every finding the review upholds; an upheld finding does
+   not stop the concert, the owner rules on each. One the owner defers becomes an issue in the next release's milestone.
+   One the owner accepts becomes an issue in this one, and the ruling is `reject`. Once its fix is on `main`,
+   `jj git fetch`, then `maestro encore <id> --detach`. The encore continues the review's sessions on the new commits.
 3. **Rule.** On the owner's word, `maestro approval <id> ok`, or `maestro approval <id> reject "<reason>"`. Done when
    the concert settles `ok`: the bump is on the forge's `main`, the forge release holds every `dist/` file, and a
    stable's milestone is closed.

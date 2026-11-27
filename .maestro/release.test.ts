@@ -11,6 +11,7 @@ import {
 	publishRelease,
 	pushBump,
 	requireMilestone,
+	reviewedOf,
 	targetOf,
 	tipOf,
 	verifyRelease,
@@ -166,14 +167,14 @@ test.each([
 });
 
 test.each([
-	["notes", { node: "notes_check", port: "notes" }],
-	["review", { node: "panel/upheld", port: "review" }],
-	["changeset", { node: "bump", port: "changeset" }],
-	["dist", { node: "release", port: "output" }],
+	["review", "review", { node: "panel/upheld", port: "review" }],
+	["publish", "notes", { node: "notes_check", port: "notes" }],
+	["publish", "review", { node: "review", port: "review" }],
+	["publish", "changeset", { node: "bump", port: "changeset" }],
+	["publish", "dist", { node: "release", port: "output" }],
 ])(
-	"the approval takes its %s from %j, so it shows what it publishes and an upheld finding stops it",
-	async (port, from) => {
-		const node = "publish";
+	"%s takes its %s from %j, so the approval shows what it publishes",
+	async (node, port, from) => {
 		const edges = await edgesOf([]);
 		expect(
 			edges
@@ -275,9 +276,14 @@ type Instance = {
 
 /**
  * Performs the pre-release 0.0.2-rc.1 of a `releaseTarget` on stubs with `--dry-run`, as `MAESTRO_TM_TOKEN` and with
- * `env`, and gives `ruling` at its approval through `maestro approval` once it holds there.
+ * `env` and the stub outputs `scripted`, and gives `ruling` at its approval through `maestro approval` once it holds
+ * there.
  */
-async function performRuled(ruling: string[], env: Record<string, string>) {
+async function performRuled(
+	ruling: string[],
+	env: Record<string, string>,
+	scripted: Record<string, unknown> = {},
+) {
 	const just = Bun.which("just");
 	if (!just) throw new Error("just is not on PATH");
 	const toy = releaseTarget();
@@ -306,7 +312,10 @@ async function performRuled(ruling: string[], env: Record<string, string>) {
 		],
 		data,
 		{
-			MAESTRO_STUB_OUTPUTS: stubOutputs({ "notes/notes.md": NOTES }),
+			MAESTRO_STUB_OUTPUTS: stubOutputs({
+				"notes/notes.md": NOTES,
+				...scripted,
+			}),
 			MAESTRO_TM_TOKEN: "t",
 			GIT_CONFIG_GLOBAL: toy.config,
 			...env,
@@ -324,7 +333,22 @@ async function performRuled(ruling: string[], env: Record<string, string>) {
 	return { ...toy, data, concert };
 }
 
-test("a stub dry run of a pre-release holds at the approval, and once ruled ok settles ok with main and the forge untouched", async () => {
+/** A finding every lens of the stub review raises and its skeptic stands by, which the consolidator upholds as correctness's. */
+const UPHELD = {
+	"panel/lenses/lens/findings.json": [
+		{ id: "F1", where: "a.ts:1", issue: "a drifts from b", cites: "spec 1" },
+	],
+	"panel/lenses/lens/verdict": "rejected F1",
+	"panel/lenses/skeptic/rulings.json": [
+		{ id: "F1", holds: true, why: "holds" },
+	],
+	"panel/consolidator/verdict.json": {
+		criteria: [],
+		upholds: ["correctness/F1"],
+	},
+};
+
+test("a stub dry run of a pre-release holds at the approval despite an upheld finding, and once ruled ok settles ok with main and the forge untouched", async () => {
 	// Every forge call would go through this proxy, which counts and drops each connection.
 	let connections = 0;
 	const proxy = Bun.listen({
@@ -339,10 +363,11 @@ test("a stub dry run of a pre-release holds at the approval, and once ruled ok s
 		},
 	});
 	const proxied = `http://127.0.0.1:${proxy.port}`;
-	const { concert, data, remote, origin } = await performRuled(["ok"], {
-		HTTPS_PROXY: proxied,
-		https_proxy: proxied,
-	});
+	const { concert, data, remote, origin } = await performRuled(
+		["ok"],
+		{ HTTPS_PROXY: proxied, https_proxy: proxied },
+		UPHELD,
+	);
 	proxy.stop(true);
 	expect(concert.status).toBe("ok");
 	expect(connections).toBe(0);
@@ -355,6 +380,10 @@ test("a stub dry run of a pre-release holds at the approval, and once ruled ok s
 			"utf8",
 		);
 	expect(artifact(String(result?.notes))).toBe(NOTES);
+	expect(instances.find((i) => i.node === "panel/upheld")?.status).toBe(
+		"rejected",
+	);
+	expect(artifact(String(result?.review))).toContain("a drifts from b");
 	expect(artifact(`${result?.changeset}/base`)).toBe(`${origin}\n`);
 	const patch = artifact(`${result?.changeset}/0001.patch`);
 	expect(patch).toContain(
@@ -817,6 +846,15 @@ test("closeMilestone rejects a version the forge has no milestone for, and chang
 	);
 	expect(fake.requests.filter((r) => !r.startsWith("GET "))).toEqual([]);
 	expect(fake.state.milestone).toBe("open");
+});
+
+test("reviewedOf passes the review on, and rejects without outputs one no lens delivered, so the approval never shows it", () => {
+	const review = { path: "a/review.md" } as ArtifactRef;
+	expect(reviewedOf({ review, delivered: 2 })).toEqual({ review });
+	expect(reviewedOf({ review, delivered: 0 })).toEqual({
+		outcome: "rejected",
+		reason: expect.any(String),
+	});
 });
 
 test("tipOf names the commit the last patch of a changeset was made from, or its base when it holds none", () => {

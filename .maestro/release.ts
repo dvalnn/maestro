@@ -219,6 +219,24 @@ export async function bump(
 	return { changeset: dir };
 }
 
+/**
+ * The review node: the panel's `review`, whatever it upholds, for the operator to rule on at the approval. It rejects
+ * when no lens `delivered`, since that review shows no finding without having looked.
+ */
+export function reviewedOf({
+	review,
+	delivered,
+}: {
+	review: ArtifactRef;
+	delivered: number;
+}) {
+	if (delivered === 0)
+		return reject(
+			"no lens of the review delivered, so it has nothing to show the approval\nResume the concert to review again",
+		);
+	return { review };
+}
+
 /** What a publish node does in a dry run instead of its effect: logs it, and leaves main and the forge as they are. */
 function logDry(ctx: CodeContext, effect: string) {
 	ctx.log(`dry run: would ${effect}`);
@@ -419,8 +437,9 @@ export const release = composition(
 			"For a stable, it first gates on its milestone having no open issue.",
 			"A panel reviews the commits since the previous tag, a writer drafts the release notes and a check holds them to the",
 			"release structure, a code node bumps every version file, and `just release` builds and smoke-tests the bumped tree.",
-			"Fails while the review upholds a finding. It reads origin/main as the target last fetched it, so fetch first.",
-			"The concert then holds at an approval on the notes and the review, so perform it with --detach.",
+			"It reads origin/main as the target last fetched it, so fetch first. It fails when no lens delivers a review.",
+			"The concert then holds at an approval on the notes, the review with any finding it upholds, the bump and dist/,",
+			"so perform it with --detach: the operator rules on each finding.",
 			"",
 			"After an ok it writes outside the concert, as MAESTRO_TM_TOKEN.",
 			"It pushes the bump to the forge's main from a clone in its scratch directory, never a force push. That account",
@@ -471,7 +490,7 @@ export const release = composition(
 			{ change: head, spec },
 			{ params: { grounds: JUDGED } },
 		);
-		const { review } = reviewed.out;
+		const { review, delivered } = reviewed.out;
 		// Narrows the type: panel leaves a review unless config turns classics.panel.consolidate off.
 		if (!review)
 			throw new BuildError({
@@ -511,12 +530,19 @@ export const release = composition(
 			{ label: "release" },
 		);
 		const dist = built.out.output;
+		// An upheld finding rejects the panel; the operator rules on it at the approval instead.
+		const shown = code(reviewedOf, {
+			in: { review, delivered },
+			out: { review: Markdown() },
+			label: "review",
+			tolerate: "rejected",
+		});
 		const approved = approval(
 			`Publish ${tag}: push its bump to main and create the forge release from these notes and dist${prerelease ? "" : ", then close its milestone"}?`,
 			{
 				in: {
 					notes: notes.out.notes,
-					review,
+					review: shown.out.review,
 					changeset: bumped.out.changeset,
 					dist,
 				},
