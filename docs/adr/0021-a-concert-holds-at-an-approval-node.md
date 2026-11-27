@@ -16,8 +16,9 @@ The rule is:
 - **An approval settles by a ruling.** A ruling is `ok`, or `rejected` with a reason. A `rejected` ruling is a negative
   verdict by ADR 0012, and its reason is the concert's root cause by the result rule.
 - **The node holds as `running`.** The executor writes an approval request to the record store and emits one `awaiting`
-  event. It then polls the store at a named interval until a ruling lands. There is no fifth state and no timeout. A
-  held instance takes no place under the concurrency cap.
+  event. It then polls the store at a named interval until a ruling lands. There is no fifth state, and the node has no
+  timeout of its own: the concert's `limits.timeout` ends a hold as it halts any running instance. A held instance takes
+  no place under the concurrency cap.
 - **`kill` ends a hold.** A killed concert settles the held instance `failed`, as it settles any running instance.
 - **One `Records` method writes a ruling.** The first ruling wins and a second one is refused. A settled or killed
   instance refuses a ruling. A ruling counts only for the resume key the request was made under.
@@ -59,7 +60,8 @@ The engine gives a code node none of them, so each author would write all four b
 
 - The process that performs the concert must stay alive while it holds, so a concert with an approval is performed with
   `--detach`.
-- A held concert waits until it is ruled or killed. `wait` returns its timeout exit code while the concert holds.
+- A held concert waits until it is ruled, killed or past its `limits.timeout`. `wait` returns its timeout exit code
+  while the concert holds.
 - An operator is a person or a conductor (requirements, Actors). The engine cannot tell them apart, so an approval
   proves that an operator ruled, not that a person did.
 - `ok` reuse means a resume after a publish step failed does not ask the owner again for the same candidate.
