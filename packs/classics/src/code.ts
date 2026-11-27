@@ -1,3 +1,4 @@
+/// <reference path="./md.d.ts" />
 import {
 	copyFileSync,
 	readdirSync,

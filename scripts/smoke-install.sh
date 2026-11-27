@@ -3,8 +3,9 @@
 set -euo pipefail
 
 dist=$(realpath "${1:?usage: smoke-install.sh <dist>}")
-version=$(bun -e 'console.log(require(process.argv[1]).version)' "$(dirname "$(realpath "$0")")/../packages/cli/package.json")
-installer=$(dirname "$(realpath "$0")")/../install.sh
+repo=$(realpath "$(dirname "$(realpath "$0")")/..")
+version=$(bun -e 'console.log(require(process.argv[1]).version)' "$repo/packages/cli/package.json")
+installer=$repo/install.sh
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 home=$scratch/home
@@ -268,5 +269,14 @@ export const flow = composition("flow", { examples: [{}] }, () =>
 );
 TS
 maestro compose author/flow.ts --preset stub >/dev/null || fail "compose of a file importing @maestro/classics exited $?"
+
+# The repo's own TypeScript, run by the smoke's bun: no network is needed, and the installed maestro stays Bun-free.
+step "a project importing classics type-checks"
+cat > "$author/tsconfig.json" <<JSON
+{"compilerOptions": {"module": "ESNext", "moduleResolution": "bundler", "target": "ESNext", "strict": true, "noEmit": true,
+  "skipLibCheck": true, "typeRoots": ["$repo/node_modules/@types"], "types": ["bun"]}, "files": ["flow.ts"]}
+JSON
+(cd "$author" && unshare -rn bun "$repo/node_modules/typescript/bin/tsc" -p .) >"$scratch/tsc.out" 2>&1 \
+  || fail "tsc on a project importing @maestro/classics failed: $(head -5 "$scratch/tsc.out")"
 
 step "passed"
