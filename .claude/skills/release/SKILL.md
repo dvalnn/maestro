@@ -25,9 +25,8 @@ of the same kind: the last stable for a stable, the last tag for a pre-release (
 ## Steps
 
 1. **Perform.** `jj git fetch`, then
-   `maestro perform .maestro/release.ts --version <version> --prev <prev> [--prerelease] --detach`, and follow it with
-   `maestro wait <id> --timeout 30m`, since a bare `wait` blocks through the hold (#893). Done when `maestro approval`
-   lists its `publish` approval.
+   `maestro perform .maestro/release.ts --version <version> --prev <prev> [--prerelease] --detach`, and follow it as the
+   maestro skill's perform.md step 5 does. Done when a wait exits 4 at the `publish` approval.
 2. **Show.** `maestro approval` lists the request with the path of each thing it publishes: the notes, the review, the
    bump `changeset` and `dist`. Give the owner the notes and every finding the review upholds; an upheld finding does
    not stop the concert, the owner rules on each. One the owner defers becomes an issue in the next release's milestone.

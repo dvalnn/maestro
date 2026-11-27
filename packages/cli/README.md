@@ -270,7 +270,8 @@ documents a field with no value is left out:
 ### Watching
 
 `watch` replays from the concert's first event, then follows it. Ctrl-C stops watching, not the concert. It exits as
-`wait` does, except that browsing a concert quit before it settles exits 130 (Ctrl-C), 129 (hang-up) or 143 (SIGTERM).
+`wait` does, but never stops at an approval hold, which `wait` exits 4 on. Browsing a concert quit before it settles
+exits 130 (Ctrl-C), 129 (hang-up) or 143 (SIGTERM).
 
 - **Graph.** On a terminal, the graph redrawn in place: a header (status, elapsed time and short id), `now` and `last`
   lines naming the latest running and failed instances, the composition as authored with each loop at its latest round
@@ -286,8 +287,8 @@ documents a field with no value is left out:
   iteration, takes everything under it. An id the concert has no node for is a usage error.
 - **JSON.** With `--json`, or off a terminal without `--events`, `watch` prints a JSON Lines stream: one compact line
   per record event that changes an instance's state (`running`, `settled`, `reused`), or per event of any type with
-  `--events --json`, each as the record holds it, ending with the concert document, `wait --json`'s with
-  `"type":"concert"`.
+  `--events --json`, each as the record holds it, ending with the concert document, `wait --json`'s without `approvals`
+  and with `"type":"concert"`.
 - Otherwise stdout holds the view, and the watch ends with the closing block, as `wait` prints it after the graph, or
   only its `concert` row with `--events`.
 
@@ -348,6 +349,10 @@ concert's code, or 0 while it runs.
 A concert holds at an [approval node](../../docs/architecture.md#approval-hold) until an operator rules on it.
 `approval` with no concert lists the open requests of every concert, oldest first. With none open it prints
 `no open approvals` on stderr and exits 0.
+
+`wait` returns as soon as its concert holds at an open approval, with or without `--timeout`, and exits 4. Stderr names
+each open approval by its instance and says how to rule. `--json` adds `approvals`, the open requests as
+`approval --json` lists them, `[]` when none. `kill` still waits for the concert to settle.
 
 Each request is a block. Its first line holds the concert's short id, the instance as `ls <concert>` names it and the
 request's age. The prompt follows, then a line per input. A text input shows on one line, and any other value as compact

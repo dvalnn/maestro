@@ -24,15 +24,15 @@ lists them; every other flag is in `maestro <verb> --help`.
    Done when it exits 0 with the concert's id on stdout.
 
 5. **Follow**: `maestro wait <id> --timeout 90s` in a loop, the timeout shorter than your tool call's own limit. Exit
-   124 means still running. A user who wants to see it live runs `maestro watch <id>` in their own terminal. Before you
-   wait again, run `maestro approval` to see if the concert holds at an approval:
+   124 means still running. Exit 4 means the concert holds at an approval, and stderr names it. A user who wants to see
+   it live runs `maestro watch <id>` in their own terminal. On exit 4, run `maestro approval` to read the request:
    - Rule only on a request of the concert you started.
    - Read the prompt and the inputs of its request, and read each artifact file an input names. The text shows an input
      on one line, so use `maestro approval --json` when an input has more than one line.
    - Rule only when the user told you to. Else give the user the prompt and the inputs, and ask for the ruling.
    - Rule with `maestro approval <id> ok` or `maestro approval <id> reject "<reason>"`, then wait again.
 
-   Done on any exit other than 124.
+   Done on any exit other than 4 and 124.
 
 6. **Read the result**: the exit code ([SKILL.md](SKILL.md), section Exit codes and outcomes), the closing block on
    stderr and the outputs on stdout (section Perform). On a `rejected` concert, read the root cause's `logs` file next.
@@ -81,7 +81,8 @@ An `<id>` is a concert's full id, its short id (8 letters from `k` to `z`, as `l
 other concert's starts with.
 
 - `maestro wait <id> --timeout <duration>` prints what `perform` prints once the concert settles and exits with its
-  code; on the timeout it exits 124. A duration is a whole number and one unit: `500ms`, `90s`, `15m`, `12h`, `7d`.
+  code. On the timeout it exits 124. At an approval hold it exits 4 at once, with `approvals` in `--json`. A duration is
+  a whole number and one unit: `500ms`, `90s`, `15m`, `12h`, `7d`.
 - `maestro approval` lists the open approval requests of every concert. `maestro approval <id> ok` or
   `maestro approval <id> reject "<reason>"` rules on the one the concert holds at; `--instance <name>` picks one of
   several. A refused ruling exits 1 and says why.

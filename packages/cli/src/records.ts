@@ -657,18 +657,47 @@ function waitChecked(values: Values, positionals: readonly string[]) {
 	};
 }
 
+/** Says on stderr which `held` approvals concert `row` holds at, and how to rule on them. */
+function printHold(
+	deps: Deps,
+	store: Records,
+	row: ConcertRecord,
+	held: readonly ApprovalRequest[],
+) {
+	const short = shortIds(store.ids()).label(row.id, false);
+	const graph = indexGraph(row.ir);
+	const names = held.map((r) => graph.instanceName(r));
+	const several = names.length > 1;
+	const at = several
+		? `${names.length} approvals: ${listedOf(names)}`
+		: `approval '${names[0]}'`;
+	const instance = several ? " --instance <name>" : "";
+	deps.stderr(
+		`concert ${short} holds at ${at}\nRule on ${several ? "each" : "it"} with 'maestro approval ${short} ok${instance}' or 'maestro approval ${short} reject "<reason>"${instance}'`,
+	);
+}
+
 async function waited(
 	{ session, store, values, json }: Stored,
 	{ prefix, limit }: ReturnType<typeof waitChecked>,
 ) {
 	const { deps } = session;
 	const timeout = textOf(values, "timeout");
-	const { id } = concertOf(store, prefix);
-	const result = (await store.wait(id, limit)) && store.result(id);
+	const row = concertOf(store, prefix);
+	const { id } = row;
+	const outcome = await store.wait(id, limit, { atHold: true });
+	const held = Array.isArray(outcome) ? outcome : [];
+	const result = outcome && held.length === 0 ? store.result(id) : undefined;
 	const { status } = resultDoc(id, result);
 	if (json)
 		deps.stdout(
-			jsonOf(concertDoc(store, id, result, artifactsOf(session, id)), deps),
+			jsonOf(
+				{
+					...concertDoc(store, id, result, artifactsOf(session, id)),
+					approvals: approvalDocs(store, held),
+				},
+				deps,
+			),
 		);
 	else if (result)
 		printClosing(deps, store, concertOf(store, id), result, {
@@ -676,11 +705,12 @@ async function waited(
 			artifacts: artifactsOf(session, id),
 			changes: await changesOf({ session, store }, id),
 		});
+	else if (held.length > 0) printHold(deps, store, row, held);
 	else
 		deps.stderr(
-			`concert ${id} is still running after ${timeout}\nWait again, rule on an approval it holds at ('maestro approval' lists them), or stop it with 'maestro kill ${id}'`,
+			`concert ${id} is still running after ${timeout}\nWait again, or stop it with 'maestro kill ${id}'`,
 		);
-	return exitOf(status);
+	return held.length > 0 ? EXIT.held : exitOf(status);
 }
 
 export const wait: Command = {
@@ -737,7 +767,7 @@ async function killed({ session, store, json }: Stored, prefix: string) {
 		);
 	}
 	signal(pid);
-	if (!(await store.wait(id, KILL_GRACE_MS)))
+	if (!(await store.wait(id, KILL_GRACE_MS, { atHold: false })))
 		throw new CliError(
 			`concert ${id} did not settle within ${KILL_GRACE_S}s of stopping process ${pid}\nCheck on it with 'maestro wait ${id} --timeout 1m'`,
 		);
@@ -965,18 +995,24 @@ function requestBlock(
 	return { text: lines.join("\n"), cut };
 }
 
+/** `requests` as `maestro approval --json` lists them. */
+const approvalDocs = (store: Records, requests: readonly ApprovalRequest[]) =>
+	requests.map((r) => {
+		const row = concertOf(store, r.concert);
+		return {
+			...r,
+			instance: indexGraph(row.ir).instanceName(r),
+			inputs: inputsOf(row, r),
+		};
+	});
+
 /** The open approvals of every concert, oldest first, as blocks or as one JSON list. */
 function openListed({ session, store, values, json }: Stored) {
 	const { deps } = session;
 	const requests = store.openApprovals();
 	const rowOf = (r: ApprovalRequest) => concertOf(store, r.concert);
 	if (json) {
-		const listed = requests.map((r) => ({
-			...r,
-			instance: indexGraph(rowOf(r).ir).instanceName(r),
-			inputs: inputsOf(rowOf(r), r),
-		}));
-		deps.stdout(jsonOf(listed, deps));
+		deps.stdout(jsonOf(approvalDocs(store, requests), deps));
 		return EXIT.ok;
 	}
 	if (requests.length === 0) {

@@ -74,7 +74,7 @@ const VERBS: readonly Verb[] = [
 	{
 		name: "wait",
 		alias: "wt",
-		summary: "Wait for a concert to settle",
+		summary: "Wait for a concert to settle or hold at an approval",
 		load: async () => (await import("./records")).wait,
 	},
 	{
@@ -148,6 +148,7 @@ const EXIT_MEANINGS: Readonly<Record<keyof typeof EXIT, string>> = {
 		"The concert settled failed, a composition or config does not build, or the command could not do what it said",
 	usage: "Usage error: bad arguments",
 	rejected: "The concert settled rejected, or cs apply left conflicts",
+	held: "wait found the concert held at an approval, still running",
 	timeout: "wait --timeout passed, the concert still running",
 	interrupted: "Stopped by Ctrl-C",
 	terminated: "Stopped by SIGTERM",

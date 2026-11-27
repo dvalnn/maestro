@@ -360,8 +360,15 @@ export interface Records {
 		request: Pick<ApprovalRequest, "concert" | "node" | "expansion" | "key">,
 		ruling: Ruling,
 	): void;
-	/** The concert once it settles, or `undefined` when `timeoutMs` passes first. Another process may be performing it. */
-	wait(concert: string, timeoutMs?: number): Promise<ConcertRecord | undefined>;
+	/**
+	 * The concert once it settles, or `undefined` when `timeoutMs` passes first. With `atHold` it also returns, as soon
+	 * as the concert holds at an open approval, those requests (never empty). Another process may be performing it.
+	 */
+	wait(
+		concert: string,
+		timeoutMs?: number,
+		options?: { atHold?: boolean },
+	): Promise<ConcertRecord | ApprovalRequest[] | undefined>;
 	close(): void;
 }
 
@@ -766,6 +773,23 @@ function readerOf(db: Database, look: Lookup): Records {
 			reaped(row);
 	};
 
+	const openApprovals = (id?: string) => {
+		reapAll();
+		return db
+			.query<ApprovalRow, [string | null]>(
+				`SELECT a.concert, a.node, a.expansion, a.key, a.prompt, a.inputs, a.asked_at FROM approvals a
+				JOIN instances i USING (concert, node, expansion)
+				WHERE a.ruling IS NULL AND i.status = 'running' AND (?1 IS NULL OR a.concert = ?1)
+				ORDER BY a.asked_at, a.concert, a.node, a.expansion`,
+			)
+			.all(id ?? null)
+			.map(({ asked_at, inputs, ...row }) => ({
+				...row,
+				inputs: JSON.parse(inputs),
+				askedAt: asked_at,
+			}));
+	};
+
 	return {
 		find: (id) => {
 			const row = rowIf(id);
@@ -856,22 +880,7 @@ function readerOf(db: Database, look: Lookup): Records {
 			rowOf(id);
 			return metricsOf(db, id);
 		},
-		openApprovals(id) {
-			reapAll();
-			return db
-				.query<ApprovalRow, [string | null]>(
-					`SELECT a.concert, a.node, a.expansion, a.key, a.prompt, a.inputs, a.asked_at FROM approvals a
-					JOIN instances i USING (concert, node, expansion)
-					WHERE a.ruling IS NULL AND i.status = 'running' AND (?1 IS NULL OR a.concert = ?1)
-					ORDER BY a.asked_at, a.concert, a.node, a.expansion`,
-				)
-				.all(id ?? null)
-				.map(({ asked_at, inputs, ...row }) => ({
-					...row,
-					inputs: JSON.parse(inputs),
-					askedAt: asked_at,
-				}));
-		},
+		openApprovals,
 		rule: writing(db, (request: Requested, ruling: Ruling) => {
 			if (ruling.outcome === "rejected" && ruling.reason.trim() === "")
 				throw new Error(
@@ -896,14 +905,26 @@ function readerOf(db: Database, look: Lookup): Records {
 				],
 			);
 		}),
-		async wait(id, timeoutMs = Number.POSITIVE_INFINITY) {
+		async wait(
+			id,
+			timeoutMs = Number.POSITIVE_INFINITY,
+			{ atHold = false } = {},
+		) {
 			const deadline = Date.now() + timeoutMs;
+			const holds = () => (atHold ? openApprovals(id) : []);
 			let found = concert(id);
-			while (found.status === "running" && Date.now() < deadline) {
+			let held = holds();
+			while (
+				found.status === "running" &&
+				held.length === 0 &&
+				Date.now() < deadline
+			) {
 				await Bun.sleep(Math.min(WAIT_POLL_MS, deadline - Date.now()));
 				found = concert(id);
+				held = holds();
 			}
-			return found.status === "running" ? undefined : found;
+			if (found.status !== "running") return found;
+			return held.length > 0 ? held : undefined;
 		},
 		close: () => db.close(),
 	};

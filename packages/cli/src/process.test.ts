@@ -25,6 +25,7 @@ afterEach(cleanup);
 
 const CLI = join(import.meta.dir, "cli");
 const SPEC = join(import.meta.dir, "fixtures/spec.ts");
+const APPROVE = join(import.meta.dir, "fixtures/approve.ts");
 const NONBLOCKING = join(import.meta.dir, "fixtures/nonblocking.ts");
 const TESTKIT = join(import.meta.dir, "../../testkit/src/index");
 const WAIT_STEP_MS = 25;
@@ -73,6 +74,24 @@ async function until(done: () => Promise<boolean>) {
 	}
 	throw new Error("timed out waiting for the concert to reach echo/echo");
 }
+
+test("wait exits 4 at an approval hold, and kill still settles the held concert failed", async () => {
+	const w = await world();
+	const child = w.spawn(["perform", APPROVE], await hanging());
+	const reader = child.stderr.getReader();
+	const id =
+		/^concert (\S+)$/m.exec(
+			new TextDecoder().decode((await reader.read()).value),
+		)?.[1] ?? "";
+	const held = await w.call(["wait", id]);
+	expect(held.code).toBe(4);
+	expect(held.err).toMatch(/\b(go|fan\[eu\]\/publish)\b/);
+	expect(json(await w.call(["kill", id, "--json"]))).toMatchObject({
+		id,
+		status: "failed",
+	});
+	await child.exited;
+});
 
 // Seam: a detached command's stdout, stderr and exit code, including their bytes and write order.
 const DETACHED_ID = "01a208a7-a190-7521-992d-4549fe729973";
@@ -344,9 +363,7 @@ describe("a concert in another process", () => {
 
 		const waited = await w.call(["wait", id, "--timeout", "1s"]);
 		expect(waited.code).toBe(124);
-		expect(waited.err).toBe(
-			`concert ${id} is still running after 1s\nWait again, rule on an approval it holds at ('maestro approval' lists them), or stop it with 'maestro kill ${id}'`,
-		);
+		expect(waited.err).toContain(`concert ${id} is still running after 1s`);
 		expect(
 			json(await w.call(["wait", id, "--timeout", "1s", "--json"])),
 		).toEqual({
@@ -355,6 +372,7 @@ describe("a concert in another process", () => {
 			metrics: {},
 			tokens: 0,
 			artifacts: join(w.env.XDG_DATA_HOME, "maestro/concerts", id, "artifacts"),
+			approvals: [],
 		});
 		expect(await w.call(["resume", id])).toEqual({
 			code: 1,

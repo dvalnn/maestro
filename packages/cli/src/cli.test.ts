@@ -4226,6 +4226,7 @@ describe("the record", () => {
 			metrics: {},
 			tokens: 0,
 			artifacts: join(w.root, "data/maestro/concerts", refused, "artifacts"),
+			approvals: [],
 		});
 	});
 
@@ -5536,6 +5537,46 @@ describe("approval", () => {
 		expect(notesLine((await w.call(["approval"], { env, terminal })).out)).toBe(
 			`    notes    ~${path.slice(w.root.length)}`,
 		);
+		await release(w, id);
+		expect((await performing).code).toBe(0);
+	});
+
+	test("wait exits 4 at a hold, naming each open approval and how to rule, with --json listing them as approval --json does", async () => {
+		const w = await world();
+		const { id, performing } = await holding(w);
+		const short = shortOf(id);
+		const named = await w.call(["wait", id]);
+		expect(named.code).toBe(4);
+		expect(named.out).toBe("");
+		expect(named.err).toContain("fan[eu]/publish");
+		expect(named.err).toMatch(/\bgo\b/);
+		expect(named.err).toContain(`maestro approval ${short} ok`);
+		expect(named.err).toContain("--instance");
+		const listed = json(await w.call(["approval", "--json"]));
+		const limited = await w.call(["wait", id, "--timeout", "1h", "--json"]);
+		expect(limited.code).toBe(4);
+		expect(json(limited)).toMatchObject({ id, status: "running" });
+		expect(json(limited).approvals).toEqual(listed);
+		await release(w, id);
+		expect((await performing).code).toBe(0);
+		const settled = await w.call(["wait", id, "--json"]);
+		expect(settled.code).toBe(0);
+		expect(json(settled).approvals).toEqual([]);
+	});
+
+	test("a wait started before its concert holds returns 4 once it does", async () => {
+		const w = await world();
+		const performing = w.call(["perform", APPROVE], { hosts: [] });
+		let id = "";
+		while (!id) {
+			await Bun.sleep(1);
+			id = json(await w.call(["ls", "--status", "running", "--json"]))[0]?.id;
+		}
+		const waited = await w.call(["wait", id, "--json"]);
+		expect(waited.code).toBe(4);
+		expect(
+			json(waited).approvals.map((r: { instance: string }) => r.instance),
+		).toContain("go");
 		await release(w, id);
 		expect((await performing).code).toBe(0);
 	});

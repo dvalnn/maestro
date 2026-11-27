@@ -69,6 +69,7 @@ tokens: number
 
 ## the shape of maestro wait <concert> --json
 ───────────────────────────────────────────────────────────────────────────────────────────────────┐
+approvals: []
 artifacts: string
 id: string
 metrics: {}

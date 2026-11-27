@@ -235,7 +235,7 @@ The executable is `maestro`. Commands, flags, aliases and exit codes are in `mae
   `tour` groups concerts, and `ls` and `prune` filter by tour.
 - **CLI-04 (Must).** Every command supports machine-readable output, but `changeset` and `artifact show` take no
   `--json`: their output is the content itself. Exit codes are stable and distinguish accepted, rejected, failed, usage
-  error and wait timeout.
+  error, an approval hold and wait timeout.
 - **CLI-05 (Must).** `watch` draws the live graph.
 - **CLI-06 (Must).** An error names what the operator or agent should do next.
 - **CLI-07 (Must).** Every verb except `ls` and `prune` has a built-in short alias, shown in `--help`. Aliases are

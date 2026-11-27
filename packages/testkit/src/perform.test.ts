@@ -2221,10 +2221,14 @@ test("a resume reuses an ok approval whose key matches, and asks again once its 
 	]);
 });
 
-test("a held concert keeps wait timing out, and a kill settles the held approval failed and refuses its ruling", async () => {
+test("a held concert times out a plain wait and returns its requests to a wait at a hold, and a kill settles the held approval failed and refuses its ruling", async () => {
 	const { concert, record, request } = await heldConcert();
 	expect(record.openApprovals()).toContainEqual(request);
 	expect(await record.wait(concert.id, APPROVAL_POLL_MS * 4)).toBeUndefined();
+	// Without a timeout this returns only because the concert holds.
+	expect(await record.wait(concert.id, undefined, { atHold: true })).toEqual([
+		request,
+	]);
 	await concert.cancel();
 	expect(await concert.done).toEqual({
 		outcome: "failed",

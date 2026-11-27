@@ -60,8 +60,8 @@ The engine gives a code node none of them, so each author would write all four b
 
 - The process that performs the concert must stay alive while it holds, so a concert with an approval is performed with
   `--detach`.
-- A held concert waits until it is ruled, killed or past its `limits.timeout`. `wait` returns its timeout exit code
-  while the concert holds.
+- A held concert waits until it is ruled, killed or past its `limits.timeout`. `wait` returns the hold exit code, 4, as
+  soon as the concert holds.
 - An operator is a person or a conductor (requirements, Actors). The engine cannot tell them apart, so an approval
   proves that an operator ruled, not that a person did.
 - `ok` reuse means a resume after a publish step failed does not ask the owner again for the same candidate.
